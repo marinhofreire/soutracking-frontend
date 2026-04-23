@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: SouAssist Demands API
+  version: 1.0.0
+  description: Contrato v1 de demandas multi-tenant para o app SouAssist.
+servers:
+  - url: /api
+paths:
+  /souassist/v1/demands:
+    get:
+      summary: Listar chamados do tenant
+      parameters:
+        - in: query
+          name: tenantId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de chamados
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/DemandRequest'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DemandRequest'
+    post:
+      summary: Criar chamado
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandRequest'
+      responses:
+        '200':
+          description: Chamado criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemandRequest'
+  /souassist/v1/demands/{id}:
+    put:
+      summary: Atualizar chamado
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandRequest'
+      responses:
+        '200':
+          description: Chamado atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemandRequest'
+  /souassist/v1/demands/snapshot:
+    put:
+      summary: Sincronizar snapshot do tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandSnapshot'
+      responses:
+        '200':
+          description: Snapshot atualizado
+    post:
+      summary: Criar snapshot do tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandSnapshot'
+      responses:
+        '200':
+          description: Snapshot criado
+components:
+  schemas:
+    InstallationChecklist:
+      type: object
+      properties:
+        fixacaoSegura:
+          type: boolean
+        chicoteProtegido:
+          type: boolean
+        semInterferenciaEletrica:
+          type: boolean
+        testeComunicacaoOk:
+          type: boolean
+        fotoLocalInstalacao:
+          type: string
+        fotoChicote:
+          type: string
+        fotoAcabamento:
+          type: string
+        observacoes:
+          type: string
+          nullable: true
+    DemandRequest:
+      type: object
+      required:
+        - id
+        - tenantId
+        - customer
+        - service
+        - priority
+        - description
+        - originLatitude
+        - originLongitude
+        - destinationLatitude
+        - destinationLongitude
+        - regionKey
+        - createdAt
+        - status
+        - channel
+        - serviceAmount
+        - platformFeePercent
+        - splitMode
+        - dispatchMode
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        customer:
+          type: string
+        service:
+          type: string
+        priority:
+          type: string
+        description:
+          type: string
+        originLatitude:
+          type: number
+        originLongitude:
+          type: number
+        destinationLatitude:
+          type: number
+        destinationLongitude:
+          type: number
+        regionKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+        channel:
+          type: string
+        serviceAmount:
+          type: number
+        platformFeePercent:
+          type: number
+        splitMode:
+          type: string
+        dispatchMode:
+          type: string
+        installationChecklistRequired:
+          type: boolean
+        routeDistanceKm:
+          type: number
+        preferredPartnerIds:
+          type: array
+          items:
+            type: string
+        preferredPartnersOnly:
+          type: boolean
+        offeredPartnerIds:
+          type: array
+          items:
+            type: string
+        currentOfferPartnerIds:
+          type: array
+          items:
+            type: string
+        dispatchTimeline:
+          type: array
+          items:
+            type: string
+        assignedPartnerId:
+          type: string
+          nullable: true
+        distanceKm:
+          type: number
+          nullable: true
+        estimatedArrivalMinutes:
+          type: integer
+          nullable: true
+        currentOfferPartnerId:
+          type: string
+          nullable: true
+        offerExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        installationChecklist:
+          $ref: '#/components/schemas/InstallationChecklist'
+    DemandSnapshot:
+      type: object
+      required:
+        - tenantId
+        - requests
+      properties:
+        tenantId:
+          type: string
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemandRequest'
