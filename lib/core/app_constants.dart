@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 const String kAppName = 'Sou Fleet';
 
-const String _kDefaultTraccarHttpOrigin = 'https://api.mackflow.com.br';
+const String _kDefaultTraccarHttpOrigin = 'https://app.mackflow.com.br';
 const String _kTraccarBaseUrlFromEnv = String.fromEnvironment(
   'API_ORIGIN',
   defaultValue: '',

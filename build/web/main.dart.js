@@ -34978,7 +34978,7 @@ s=A.a0A()
 r=s.geQ()
 q=B.c.l4(s.gq8().toLowerCase(),".pages.dev")
 if(r==="https"||q)return s.gBm()
-return"https://api.mackflow.com.br"},
+return"https://app.mackflow.com.br"},
 bbV(a){var s=$.b48(),r=a==null?"":a
 A.bc5('[INFO] Traccar baseUrl em uso: "'+s+'" | endpoint: '+r+" | presentationMode: false")},
 b2R(a){var s=null,r=a.c,q=B.So.a7r(B.ov,r,a.d,B.iJ),p=A.b0N(new A.f2(4,A.at(12),B.uk),s,s,new A.f2(4,A.at(12),B.uk),B.iJ,!0,new A.f2(4,A.at(12),new A.aO(r,1.2,B.B,-1)),s,s),o=A.at(12)
