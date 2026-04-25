@@ -1,4 +1,4 @@
-const DEFAULT_TRACCAR_PROXY_ORIGIN = "http://204.168.191.10:8082";
+const DEFAULT_TRACCAR_PROXY_ORIGIN = "http://204.168.191.10";
 
 function resolveTargetOrigin(env) {
   return String(env?.TRACCAR_PROXY_ORIGIN || DEFAULT_TRACCAR_PROXY_ORIGIN)
