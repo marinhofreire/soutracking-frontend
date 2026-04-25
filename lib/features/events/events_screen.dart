@@ -9,7 +9,7 @@ class EventsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ReportScreen(
       title: 'Eventos',
-      endpointPath: '/events',
+      endpointPath: '/reports/events',
     );
   }
 }

@@ -1,10 +1,36 @@
+import 'package:flutter/foundation.dart';
+
 const String kAppName = 'Sou Fleet';
-// Default para Traccar SEM /api para evitar /api/api
-const String kTraccarBaseUrl = String.fromEnvironment(
+
+const String _kDefaultTraccarHttpOrigin = 'http://204.168.191.10:8082';
+const String _kTraccarBaseUrlFromEnv = String.fromEnvironment(
   'API_ORIGIN',
-  defaultValue: 'http://204.168.191.10:8082',
+  defaultValue: '',
 );
-// Base dedicada do backend SouAssist (demanda/tenant), isolada do Traccar.
+
+String _resolveTraccarBaseUrl() {
+  final envValue = _kTraccarBaseUrlFromEnv.trim();
+  if (envValue.isNotEmpty) {
+    return envValue;
+  }
+
+  // Em produção web via Cloudflare Pages, usa o mesmo origin e deixa o proxy
+  // /api cuidar da ponte HTTPS -> HTTP legado do Traccar.
+  if (kIsWeb) {
+    final uri = Uri.base;
+    final isHttps = uri.scheme == 'https';
+    final isCloudflarePages = uri.host.toLowerCase().endsWith('.pages.dev');
+    if (isHttps || isCloudflarePages) {
+      return uri.origin;
+    }
+  }
+
+  return _kDefaultTraccarHttpOrigin;
+}
+
+// Default para Traccar SEM /api para evitar /api/api.
+final String kTraccarBaseUrl = _resolveTraccarBaseUrl();
+// Base dedicada do backend SouFind (demanda/tenant), isolada do Traccar.
 const String kSouAssistApiBaseUrl = String.fromEnvironment(
   'SOUASSIST_API_ORIGIN',
   defaultValue: 'https://api.souassit.com.br',
@@ -42,5 +68,5 @@ void logTraccarBaseUrl({String? endpoint}) {
 void logSouAssistBaseUrl({String? endpoint}) {
   // ignore: avoid_print
   print(
-      '[INFO] SouAssist baseUrl em uso: "$kSouAssistApiBaseUrl" | endpoint: ${endpoint ?? ''} | presentationMode: $presentationMode');
+      '[INFO] SouFind baseUrl em uso: "$kSouAssistApiBaseUrl" | endpoint: ${endpoint ?? ''} | presentationMode: $presentationMode');
 }

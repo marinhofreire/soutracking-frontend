@@ -17,6 +17,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   String _type = 'distance';
   int? _deviceId;
   bool _saving = false;
+  int? _deletingId;
 
   @override
   void dispose() {
@@ -83,6 +84,54 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     }
   }
 
+  Future<void> _deleteMaintenance(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    final name = '${item['name'] ?? 'Manutenção #$id'}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir manutenção'),
+        content: Text('Excluir "$name" do Traccar real?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/maintenance/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(maintenanceProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Manutenção excluída.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir manutenção: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final maintenanceAsync = ref.watch(maintenanceProvider);
@@ -131,11 +180,27 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
-                                ?.copyWith(color: Colors.white70),
+                                ?.copyWith(color: const Color(0xFF60718D)),
                           ),
                         ],
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Excluir manutenção',
+                    onPressed: _deletingId == item['id']
+                        ? null
+                        : () => _deleteMaintenance(item),
+                    icon: _deletingId == item['id']
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFEF4444),
+                          ),
                   ),
                 ],
               ),
@@ -149,7 +214,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     final form = Container(
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.all(24),
@@ -160,12 +225,12 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               style: Theme.of(context)
                   .textTheme
                   .headlineSmall
-                  ?.copyWith(color: Colors.white)),
+                  ?.copyWith(color: const Color(0xFF1F2A44))),
           const SizedBox(height: 12),
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Nome do plano'),
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: Color(0xFF1F2A44)),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
@@ -179,8 +244,8 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             ],
             onChanged: (value) => setState(() => _type = value ?? 'distance'),
             decoration: const InputDecoration(labelText: 'Tipo'),
-            dropdownColor: Colors.black,
-            style: const TextStyle(color: Colors.white),
+            dropdownColor: Colors.white,
+            style: const TextStyle(color: Color(0xFF1F2A44)),
           ),
           const SizedBox(height: 12),
           devicesAsync.when(
@@ -196,27 +261,27 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                     .toList(),
                 onChanged: (value) => setState(() => _deviceId = value),
                 decoration: const InputDecoration(labelText: 'Dispositivo'),
-                dropdownColor: Colors.black,
-                style: const TextStyle(color: Colors.white),
+                dropdownColor: Colors.white,
+                style: const TextStyle(color: Color(0xFF1F2A44)),
               );
             },
             loading: () => const LinearProgressIndicator(),
             error: (error, _) => Text('Erro: $error',
-                style: const TextStyle(color: Colors.white)),
+                style: const TextStyle(color: Color(0xFF1F2A44))),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _startController,
             decoration: const InputDecoration(labelText: 'Valor inicial'),
             keyboardType: TextInputType.number,
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: Color(0xFF1F2A44)),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _periodController,
             decoration: const InputDecoration(labelText: 'Período'),
             keyboardType: TextInputType.number,
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: Color(0xFF1F2A44)),
           ),
           const SizedBox(height: 12),
           FilledButton(

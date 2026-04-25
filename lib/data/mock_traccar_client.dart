@@ -217,25 +217,28 @@ class MockTraccarClient extends TraccarClient {
     String? cookie,
     String? authHeader,
   }) async {
-    // Simula config mock: tracking sempre true, assist/mdvr/admin true, branding demo
+    // Simula config mock: tracking e demandas ativos, integrações críticas desligadas.
     return {
       'tenantId': 'tenant-demo',
-      'companyName': 'SouInnova Demo',
-      'slug': 'souinnova-demo',
+      'companyName': 'SouFind Demo',
+      'slug': 'soufind-demo',
       'role': 'master_admin',
       'modules': {
         'tracking': true,
         'assist': true,
         'demand': true,
-        'mdvr': true,
+        'mdvr': false,
         'admin': true,
-        'zpro': true,
+        'zpro': false,
+        'finance': false,
+        'inventory': false,
+        'reports_plus': false,
       },
       'branding': {
-        'appName': 'SouAssist',
-        'tagline': 'Operação assistida com tracking integrado',
-        'primaryColor': '#7C5CFF',
-        'secondaryColor': '#4F46E5',
+        'appName': 'SouFind',
+        'tagline': 'Central operacional em modo demo',
+        'primaryColor': '#2D7DFF',
+        'secondaryColor': '#22D3EE',
       },
     };
   }

@@ -85,7 +85,7 @@ class _RoutedSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SouAssist')),
+      appBar: AppBar(title: const Text('SouFind')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: child,
@@ -106,7 +106,7 @@ class _AssistPrivateDashboardGateState
     extends State<_AssistPrivateDashboardGate> {
   static const String _privatePin = String.fromEnvironment(
     'ASSIST_PRIVATE_DASHBOARD_PIN',
-    defaultValue: 'souassist123',
+    defaultValue: 'soufind123',
   );
 
   final TextEditingController _pinController = TextEditingController();

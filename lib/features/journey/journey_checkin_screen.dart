@@ -197,7 +197,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
-                          ?.copyWith(color: Colors.white70),
+                          ?.copyWith(color: const Color(0xFF60718D)),
                     ),
                     if (item.note.isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -206,7 +206,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
-                            ?.copyWith(color: Colors.white70),
+                            ?.copyWith(color: const Color(0xFF60718D)),
                       ),
                     ],
                   ],
@@ -217,11 +217,11 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
 
     final form = DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.78),
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Colors.black54,
+            color: const Color(0xFF183153).withValues(alpha: 0.12),
             blurRadius: 14,
             offset: Offset(0, 8),
           ),
@@ -237,7 +237,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
               style: Theme.of(context)
                   .textTheme
                   .headlineSmall
-                  ?.copyWith(color: Colors.white),
+                  ?.copyWith(color: const Color(0xFF1F2A44)),
             ),
             const SizedBox(height: 12),
             driversAsync.when(
@@ -253,13 +253,13 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
                     .toList(),
                 onChanged: (value) => setState(() => _driverId = value),
                 decoration: const InputDecoration(labelText: 'Motorista'),
-                dropdownColor: Colors.black,
-                style: const TextStyle(color: Colors.white),
+                dropdownColor: Colors.white,
+                style: const TextStyle(color: Color(0xFF1F2A44)),
               ),
               loading: () => const LinearProgressIndicator(),
               error: (error, _) => Text(
                 'Erro motoristas: $error',
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1F2A44)),
               ),
             ),
             const SizedBox(height: 12),
@@ -276,13 +276,13 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
                     .toList(),
                 onChanged: (value) => setState(() => _deviceId = value),
                 decoration: const InputDecoration(labelText: 'Dispositivo'),
-                dropdownColor: Colors.black,
-                style: const TextStyle(color: Colors.white),
+                dropdownColor: Colors.white,
+                style: const TextStyle(color: Color(0xFF1F2A44)),
               ),
               loading: () => const LinearProgressIndicator(),
               error: (error, _) => Text(
                 'Erro dispositivos: $error',
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1F2A44)),
               ),
             ),
             const SizedBox(height: 12),
@@ -299,8 +299,8 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
               onChanged: (value) =>
                   setState(() => _journeyType = value ?? 'inicio'),
               decoration: const InputDecoration(labelText: 'Tipo da jornada'),
-              dropdownColor: Colors.black,
-              style: const TextStyle(color: Colors.white),
+              dropdownColor: Colors.white,
+              style: const TextStyle(color: Color(0xFF1F2A44)),
             ),
             const SizedBox(height: 12),
             Text(
@@ -308,7 +308,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
-                  ?.copyWith(color: Colors.white),
+                  ?.copyWith(color: const Color(0xFF1F2A44)),
             ),
             const SizedBox(height: 8),
             ..._checklist.keys.map(
@@ -319,7 +319,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
                     setState(() => _checklist[key] = value ?? false),
                 title: Text(
                   key[0].toUpperCase() + key.substring(1),
-                  style: const TextStyle(color: Colors.white),
+                  style: const TextStyle(color: Color(0xFF1F2A44)),
                 ),
                 subtitle:
                     ['pneus', 'luzes', 'freios', 'documentos'].contains(key)
@@ -335,7 +335,7 @@ class _JourneyCheckinScreenState extends ConsumerState<JourneyCheckinScreen> {
               controller: _noteController,
               minLines: 2,
               maxLines: 3,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Color(0xFF1F2A44)),
               decoration: const InputDecoration(
                 labelText: 'Observações (opcional)',
               ),

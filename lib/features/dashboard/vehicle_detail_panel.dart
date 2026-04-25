@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
+
 import '../../data/models.dart';
-import '../../widgets/gauge_chart.dart';
 import '../../widgets/status_pill.dart';
 
 class VehicleDetailPanel extends StatelessWidget {
-  final TraccarDevice device;
   const VehicleDetailPanel({super.key, required this.device});
+
+  final TraccarDevice device;
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: const Color(0xFF111820),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -23,60 +24,35 @@ class VehicleDetailPanel extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(device.name,
-                        style: Theme.of(context).textTheme.titleLarge),
+                    child: Text(
+                      device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
                   ),
                   StatusPill(status: device.status),
                 ],
               ),
-              const SizedBox(height: 14),
-              GaugeChart(
-                value: 60,
-                minValue: 0,
-                maxValue: 120,
-                title: 'Velocidade',
-                unit: 'km/h',
-                color: Colors.blueAccent,
+              const SizedBox(height: 12),
+              const _CompactRow(
+                icon: Icons.speed_rounded,
+                label: 'Velocidade',
+                value: '60 km/h',
               ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
-                children: [
-                  _infoBlock('Ignição', 'Ligada'),
-                  _infoBlock('Bateria', '80%'),
-                  _infoBlock('Combustível', '58%'),
-                  _infoBlock('Odômetro', '123.456 km'),
-                  _infoBlock('Última atualização', device.lastUpdate ?? '-'),
-                ],
+              const SizedBox(height: 8),
+              _CompactRow(
+                icon: Icons.circle_outlined,
+                label: 'Status',
+                value: device.status,
               ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: const Text(
-                  'Localização: Av. Principal, Centro - São Paulo/SP',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text('Eventos recentes',
-                  style: Theme.of(context).textTheme.titleSmall),
-              ...List.generate(
-                3,
-                (i) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Evento ${i + 1}',
-                      style: const TextStyle(color: Colors.white70)),
-                  subtitle: const Text('Descrição do evento',
-                      style: TextStyle(color: Colors.white38)),
-                ),
+              const SizedBox(height: 8),
+              const _CompactRow(
+                icon: Icons.power_settings_new_rounded,
+                label: 'Ignição',
+                value: 'Ligada',
               ),
             ],
           ),
@@ -84,13 +60,38 @@ class VehicleDetailPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _infoBlock(String label, String value) {
-    return Column(
+class _CompactRow extends StatelessWidget {
+  const _CompactRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       children: [
-        Text(label, style: TextStyle(color: Colors.white54)),
-        Text(value,
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        Icon(icon, color: Colors.white60, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white54),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     );
   }

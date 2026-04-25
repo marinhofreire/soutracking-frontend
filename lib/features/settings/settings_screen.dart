@@ -111,7 +111,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'White label',
                     style: Theme.of(
                       context,
-                    ).textTheme.labelMedium?.copyWith(color: Colors.white70),
+                    ).textTheme.labelMedium?.copyWith(
+                          color: const Color(0xFF60718D),
+                        ),
                   ),
                   const SizedBox(height: 12),
                   TextField(

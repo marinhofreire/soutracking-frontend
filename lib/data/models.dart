@@ -46,6 +46,7 @@ class TraccarPosition {
     required this.longitude,
     required this.fixTime,
     this.speed,
+    this.address,
     this.attributes,
   });
 
@@ -55,6 +56,7 @@ class TraccarPosition {
   final double longitude;
   final String fixTime;
   final double? speed;
+  final String? address;
   final Map<String, dynamic>? attributes;
 
   factory TraccarPosition.fromJson(Map<String, dynamic> json) {
@@ -65,6 +67,7 @@ class TraccarPosition {
       longitude: (json['longitude'] as num).toDouble(),
       fixTime: (json['fixTime'] ?? '') as String,
       speed: json['speed'] == null ? null : (json['speed'] as num).toDouble(),
+      address: json['address'] as String?,
       attributes: json['attributes'] is Map
           ? (json['attributes'] as Map).cast<String, dynamic>()
           : null,

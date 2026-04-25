@@ -18,6 +18,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   bool _always = true;
   final Set<String> _notificators = {'web'};
   bool _saving = false;
+  int? _deletingId;
 
   @override
   void dispose() {
@@ -72,6 +73,54 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     }
   }
 
+  Future<void> _deleteNotification(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    final name = '${item['name'] ?? 'Alerta #$id'}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir alerta'),
+        content: Text('Excluir "$name" do Traccar real?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/notifications/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(notificationsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alerta excluído.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir alerta: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final notificationsAsync = ref.watch(notificationsProvider);
@@ -109,6 +158,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 leading: const Icon(Icons.notifications_active_outlined),
                 title: Text(title),
                 subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                trailing: IconButton(
+                  tooltip: 'Excluir alerta',
+                  onPressed: _deletingId == item['id']
+                      ? null
+                      : () => _deleteNotification(item),
+                  icon: _deletingId == item['id']
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(
+                          Icons.delete_outline,
+                          color: Color(0xFFEF4444),
+                        ),
+                ),
               ),
             );
           },
@@ -263,11 +328,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.78),
+                    color: const Color(0xFFFFFFFF),
                     borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: Colors.black54,
+                        color: const Color(0xFF183153).withValues(alpha: 0.12),
                         blurRadius: 14,
                         offset: Offset(0, 8),
                       ),

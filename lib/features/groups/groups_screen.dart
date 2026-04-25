@@ -14,6 +14,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   final _nameController = TextEditingController();
   final _parentIdController = TextEditingController();
   bool _saving = false;
+  int? _deletingId;
 
   @override
   void dispose() {
@@ -63,6 +64,54 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
   }
 
+  Future<void> _deleteGroup(Map<String, dynamic> group) async {
+    final id = group['id'];
+    if (id is! int) return;
+    final name = '${group['name'] ?? 'Grupo #$id'}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir grupo'),
+        content: Text('Excluir "$name" do Traccar real?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/groups/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(groupsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Grupo excluído.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir grupo: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(groupsProvider);
@@ -105,11 +154,27 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
-                                ?.copyWith(color: Colors.white70),
+                                ?.copyWith(color: const Color(0xFF60718D)),
                           ),
                         ],
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Excluir grupo',
+                    onPressed: _deletingId == group['id']
+                        ? null
+                        : () => _deleteGroup(group),
+                    icon: _deletingId == group['id']
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFEF4444),
+                          ),
                   ),
                 ],
               ),
@@ -154,7 +219,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 900;
         // Sempre ancorar o painel à esquerda, logo após a sidebar
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,7 +228,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               width: 380,
               margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
               child: Card(
-                color: Colors.grey[900],
+                color: const Color(0xFFFFFFFF),
                 elevation: 6,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18)),

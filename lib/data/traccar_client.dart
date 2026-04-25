@@ -161,6 +161,138 @@ class TraccarClient {
         .toList();
   }
 
+  Future<Map<String, dynamic>> getServer({
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.get(
+      _uri('/server'),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao carregar servidor: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data;
+  }
+
+  Future<List<String>> getTimezones({
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.get(
+      _uri('/server/timezones'),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao carregar fusos: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => e.toString()).toList(growable: false);
+  }
+
+  Future<String?> reverseGeocode({
+    String? cookie,
+    String? authHeader,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final response = await _http.get(
+      _uri('/server/geocode', {
+        'latitude': '$latitude',
+        'longitude': '$longitude',
+      }),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao geocodificar: ${response.statusCode}');
+    }
+
+    final text = response.body.trim();
+    return text.isEmpty ? null : text;
+  }
+
+  Future<List<Map<String, dynamic>>> getComputedAttributes({
+    String? cookie,
+    String? authHeader,
+    bool all = true,
+  }) {
+    return getList(
+      path: '/attributes/computed',
+      cookie: cookie,
+      authHeader: authHeader,
+      query: all ? {'all': 'true'} : null,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getCommandTypes({
+    String? cookie,
+    String? authHeader,
+    int? deviceId,
+  }) {
+    return getList(
+      path: '/commands/types',
+      cookie: cookie,
+      authHeader: authHeader,
+      query: deviceId == null ? null : {'deviceId': '$deviceId'},
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getNotificationTypes({
+    String? cookie,
+    String? authHeader,
+  }) {
+    return getList(
+      path: '/notifications/types',
+      cookie: cookie,
+      authHeader: authHeader,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getStatistics({
+    String? cookie,
+    String? authHeader,
+    required DateTime from,
+    required DateTime to,
+  }) {
+    return getList(
+      path: '/statistics',
+      cookie: cookie,
+      authHeader: authHeader,
+      query: {
+        'from': from.toUtc().toIso8601String(),
+        'to': to.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getReport({
+    required String path,
+    String? cookie,
+    String? authHeader,
+    required DateTime from,
+    required DateTime to,
+    int? deviceId,
+    Map<String, dynamic>? extraQuery,
+  }) {
+    return getList(
+      path: path,
+      cookie: cookie,
+      authHeader: authHeader,
+      query: {
+        'from': from.toUtc().toIso8601String(),
+        'to': to.toUtc().toIso8601String(),
+        if (deviceId != null) 'deviceId': '$deviceId',
+        ...?extraQuery,
+      },
+    );
+  }
+
   Future<TraccarUser> createUser({
     String? cookie,
     String? authHeader,
@@ -266,6 +398,36 @@ class TraccarClient {
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data;
+  }
+
+  Future<Map<String, dynamic>> updateEntityById({
+    required String path,
+    required int id,
+    String? cookie,
+    String? authHeader,
+    required Map<String, dynamic> body,
+  }) {
+    return updateEntity(
+      path: '$path/$id',
+      cookie: cookie,
+      authHeader: authHeader,
+      body: body,
+    );
+  }
+
+  Future<void> deleteEntity({
+    required String path,
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.delete(
+      _uri(path),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Falha ao excluir $path: ${response.statusCode}');
+    }
   }
 
   Future<Map<String, dynamic>> getTenantConfig({

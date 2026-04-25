@@ -15,6 +15,7 @@ class SessionState {
     this.cookie,
     this.authHeader,
     this.tenantConfig = TenantConfig.fallback,
+    this.profileCode = 'OM',
   });
 
   final SessionStatus status;
@@ -23,6 +24,7 @@ class SessionState {
   final String? cookie;
   final String? authHeader;
   final TenantConfig tenantConfig;
+  final String profileCode;
 
   bool get isAuthenticated =>
       status == SessionStatus.authenticated &&
@@ -35,6 +37,7 @@ class SessionState {
     String? cookie,
     String? authHeader,
     TenantConfig? tenantConfig,
+    String? profileCode,
   }) {
     return SessionState(
       status: status ?? this.status,
@@ -43,6 +46,7 @@ class SessionState {
       cookie: cookie ?? this.cookie,
       authHeader: authHeader ?? this.authHeader,
       tenantConfig: tenantConfig ?? this.tenantConfig,
+      profileCode: profileCode ?? this.profileCode,
     );
   }
 }
@@ -50,7 +54,7 @@ class SessionState {
 enum SessionStatus { idle, loading, authenticated, error }
 
 final traccarClientProvider = Provider<TraccarClient>((ref) {
-  if (kUseMockApi) {
+  if (presentationMode || kUseMockApi) {
     return MockTraccarClient();
   }
   return TraccarClient(
@@ -68,6 +72,81 @@ class SessionController extends StateNotifier<SessionState> {
   final TraccarClient _client;
   final Ref _ref;
 
+  String _normalizeProfileCode(String? raw) {
+    final value = (raw ?? '').trim().toUpperCase();
+    switch (value) {
+      case 'MASTER_ADMIN':
+      case 'MASTER':
+      case 'MA':
+        return 'MA';
+      case 'ADMIN_EMPRESA':
+      case 'ADMIN':
+      case 'AE':
+        return 'AE';
+      case 'SUPERVISOR':
+      case 'SO':
+        return 'SO';
+      case 'OPERADOR':
+      case 'OM':
+        return 'OM';
+      case 'ATENDIMENTO':
+      case 'SAC':
+        return 'SAC';
+      case 'TECNICO':
+      case 'TEC':
+        return 'TEC';
+      case 'COMERCIAL':
+      case 'COM':
+        return 'COM';
+      case 'FINANCEIRO':
+      case 'FIN':
+        return 'FIN';
+      case 'ESTOQUE':
+      case 'EST':
+        return 'EST';
+      case 'GESTOR_CLIENTE':
+      case 'GC':
+        return 'GC';
+      case 'CLIENTE_FINAL':
+      case 'CF':
+        return 'CF';
+      default:
+        return value.isEmpty ? 'OM' : value;
+    }
+  }
+
+  String _inferProfileCode(
+    Map<String, dynamic> user, {
+    required TenantConfig tenantConfig,
+  }) {
+    final directRole = user['role']?.toString();
+    if (directRole != null && directRole.trim().isNotEmpty) {
+      return _normalizeProfileCode(directRole);
+    }
+
+    final directProfile = user['profile']?.toString();
+    if (directProfile != null && directProfile.trim().isNotEmpty) {
+      return _normalizeProfileCode(directProfile);
+    }
+
+    final directProfileCode = user['profileCode']?.toString();
+    if (directProfileCode != null && directProfileCode.trim().isNotEmpty) {
+      return _normalizeProfileCode(directProfileCode);
+    }
+
+    if (tenantConfig.isMasterAdmin) {
+      return 'MA';
+    }
+    if (tenantConfig.isCompanyAdmin || user['administrator'] == true) {
+      return 'AE';
+    }
+    if (user['readonly'] == true) {
+      return 'CF';
+    }
+
+    return 'OM';
+  }
+
   Future<void> login({required String email, required String password}) async {
     state = state.copyWith(
       status: SessionStatus.loading,
@@ -76,7 +155,30 @@ class SessionController extends StateNotifier<SessionState> {
     );
     if (presentationMode) {
       // Força modo demo estável
-      final tenantConfig = TenantConfig.fallback;
+      const tenantConfig = TenantConfig(
+        tenantId: 'demo',
+        companyName: 'SouFind Demo',
+        slug: 'soufind-demo',
+        modules: {
+          'tracking': true,
+          'assist': true,
+          'demand': true,
+          'admin': true,
+          'mdvr': false,
+          'zpro': false,
+          'finance': false,
+          'inventory': false,
+          'reports_plus': false,
+        },
+        isMasterAdmin: true,
+        isCompanyAdmin: true,
+        branding: {
+          'appName': 'SouFind',
+          'tagline': 'Central operacional em modo demo',
+          'primaryColor': '#2D7DFF',
+          'secondaryColor': '#22D3EE',
+        },
+      );
       await _ref
           .read(whiteLabelProvider.notifier)
           .applyBranding(tenantConfig.branding);
@@ -86,6 +188,7 @@ class SessionController extends StateNotifier<SessionState> {
         authHeader: '',
         error: null,
         tenantConfig: tenantConfig,
+        profileCode: 'MA',
       );
       return;
     }
@@ -129,12 +232,17 @@ class SessionController extends StateNotifier<SessionState> {
       await _ref
           .read(whiteLabelProvider.notifier)
           .applyBranding(tenantConfig.branding);
+      final profileCode = _inferProfileCode(
+        session.user,
+        tenantConfig: tenantConfig,
+      );
       state = state.copyWith(
         status: SessionStatus.authenticated,
         cookie: session.cookie,
         authHeader: session.authHeader,
         error: null,
         tenantConfig: tenantConfig,
+        profileCode: profileCode,
       );
     } catch (e) {
       state = state.copyWith(
@@ -208,8 +316,33 @@ final devicesProvider = FutureProvider<List<TraccarDevice>>((ref) async {
 final positionsProvider = FutureProvider<List<TraccarPosition>>((ref) async {
   final session = ref.watch(sessionProvider);
   if (presentationMode || !session.isAuthenticated) {
-    // DEMO: nunca lança exception, sempre retorna vazio
-    return [];
+    // DEMO: nunca lança exception, sempre retorna posições mockadas
+    return [
+      TraccarPosition(
+        id: 101,
+        deviceId: 1,
+        latitude: -23.5615,
+        longitude: -46.6554,
+        fixTime: '2026-02-27T12:00:00Z',
+        speed: 28,
+      ),
+      TraccarPosition(
+        id: 102,
+        deviceId: 2,
+        latitude: -23.6002,
+        longitude: -46.6891,
+        fixTime: '2026-02-27T11:58:00Z',
+        speed: 0,
+      ),
+      TraccarPosition(
+        id: 103,
+        deviceId: 3,
+        latitude: -23.5482,
+        longitude: -46.6921,
+        fixTime: '2026-02-27T11:54:00Z',
+        speed: 12,
+      ),
+    ];
   }
   final client = ref.watch(traccarClientProvider);
   try {
@@ -248,13 +381,27 @@ FutureProvider<List<Map<String, dynamic>>> _genericListProvider(String path) {
         path: path,
         cookie: session.cookie,
         authHeader: session.authHeader,
+        query: {'all': 'true'},
       );
     } catch (_) {
-      // Nunca propaga erro para UI
-      return [];
+      try {
+        return await client.getList(
+          path: path,
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+        );
+      } catch (_) {
+        // Nunca propaga erro para UI
+        return [];
+      }
     }
   });
 }
+
+DateTime _defaultReportFrom() =>
+    DateTime.now().subtract(const Duration(days: 7));
+
+DateTime _defaultReportTo() => DateTime.now();
 
 String _inferAttributeType(dynamic value) {
   if (value is bool) return 'boolean';
@@ -319,8 +466,7 @@ final attributesProvider =
   final catalog = <String, Map<String, dynamic>>{};
 
   try {
-    final computed = await client.getList(
-      path: '/attributes',
+    final computed = await client.getComputedAttributes(
       cookie: session.cookie,
       authHeader: session.authHeader,
     );
@@ -384,4 +530,158 @@ final attributesProvider =
 final calendarsProvider = _genericListProvider('/calendars');
 final ordersProvider = _genericListProvider('/orders');
 final permissionsProvider = _genericListProvider('/permissions');
-final statisticsProvider = _genericListProvider('/statistics');
+final statisticsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getStatistics(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      from: _defaultReportFrom(),
+      to: _defaultReportTo(),
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final serverProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return null;
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getServer(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+    );
+  } catch (_) {
+    return null;
+  }
+});
+
+final timezonesProvider = FutureProvider<List<String>>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getTimezones(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final commandTypesProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, int?>(
+        (ref, deviceId) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getCommandTypes(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      deviceId: deviceId,
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final notificationTypesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getNotificationTypes(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final latestEventsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final devices = await ref.watch(devicesProvider.future);
+  final deviceId = devices.length == 1 ? devices.first.id : null;
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getReport(
+      path: '/reports/events',
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      from: _defaultReportFrom(),
+      to: _defaultReportTo(),
+      deviceId: deviceId,
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final deviceEventsProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, int>(
+        (ref, deviceId) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return [];
+  }
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.getReport(
+      path: '/reports/events',
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      from: _defaultReportFrom(),
+      to: _defaultReportTo(),
+      deviceId: deviceId,
+    );
+  } catch (_) {
+    return [];
+  }
+});
+
+final reverseGeocodeProvider =
+    FutureProvider.family<String?, String>((ref, key) async {
+  final session = ref.watch(sessionProvider);
+  if (presentationMode || !session.isAuthenticated) {
+    return null;
+  }
+  final parts = key.split(',');
+  if (parts.length != 2) return null;
+  final latitude = double.tryParse(parts[0]);
+  final longitude = double.tryParse(parts[1]);
+  if (latitude == null || longitude == null) return null;
+  final client = ref.watch(traccarClientProvider);
+  try {
+    return await client.reverseGeocode(
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      latitude: latitude,
+      longitude: longitude,
+    );
+  } catch (_) {
+    return null;
+  }
+});

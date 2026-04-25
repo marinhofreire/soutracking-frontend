@@ -24,12 +24,22 @@ class ReportScreen extends ConsumerStatefulWidget {
 }
 
 class _ReportScreenState extends ConsumerState<ReportScreen> {
-  DateTime _from = DateTime.now().subtract(const Duration(hours: 24));
+  DateTime _from = DateTime.now().subtract(const Duration(days: 7));
   DateTime _to = DateTime.now();
   int? _deviceId;
   bool _loading = false;
   String? _error;
   List<Map<String, dynamic>> _results = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _load();
+      }
+    });
+  }
 
   Future<void> _pickDateTime({required bool isFrom}) async {
     final current = isFrom ? _from : _to;
@@ -71,11 +81,16 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
     final client = ref.read(traccarClientProvider);
 
     try {
+      final devices = widget.enableDeviceFilter
+          ? await ref.read(devicesProvider.future)
+          : const [];
+      final effectiveDeviceId =
+          _deviceId ?? (devices.length == 1 ? devices.first.id : null);
       final query = {
         'from': _from.toUtc().toIso8601String(),
         'to': _to.toUtc().toIso8601String(),
-        if (widget.enableDeviceFilter && _deviceId != null)
-          'deviceId': '$_deviceId',
+        if (widget.enableDeviceFilter && effectiveDeviceId != null)
+          'deviceId': '$effectiveDeviceId',
       };
       final data = await client.getList(
         path: widget.endpointPath,
@@ -84,6 +99,9 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
         query: query,
       );
       setState(() {
+        if (_deviceId == null && effectiveDeviceId != null) {
+          _deviceId = effectiveDeviceId;
+        }
         _results = data;
       });
     } catch (e) {

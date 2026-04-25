@@ -36,6 +36,7 @@ class JsonCrudScreen extends ConsumerStatefulWidget {
 class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
   late final TextEditingController _jsonController;
   bool _saving = false;
+  int? _deletingId;
 
   @override
   void initState() {
@@ -191,6 +192,55 @@ class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
     }
   }
 
+  Future<void> _delete(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    final title = _titleFor(item);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Excluir ${widget.title}'),
+        content: Text('Excluir "$title" do Traccar real?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '${widget.endpointPath}/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(widget.listProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Registro excluído.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final dataAsync = ref.watch(widget.listProvider);
@@ -247,12 +297,28 @@ class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
-                                ?.copyWith(color: Colors.white70),
+                                ?.copyWith(color: const Color(0xFF60718D)),
                           ),
                         ],
                       ],
                     ),
                   ),
+                  if (item['id'] is int)
+                    IconButton(
+                      tooltip: 'Excluir registro',
+                      onPressed:
+                          _deletingId == item['id'] ? null : () => _delete(item),
+                      icon: _deletingId == item['id']
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.delete_outline,
+                              color: Color(0xFFEF4444),
+                            ),
+                    ),
                 ],
               ),
             );

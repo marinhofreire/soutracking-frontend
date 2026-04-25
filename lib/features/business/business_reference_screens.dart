@@ -1,14 +1,27 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../admin/admin_reference_ui.dart';
+import '../../state/session_state.dart';
 
-class GeneralPanelScreen extends StatelessWidget {
+class GeneralPanelScreen extends ConsumerWidget {
   const GeneralPanelScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final devices = ref.watch(devicesProvider).valueOrNull ?? const [];
+    final positions = ref.watch(positionsProvider).valueOrNull ?? const [];
+    final events = ref.watch(latestEventsProvider).valueOrNull ?? const [];
+    final orders = ref.watch(ordersProvider).valueOrNull ?? const [];
+    final online =
+        devices.where((it) => it.status.toLowerCase() == 'online').length;
+    final stopped = positions.where((it) => (it.speed ?? 0) <= 1).length;
+    final alertCount = events.isNotEmpty
+        ? events.length
+        : devices.where((it) => it.status.toLowerCase() != 'online').length;
+
     return AdminReferenceScaffold(
       title: 'Painel Geral',
       breadcrumbs: const ['Comercial', 'Resumo'],
@@ -23,34 +36,34 @@ class GeneralPanelScreen extends StatelessWidget {
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
-                children: const [
+                children: [
                   _KpiStatCard(
-                    label: 'Novos Leads',
-                    value: '12',
-                    delta: '+8.2%',
+                    label: 'Veículos Online',
+                    value: '$online',
+                    delta: '${devices.length} total',
                     color: Color(0xFF3F8CFF),
-                    icon: Icons.group_add_outlined,
+                    icon: Icons.wifi_tethering_rounded,
                   ),
                   _KpiStatCard(
-                    label: 'Alocação',
-                    value: '5',
-                    delta: '-1.4%',
+                    label: 'Veículos Parados',
+                    value: '$stopped',
+                    delta: 'Traccar',
                     color: Color(0xFFFF5A7A),
-                    icon: Icons.person_pin_circle_outlined,
+                    icon: Icons.pause_circle_outline,
                   ),
                   _KpiStatCard(
-                    label: 'Veículos',
-                    value: '8',
-                    delta: '+3.1%',
+                    label: 'Alertas Ativos',
+                    value: '$alertCount',
+                    delta: '7 dias',
                     color: Color(0xFF00A7B5),
-                    icon: Icons.directions_car_filled_outlined,
+                    icon: Icons.warning_amber_rounded,
                   ),
                   _KpiStatCard(
-                    label: 'Inadimplência',
-                    value: '24',
-                    delta: '+2.0%',
+                    label: 'Ordens Abertas',
+                    value: '${orders.length}',
+                    delta: 'Traccar',
                     color: Color(0xFFFFB11B),
-                    icon: Icons.warning_amber_rounded,
+                    icon: Icons.assignment_outlined,
                   ),
                 ],
               ),
@@ -517,8 +530,8 @@ class _OrdersTablePanel extends StatelessWidget {
                           color: row.$5 == 'Concluída'
                               ? const Color(0xFF62D2A2)
                               : row.$5 == 'Andamento'
-                              ? const Color(0xFF4CA9FF)
-                              : const Color(0xFFFFB45C),
+                                  ? const Color(0xFF4CA9FF)
+                                  : const Color(0xFFFFB45C),
                         ),
                       ),
                       DataCell(
@@ -1140,9 +1153,8 @@ class _SparklinePainter extends CustomPainter {
 
     final maxValue = values.reduce(math.max);
     final minValue = values.reduce(math.min);
-    final range = (maxValue - minValue).abs() < 0.0001
-        ? 1.0
-        : maxValue - minValue;
+    final range =
+        (maxValue - minValue).abs() < 0.0001 ? 1.0 : maxValue - minValue;
 
     for (var i = 0; i < values.length; i++) {
       final x = i * size.width / (values.length - 1);

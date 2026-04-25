@@ -25,6 +25,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
   final LatLng _mapCenter = const LatLng(-23.55052, -46.633308);
   String _shapeMode = 'circle';
   bool _saving = false;
+  int? _deletingId;
 
   @override
   void dispose() {
@@ -99,24 +100,24 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        color: Colors.black.withValues(alpha: 0.7),
+        color: const Color(0xFFE7EEF8),
         child: Column(
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              color: Colors.black.withValues(alpha: 0.35),
+              color: const Color(0xFFFFFFFF),
               child: Row(
                 children: [
                   const Icon(Icons.edit_location_alt_outlined,
-                      color: Colors.white70, size: 18),
+                      color: Color(0xFF526684), size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _shapeMode == 'polygon'
                           ? 'Clique no mapa para adicionar os pontos do poligono'
                           : 'Clique no mapa para definir o centro da cerca',
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: const TextStyle(
+                          color: Color(0xFF526684), fontSize: 12),
                     ),
                   ),
                   if (_shapeMode == 'polygon') ...[
@@ -124,8 +125,8 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                       tooltip: 'Desfazer ultimo ponto',
                       visualDensity: VisualDensity.compact,
                       onPressed: _polygonPoints.isEmpty ? null : _undoLastPoint,
-                      icon:
-                          const Icon(Icons.undo_rounded, color: Colors.white70),
+                      icon: const Icon(Icons.undo_rounded,
+                          color: Color(0xFF526684)),
                     ),
                     IconButton(
                       tooltip: 'Limpar todos os pontos',
@@ -138,7 +139,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                               });
                             },
                       icon: const Icon(Icons.delete_sweep_rounded,
-                          color: Colors.white70),
+                          color: Color(0xFF526684)),
                     ),
                   ],
                 ],
@@ -327,6 +328,54 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     }
   }
 
+  Future<void> _deleteGeofence(Map<String, dynamic> fence) async {
+    final id = fence['id'];
+    if (id is! int) return;
+    final name = '${fence['name'] ?? 'Cerca #$id'}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir cerca'),
+        content: Text('Excluir "$name" do Traccar real?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/geofences/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(geofencesProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cerca excluída.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir cerca: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final geofencesAsync = ref.watch(geofencesProvider);
@@ -369,12 +418,28 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                             overflow: TextOverflow.ellipsis,
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.white70,
+                                      color: const Color(0xFF60718D),
                                     ),
                           ),
                         ],
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Excluir cerca',
+                    onPressed: _deletingId == fence['id']
+                        ? null
+                        : () => _deleteGeofence(fence),
+                    icon: _deletingId == fence['id']
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFEF4444),
+                          ),
                   ),
                 ],
               ),
@@ -475,16 +540,16 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
           if (_polygonPoints.isEmpty)
             const Text(
               'Adicione os pontos na ordem do contorno da cerca.',
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: Color(0xFF60718D)),
             )
           else
             Container(
               constraints: const BoxConstraints(maxHeight: 180),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: const Color(0xFFF7F9FD),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white24),
+                border: Border.all(color: const Color(0xFFDDE5F0)),
               ),
               child: ListView.separated(
                 shrinkWrap: true,
@@ -496,7 +561,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                     children: [
                       Text(
                         '${index + 1}. ${p.lat.toStringAsFixed(6)}, ${p.lon.toStringAsFixed(6)}',
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1F2A44)),
                       ),
                       const Spacer(),
                       IconButton(
@@ -504,7 +569,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(
                           Icons.close,
-                          color: Colors.white70,
+                          color: Color(0xFF60718D),
                           size: 18,
                         ),
                         onPressed: () {
@@ -549,11 +614,11 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                 margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.78),
+                    color: const Color(0xFFFFFFFF),
                     borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: Colors.black54,
+                        color: const Color(0xFF183153).withValues(alpha: 0.12),
                         blurRadius: 14,
                         offset: Offset(0, 8),
                       ),

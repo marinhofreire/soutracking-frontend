@@ -29,6 +29,7 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
   bool _saving = false;
   bool _isFormExpanded = false;
   int? _selectedDeviceId;
+  int? _deletingDeviceId;
 
   @override
   void dispose() {
@@ -131,6 +132,56 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
     }
   }
 
+  Future<void> _deleteDevice(dynamic device) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir dispositivo'),
+        content: Text(
+          'Excluir "${device.name}" do Traccar real? Essa ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingDeviceId = device.id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/devices/${device.id}',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(devicesProvider);
+      if (_selectedDeviceId == device.id) {
+        setState(() => _selectedDeviceId = null);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dispositivo excluído.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao excluir: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingDeviceId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(devicesProvider);
@@ -178,11 +229,12 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.grey[900],
+                        color: const Color(0xFFFFFFFF),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
+                            color:
+                                const Color(0xFF183153).withValues(alpha: 0.08),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -195,8 +247,11 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.local_shipping_outlined,
-                              size: 28, color: Colors.white70),
+                          const Icon(
+                            Icons.local_shipping_outlined,
+                            size: 28,
+                            color: Color(0xFF526684),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -207,7 +262,8 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
                                   style: Theme.of(context)
                                       .textTheme
                                       .titleMedium
-                                      ?.copyWith(color: Colors.white),
+                                      ?.copyWith(
+                                          color: const Color(0xFF1F2A44)),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -215,16 +271,35 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodySmall
-                                      ?.copyWith(color: Colors.white60),
+                                      ?.copyWith(
+                                          color: const Color(0xFF64748B)),
                                 ),
                               ],
                             ),
                           ),
                           StatusPill(status: device.status),
                           const SizedBox(width: 8),
-                          Icon(
+                          IconButton(
+                            tooltip: 'Excluir dispositivo',
+                            onPressed: _deletingDeviceId == device.id
+                                ? null
+                                : () => _deleteDevice(device),
+                            icon: _deletingDeviceId == device.id
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.delete_outline,
+                                    color: Color(0xFFEF4444),
+                                  ),
+                          ),
+                          const Icon(
                             Icons.chevron_right,
-                            color: Colors.white38,
+                            color: Color(0xFF8A99AD),
                           ),
                         ],
                       ),
@@ -251,11 +326,11 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
         ? Container(
             margin: const EdgeInsets.only(top: 24, bottom: 24, right: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.92),
+              color: const Color(0xFFFFFFFF),
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
+                  color: const Color(0xFF183153).withValues(alpha: 0.14),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
@@ -544,9 +619,12 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
       child: Row(
         children: [
           Expanded(
-              child:
-                  Text(label, style: const TextStyle(color: Colors.white70))),
-          Text(value, style: const TextStyle(color: Colors.white)),
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF60718D)),
+            ),
+          ),
+          Text(value, style: const TextStyle(color: Color(0xFF1F2A44))),
         ],
       ),
     );

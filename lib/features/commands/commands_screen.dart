@@ -40,6 +40,33 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
       return;
     }
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirmar comando remoto'),
+          content: Text(
+            'Enviar "$_commandType" para o dispositivo #$_deviceId? '
+            'Essa ação será executada no Traccar real.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.send_outlined),
+              label: const Text('Enviar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
     setState(() => _sending = true);
     final session = ref.read(sessionProvider);
     final client = ref.read(traccarClientProvider);
@@ -217,11 +244,11 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
                 margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.78),
+                    color: const Color(0xFFFFFFFF),
                     borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: Colors.black54,
+                        color: const Color(0xFF183153).withValues(alpha: 0.12),
                         blurRadius: 14,
                         offset: Offset(0, 8),
                       ),
