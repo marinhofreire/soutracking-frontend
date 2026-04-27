@@ -372,7 +372,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'vehicles':
         return 'Frota, cercas, histórico e sensores';
       case 'alerts':
-        return 'Eventos e notificações Traccar';
+        return 'Eventos e notificações';
       case 'orders':
         return 'Ordens de serviço integradas';
       case 'calls':
@@ -482,7 +482,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             _PanelToolEntry(
               label: 'Veículos',
               icon: Icons.directions_car_outlined,
-              detail: 'Dispositivos Traccar',
+              detail: 'Dispositivos de Rastreamento',
               child: VehiclesScreen(),
             ),
             _PanelToolEntry(
@@ -934,7 +934,9 @@ class _TopSearchBar extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    '$title • Dados Traccar',
+                                    title == 'Ordens de Serviço'
+                                        ? 'Ordens de Serviço • Operação integrada'
+                                        : '$title • Dados de Rastreamento',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
