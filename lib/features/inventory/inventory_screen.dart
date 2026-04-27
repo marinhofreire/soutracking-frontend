@@ -202,6 +202,7 @@ class _LoadingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const AdminGlassPanel(
+      backgroundColor: Color(0xF2F8FAFC),
       child: SizedBox(
         height: 120,
         child: Center(child: CircularProgressIndicator()),
@@ -218,6 +219,7 @@ class _ErrorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AdminGlassPanel(
+      backgroundColor: const Color(0xF2F8FAFC),
       child: SizedBox(
         height: 120,
         child: Center(

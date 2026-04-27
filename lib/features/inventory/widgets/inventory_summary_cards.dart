@@ -11,6 +11,7 @@ class InventorySummaryCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AdminGlassPanel(
+      backgroundColor: const Color(0xF2F8FAFC),
       child: Wrap(
         spacing: 10,
         runSpacing: 10,
