@@ -3,56 +3,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_constants.dart';
 import '../admin/admin_reference_ui.dart';
-import 'models/service_order_models.dart';
-import 'repositories/mock_service_orders_repository.dart';
-import 'repositories/service_orders_repository.dart';
-import 'services/service_orders_api_service.dart';
-import 'widgets/service_orders_filters_bar.dart';
-import 'widgets/service_orders_kpi_row.dart';
-import 'widgets/service_orders_table.dart';
+import 'models/call_models.dart';
+import 'repositories/calls_repository.dart';
+import 'repositories/mock_calls_repository.dart';
+import 'services/calls_api_service.dart';
+import 'widgets/calls_filters_bar.dart';
+import 'widgets/calls_kpi_row.dart';
+import 'widgets/calls_table.dart';
 
-final serviceOrdersApiServiceProvider =
-    Provider<ServiceOrdersApiService>((ref) {
-  return ServiceOrdersApiService(baseUrl: kSouAssistApiBaseUrl);
+final callsApiServiceProvider = Provider<CallsApiService>((ref) {
+  return CallsApiService(baseUrl: kSouAssistApiBaseUrl);
 });
 
-final serviceOrdersRepositoryProvider =
-    Provider<ServiceOrdersRepository>((ref) {
+final callsRepositoryProvider = Provider<CallsRepository>((ref) {
   // Mantemos mock nesta etapa; swap para API real fica centralizado aqui.
-  ref.watch(serviceOrdersApiServiceProvider);
-  return const MockServiceOrdersRepository();
+  ref.watch(callsApiServiceProvider);
+  return const MockCallsRepository();
 });
 
-final serviceOrdersKpiProvider =
-    FutureProvider<ServiceOrderKpiSummary>((ref) async {
-  final repository = ref.watch(serviceOrdersRepositoryProvider);
+final callsKpiProvider = FutureProvider<CallKpiSummary>((ref) async {
+  final repository = ref.watch(callsRepositoryProvider);
   return repository.getKpiSummary();
 });
 
-final serviceOrdersListProvider =
-    FutureProvider<List<ServiceOrderRecord>>((ref) async {
-  final repository = ref.watch(serviceOrdersRepositoryProvider);
-  return repository.getOrders();
+final callsListProvider = FutureProvider<List<CallTicket>>((ref) async {
+  final repository = ref.watch(callsRepositoryProvider);
+  return repository.getTickets();
 });
 
-class ServiceOrdersScreen extends ConsumerStatefulWidget {
-  const ServiceOrdersScreen({super.key});
+class CallsScreen extends ConsumerStatefulWidget {
+  const CallsScreen({super.key});
 
   @override
-  ConsumerState<ServiceOrdersScreen> createState() =>
-      _ServiceOrdersScreenState();
+  ConsumerState<CallsScreen> createState() => _CallsScreenState();
 }
 
-class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
+class _CallsScreenState extends ConsumerState<CallsScreen> {
   final _searchController = TextEditingController();
 
   String _search = '';
   String _status = 'Todos';
   String _priority = 'Todas';
-  String _technician = 'Todos';
+  String _category = 'Todas';
+  String _attendant = 'Todos';
   String _client = 'Todos';
-  String _vehicle = 'Todos';
-  String _period = '30 dias';
 
   @override
   void dispose() {
@@ -62,18 +56,18 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final kpiAsync = ref.watch(serviceOrdersKpiProvider);
-    final listAsync = ref.watch(serviceOrdersListProvider);
+    final kpiAsync = ref.watch(callsKpiProvider);
+    final listAsync = ref.watch(callsListProvider);
 
     return AdminReferenceScaffold(
-      title: 'Ordens de Servico',
-      breadcrumbs: const ['Operacao', 'Ordens de Servico'],
-      selectedMenu: 'orders',
+      title: 'Chamados',
+      breadcrumbs: const ['Operacao', 'Chamados'],
+      selectedMenu: 'calls',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           kpiAsync.when(
-            data: (summary) => ServiceOrdersKpiRow(summary: summary),
+            data: (summary) => CallsKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
               message: 'Falha ao carregar indicadores: $error',
@@ -90,49 +84,45 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
                 'Todas',
                 ...{for (final item in records) item.priority.label},
               ];
-              final technicianOptions = <String>[
+              final categoryOptions = <String>[
+                'Todas',
+                ...{for (final item in records) item.category.label},
+              ];
+              final attendantOptions = <String>[
                 'Todos',
-                ...{for (final item in records) item.technician},
+                ...{for (final item in records) item.attendant},
               ];
               final clientOptions = <String>[
                 'Todos',
                 ...{for (final item in records) item.client},
               ];
-              final vehicleOptions = <String>[
-                'Todos',
-                ...{for (final item in records) item.vehicle},
-              ];
-              const periodOptions = ['Hoje', '7 dias', '30 dias', '90 dias'];
 
               final filtered = _applyFilters(records);
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ServiceOrdersFiltersBar(
+                  CallsFiltersBar(
                     searchController: _searchController,
                     status: _status,
                     priority: _priority,
-                    technician: _technician,
+                    category: _category,
+                    attendant: _attendant,
                     client: _client,
-                    vehicle: _vehicle,
-                    period: _period,
                     statusOptions: statusOptions,
                     priorityOptions: priorityOptions,
-                    technicianOptions: technicianOptions,
+                    categoryOptions: categoryOptions,
+                    attendantOptions: attendantOptions,
                     clientOptions: clientOptions,
-                    vehicleOptions: vehicleOptions,
-                    periodOptions: periodOptions,
                     onSearchChanged: (value) => setState(() => _search = value),
                     onStatusChanged: (value) => setState(() => _status = value),
                     onPriorityChanged: (value) =>
                         setState(() => _priority = value),
-                    onTechnicianChanged: (value) =>
-                        setState(() => _technician = value),
+                    onCategoryChanged: (value) =>
+                        setState(() => _category = value),
+                    onAttendantChanged: (value) =>
+                        setState(() => _attendant = value),
                     onClientChanged: (value) => setState(() => _client = value),
-                    onVehicleChanged: (value) =>
-                        setState(() => _vehicle = value),
-                    onPeriodChanged: (value) => setState(() => _period = value),
                     onMoreFilters: () {
                       _showMockAction(
                         'Mais filtros sera habilitado na proxima etapa.',
@@ -140,10 +130,10 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  ServiceOrdersTable(
+                  CallsTable(
                     records: filtered,
                     onView: (record) {
-                      _showMockAction('Visualizando OS ${record.id}.');
+                      _showMockAction('Visualizando chamado ${record.id}.');
                     },
                   ),
                 ],
@@ -151,7 +141,7 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
             },
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar ordens de servico: $error',
+              message: 'Falha ao carregar chamados: $error',
             ),
           ),
         ],
@@ -159,26 +149,15 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
     );
   }
 
-  List<ServiceOrderRecord> _applyFilters(List<ServiceOrderRecord> records) {
-    final now = DateTime.now();
+  List<CallTicket> _applyFilters(List<CallTicket> records) {
     final query = _search.trim().toLowerCase();
 
-    final periodStart = switch (_period) {
-      'Hoje' => DateTime(now.year, now.month, now.day),
-      '7 dias' => now.subtract(const Duration(days: 7)),
-      '30 dias' => now.subtract(const Duration(days: 30)),
-      '90 dias' => now.subtract(const Duration(days: 90)),
-      _ => DateTime(2000),
-    };
-
     return records.where((record) {
-      if (record.createdAt.isBefore(periodStart)) return false;
-
       if (query.isNotEmpty) {
         final matchesQuery = record.id.toLowerCase().contains(query) ||
             record.client.toLowerCase().contains(query) ||
             record.vehicle.toLowerCase().contains(query) ||
-            record.serviceType.label.toLowerCase().contains(query);
+            record.subject.toLowerCase().contains(query);
         if (!matchesQuery) return false;
       }
 
@@ -186,11 +165,13 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
       if (_priority != 'Todas' && record.priority.label != _priority) {
         return false;
       }
-      if (_technician != 'Todos' && record.technician != _technician) {
+      if (_category != 'Todas' && record.category.label != _category) {
+        return false;
+      }
+      if (_attendant != 'Todos' && record.attendant != _attendant) {
         return false;
       }
       if (_client != 'Todos' && record.client != _client) return false;
-      if (_vehicle != 'Todos' && record.vehicle != _vehicle) return false;
 
       return true;
     }).toList();
@@ -239,14 +220,5 @@ class _ErrorPanel extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class OrdersScreen extends StatelessWidget {
-  const OrdersScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const ServiceOrdersScreen();
   }
 }

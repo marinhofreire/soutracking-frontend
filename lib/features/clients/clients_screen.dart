@@ -3,50 +3,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_constants.dart';
 import '../admin/admin_reference_ui.dart';
-import 'models/vehicle_models.dart';
-import 'repositories/mock_vehicles_repository.dart';
-import 'repositories/vehicles_repository.dart';
-import 'services/vehicles_api_service.dart';
-import 'widgets/vehicles_kpi_row.dart';
-import 'widgets/vehicles_table.dart';
+import 'models/client_models.dart';
+import 'repositories/clients_repository.dart';
+import 'repositories/mock_clients_repository.dart';
+import 'services/clients_api_service.dart';
+import 'widgets/clients_kpi_row.dart';
+import 'widgets/clients_table.dart';
 
-final vehiclesApiServiceProvider = Provider<VehiclesApiService>((ref) {
-  return VehiclesApiService(baseUrl: kSouAssistApiBaseUrl);
+final clientsApiServiceProvider = Provider<ClientsApiService>((ref) {
+  return ClientsApiService(baseUrl: kSouAssistApiBaseUrl);
 });
 
-final vehiclesRepositoryProvider = Provider<VehiclesRepository>((ref) {
-  // Mantemos mock nesta etapa; swap para API real fica centralizado aqui.
-  ref.watch(vehiclesApiServiceProvider);
-  return const MockVehiclesRepository();
+final clientsRepositoryProvider = Provider<ClientsRepository>((ref) {
+  // Mantemos mock para esta etapa; a troca para API real fica centralizada aqui.
+  ref.watch(clientsApiServiceProvider);
+  return const MockClientsRepository();
 });
 
-final vehiclesKpiProvider = FutureProvider<VehicleKpiSummary>((ref) async {
-  final repository = ref.watch(vehiclesRepositoryProvider);
+final clientsKpiProvider = FutureProvider<ClientKpiSummary>((ref) async {
+  final repository = ref.watch(clientsRepositoryProvider);
   return repository.getKpiSummary();
 });
 
-final vehiclesListProvider = FutureProvider<List<VehicleRecord>>((ref) async {
-  final repository = ref.watch(vehiclesRepositoryProvider);
-  return repository.getVehicles();
+final clientsListProvider = FutureProvider<List<ClientRecord>>((ref) async {
+  final repository = ref.watch(clientsRepositoryProvider);
+  return repository.getClients();
 });
 
-class VehiclesScreen extends ConsumerWidget {
-  const VehiclesScreen({super.key});
+class ClientsScreen extends ConsumerWidget {
+  const ClientsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final kpiAsync = ref.watch(vehiclesKpiProvider);
-    final listAsync = ref.watch(vehiclesListProvider);
+    final kpiAsync = ref.watch(clientsKpiProvider);
+    final listAsync = ref.watch(clientsListProvider);
 
     return AdminReferenceScaffold(
-      title: 'Veiculos',
-      breadcrumbs: const ['Operacao', 'Veiculos'],
-      selectedMenu: 'vehicles',
+      title: 'Clientes',
+      breadcrumbs: const ['Operacao', 'Clientes'],
+      selectedMenu: 'clients',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           kpiAsync.when(
-            data: (summary) => VehiclesKpiRow(summary: summary),
+            data: (summary) => ClientsKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
               message: 'Falha ao carregar indicadores: $error',
@@ -54,10 +54,10 @@ class VehiclesScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           listAsync.when(
-            data: (records) => VehiclesTable(records: records),
+            data: (records) => ClientsTable(records: records),
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar veiculos: $error',
+              message: 'Falha ao carregar clientes: $error',
             ),
           ),
         ],

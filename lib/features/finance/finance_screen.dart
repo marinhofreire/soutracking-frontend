@@ -3,56 +3,57 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_constants.dart';
 import '../admin/admin_reference_ui.dart';
-import 'models/service_order_models.dart';
-import 'repositories/mock_service_orders_repository.dart';
-import 'repositories/service_orders_repository.dart';
-import 'services/service_orders_api_service.dart';
-import 'widgets/service_orders_filters_bar.dart';
-import 'widgets/service_orders_kpi_row.dart';
-import 'widgets/service_orders_table.dart';
+import 'models/finance_models.dart';
+import 'repositories/finance_repository.dart';
+import 'repositories/mock_finance_repository.dart';
+import 'services/finance_api_service.dart';
+import 'widgets/finance_filters_bar.dart';
+import 'widgets/finance_kpi_row.dart';
+import 'widgets/finance_summary_cards.dart';
+import 'widgets/finance_table.dart';
 
-final serviceOrdersApiServiceProvider =
-    Provider<ServiceOrdersApiService>((ref) {
-  return ServiceOrdersApiService(baseUrl: kSouAssistApiBaseUrl);
+final financeApiServiceProvider = Provider<FinanceApiService>((ref) {
+  return FinanceApiService(baseUrl: kSouAssistApiBaseUrl);
 });
 
-final serviceOrdersRepositoryProvider =
-    Provider<ServiceOrdersRepository>((ref) {
+final financeRepositoryProvider = Provider<FinanceRepository>((ref) {
   // Mantemos mock nesta etapa; swap para API real fica centralizado aqui.
-  ref.watch(serviceOrdersApiServiceProvider);
-  return const MockServiceOrdersRepository();
+  ref.watch(financeApiServiceProvider);
+  return const MockFinanceRepository();
 });
 
-final serviceOrdersKpiProvider =
-    FutureProvider<ServiceOrderKpiSummary>((ref) async {
-  final repository = ref.watch(serviceOrdersRepositoryProvider);
+final financeKpiProvider = FutureProvider<FinanceKpiSummary>((ref) async {
+  final repository = ref.watch(financeRepositoryProvider);
   return repository.getKpiSummary();
 });
 
-final serviceOrdersListProvider =
-    FutureProvider<List<ServiceOrderRecord>>((ref) async {
-  final repository = ref.watch(serviceOrdersRepositoryProvider);
-  return repository.getOrders();
+final financeSummaryCardsProvider =
+    FutureProvider<List<FinanceSummaryCard>>((ref) async {
+  final repository = ref.watch(financeRepositoryProvider);
+  return repository.getSummaryCards();
 });
 
-class ServiceOrdersScreen extends ConsumerStatefulWidget {
-  const ServiceOrdersScreen({super.key});
+final financeChargesProvider =
+    FutureProvider<List<FinanceChargeRecord>>((ref) async {
+  final repository = ref.watch(financeRepositoryProvider);
+  return repository.getCharges();
+});
+
+class FinanceScreen extends ConsumerStatefulWidget {
+  const FinanceScreen({super.key});
 
   @override
-  ConsumerState<ServiceOrdersScreen> createState() =>
-      _ServiceOrdersScreenState();
+  ConsumerState<FinanceScreen> createState() => _FinanceScreenState();
 }
 
-class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
+class _FinanceScreenState extends ConsumerState<FinanceScreen> {
   final _searchController = TextEditingController();
 
   String _search = '';
   String _status = 'Todos';
-  String _priority = 'Todas';
-  String _technician = 'Todos';
-  String _client = 'Todos';
-  String _vehicle = 'Todos';
   String _period = '30 dias';
+  String _paymentMethod = 'Todos';
+  String _client = 'Todos';
 
   @override
   void dispose() {
@@ -62,88 +63,92 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final kpiAsync = ref.watch(serviceOrdersKpiProvider);
-    final listAsync = ref.watch(serviceOrdersListProvider);
+    final kpiAsync = ref.watch(financeKpiProvider);
+    final summaryAsync = ref.watch(financeSummaryCardsProvider);
+    final chargesAsync = ref.watch(financeChargesProvider);
 
     return AdminReferenceScaffold(
-      title: 'Ordens de Servico',
-      breadcrumbs: const ['Operacao', 'Ordens de Servico'],
-      selectedMenu: 'orders',
+      title: 'Financeiro',
+      breadcrumbs: const ['Operacao', 'Financeiro'],
+      selectedMenu: 'finance',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           kpiAsync.when(
-            data: (summary) => ServiceOrdersKpiRow(summary: summary),
+            data: (summary) => FinanceKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
               message: 'Falha ao carregar indicadores: $error',
             ),
           ),
           const SizedBox(height: 12),
-          listAsync.when(
+          summaryAsync.when(
+            data: (cards) => FinanceSummaryCards(cards: cards),
+            loading: () => const _LoadingPanel(),
+            error: (error, _) => _ErrorPanel(
+              message: 'Falha ao carregar resumo financeiro: $error',
+            ),
+          ),
+          const SizedBox(height: 12),
+          chargesAsync.when(
             data: (records) {
               final statusOptions = <String>[
                 'Todos',
                 ...{for (final item in records) item.status.label},
               ];
-              final priorityOptions = <String>[
-                'Todas',
-                ...{for (final item in records) item.priority.label},
-              ];
-              final technicianOptions = <String>[
+              const periodOptions = ['Hoje', '7 dias', '30 dias', '90 dias'];
+              final methodOptions = <String>[
                 'Todos',
-                ...{for (final item in records) item.technician},
+                ...{for (final item in records) item.paymentMethod.label},
               ];
               final clientOptions = <String>[
                 'Todos',
                 ...{for (final item in records) item.client},
               ];
-              final vehicleOptions = <String>[
-                'Todos',
-                ...{for (final item in records) item.vehicle},
-              ];
-              const periodOptions = ['Hoje', '7 dias', '30 dias', '90 dias'];
 
               final filtered = _applyFilters(records);
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ServiceOrdersFiltersBar(
+                  FinanceFiltersBar(
                     searchController: _searchController,
                     status: _status,
-                    priority: _priority,
-                    technician: _technician,
-                    client: _client,
-                    vehicle: _vehicle,
                     period: _period,
+                    paymentMethod: _paymentMethod,
+                    client: _client,
                     statusOptions: statusOptions,
-                    priorityOptions: priorityOptions,
-                    technicianOptions: technicianOptions,
-                    clientOptions: clientOptions,
-                    vehicleOptions: vehicleOptions,
                     periodOptions: periodOptions,
+                    paymentMethodOptions: methodOptions,
+                    clientOptions: clientOptions,
                     onSearchChanged: (value) => setState(() => _search = value),
                     onStatusChanged: (value) => setState(() => _status = value),
-                    onPriorityChanged: (value) =>
-                        setState(() => _priority = value),
-                    onTechnicianChanged: (value) =>
-                        setState(() => _technician = value),
-                    onClientChanged: (value) => setState(() => _client = value),
-                    onVehicleChanged: (value) =>
-                        setState(() => _vehicle = value),
                     onPeriodChanged: (value) => setState(() => _period = value),
-                    onMoreFilters: () {
-                      _showMockAction(
-                        'Mais filtros sera habilitado na proxima etapa.',
-                      );
-                    },
+                    onPaymentMethodChanged: (value) =>
+                        setState(() => _paymentMethod = value),
+                    onClientChanged: (value) => setState(() => _client = value),
+                    onMoreFilters: () => _showMockAction(
+                        'Mais filtros sera habilitado na proxima etapa.'),
+                    onNewCharge: () =>
+                        _showMockAction('Nova cobranca simulada com sucesso.'),
+                    onPaymentLink: () => _showMockAction(
+                        'Criacao de link de pagamento simulada.'),
+                    onRecurrence: () =>
+                        _showMockAction('Criacao de recorrencia simulada.'),
+                    onExport: () => _showMockAction('Exportacao simulada.'),
                   ),
                   const SizedBox(height: 12),
-                  ServiceOrdersTable(
+                  FinanceTable(
                     records: filtered,
                     onView: (record) {
-                      _showMockAction('Visualizando OS ${record.id}.');
+                      _showMockAction('Visualizando cobranca ${record.id}.');
+                    },
+                    onMarkPaid: (record) {
+                      _showMockAction(
+                          'Marcado como pago (mock): ${record.id}.');
+                    },
+                    onCancel: (record) {
+                      _showMockAction('Cancelamento mock: ${record.id}.');
                     },
                   ),
                 ],
@@ -151,7 +156,7 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
             },
             loading: () => const _LoadingPanel(),
             error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar ordens de servico: $error',
+              message: 'Falha ao carregar cobrancas: $error',
             ),
           ),
         ],
@@ -159,7 +164,7 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
     );
   }
 
-  List<ServiceOrderRecord> _applyFilters(List<ServiceOrderRecord> records) {
+  List<FinanceChargeRecord> _applyFilters(List<FinanceChargeRecord> records) {
     final now = DateTime.now();
     final query = _search.trim().toLowerCase();
 
@@ -177,20 +182,16 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
       if (query.isNotEmpty) {
         final matchesQuery = record.id.toLowerCase().contains(query) ||
             record.client.toLowerCase().contains(query) ||
-            record.vehicle.toLowerCase().contains(query) ||
-            record.serviceType.label.toLowerCase().contains(query);
+            record.description.toLowerCase().contains(query);
         if (!matchesQuery) return false;
       }
 
       if (_status != 'Todos' && record.status.label != _status) return false;
-      if (_priority != 'Todas' && record.priority.label != _priority) {
-        return false;
-      }
-      if (_technician != 'Todos' && record.technician != _technician) {
+      if (_paymentMethod != 'Todos' &&
+          record.paymentMethod.label != _paymentMethod) {
         return false;
       }
       if (_client != 'Todos' && record.client != _client) return false;
-      if (_vehicle != 'Todos' && record.vehicle != _vehicle) return false;
 
       return true;
     }).toList();
@@ -239,14 +240,5 @@ class _ErrorPanel extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class OrdersScreen extends StatelessWidget {
-  const OrdersScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const ServiceOrdersScreen();
   }
 }

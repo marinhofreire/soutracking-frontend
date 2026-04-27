@@ -1,7 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/session_state.dart';
+import '../../core/app_constants.dart';
+import '../admin/admin_reference_ui.dart';
+import 'models/driver_models.dart';
+import 'repositories/drivers_repository.dart';
+import 'repositories/mock_drivers_repository.dart';
+import 'services/drivers_api_service.dart';
+import 'widgets/drivers_filters_bar.dart';
+import 'widgets/drivers_kpi_row.dart';
+import 'widgets/drivers_table.dart';
+
+final driversApiServiceProvider = Provider<DriversApiService>((ref) {
+  return DriversApiService(baseUrl: kSouAssistApiBaseUrl);
+});
+
+final driversRepositoryProvider = Provider<DriversRepository>((ref) {
+  // Mantemos mock nesta etapa; swap para API real fica centralizado aqui.
+  ref.watch(driversApiServiceProvider);
+  return const MockDriversRepository();
+});
+
+final driversKpiProvider = FutureProvider<DriverKpiSummary>((ref) async {
+  final repository = ref.watch(driversRepositoryProvider);
+  return repository.getKpiSummary();
+});
+
+final driversListProvider = FutureProvider<List<DriverRecord>>((ref) async {
+  final repository = ref.watch(driversRepositoryProvider);
+  return repository.getDrivers();
+});
 
 class DriversScreen extends ConsumerStatefulWidget {
   const DriversScreen({super.key});
@@ -11,196 +39,151 @@ class DriversScreen extends ConsumerStatefulWidget {
 }
 
 class _DriversScreenState extends ConsumerState<DriversScreen> {
-  final _nameController = TextEditingController();
-  final _uniqueIdController = TextEditingController();
-  final _phoneController = TextEditingController();
-  bool _saving = false;
+  final _searchController = TextEditingController();
+
+  String _search = '';
+  String _status = 'Todos';
+  String _vehicle = 'Todos';
+  String _cnh = 'Todas';
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _uniqueIdController.dispose();
-    _phoneController.dispose();
+    _searchController.dispose();
     super.dispose();
-  }
-
-  Future<void> _createDriver() async {
-    final name = _nameController.text.trim();
-    final uniqueId = _uniqueIdController.text.trim();
-    final phone = _phoneController.text.trim();
-
-    if (name.isEmpty || uniqueId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nome e identificador são obrigatórios.')),
-      );
-      return;
-    }
-
-    setState(() => _saving = true);
-    final session = ref.read(sessionProvider);
-    final client = ref.read(traccarClientProvider);
-
-    try {
-      await client.createEntity(
-        path: '/drivers',
-        cookie: session.cookie,
-        authHeader: session.authHeader,
-        body: {
-          'name': name,
-          'uniqueId': uniqueId,
-          if (phone.isNotEmpty) 'phone': phone,
-        },
-      );
-      ref.invalidate(driversProvider);
-      _nameController.clear();
-      _uniqueIdController.clear();
-      _phoneController.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Motorista criado com sucesso.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Falha ao criar motorista: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final driversAsync = ref.watch(driversProvider);
+    final kpiAsync = ref.watch(driversKpiProvider);
+    final listAsync = ref.watch(driversListProvider);
 
-    final list = driversAsync.when(
-      data: (drivers) {
-        if (drivers.isEmpty) {
-          return const Center(child: Text('Nenhum motorista encontrado'));
-        }
-        return ListView.separated(
-          itemCount: drivers.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final driver = drivers[index];
-            return Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-              child: Row(
+    return AdminReferenceScaffold(
+      title: 'Motoristas',
+      breadcrumbs: const ['Operacao', 'Motoristas'],
+      selectedMenu: 'drivers',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          kpiAsync.when(
+            data: (summary) => DriversKpiRow(summary: summary),
+            loading: () => const _LoadingPanel(),
+            error: (error, _) => _ErrorPanel(
+              message: 'Falha ao carregar indicadores: $error',
+            ),
+          ),
+          const SizedBox(height: 12),
+          listAsync.when(
+            data: (records) {
+              final statusOptions = <String>{
+                'Todos',
+                ...records.map((item) => item.status.label),
+              }.toList();
+              final vehicleOptions = <String>{
+                'Todos',
+                ...records.map((item) => item.vehicle),
+              }.toList();
+              final cnhOptions = <String>{
+                'Todas',
+                ...records.map((item) => item.cnhState.label),
+              }.toList();
+
+              final filtered = _applyFilters(records);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.badge_outlined),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${driver['name'] ?? 'Motorista'}',
-                          style: Theme.of(context).textTheme.titleMedium,
+                  DriversFiltersBar(
+                    searchController: _searchController,
+                    status: _status,
+                    vehicle: _vehicle,
+                    cnh: _cnh,
+                    statusOptions: statusOptions,
+                    vehicleOptions: vehicleOptions,
+                    cnhOptions: cnhOptions,
+                    onSearchChanged: (value) => setState(() => _search = value),
+                    onStatusChanged: (value) => setState(() => _status = value),
+                    onVehicleChanged: (value) =>
+                        setState(() => _vehicle = value),
+                    onCnhChanged: (value) => setState(() => _cnh = value),
+                    onMoreFilters: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Mais filtros sera habilitado na proxima etapa.'),
                         ),
-                        if (driver['uniqueId'] != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'ID: ${driver['uniqueId']}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: Colors.white70),
-                          ),
-                        ],
-                      ],
-                    ),
+                      );
+                    },
                   ),
+                  const SizedBox(height: 12),
+                  DriversTable(records: filtered),
                 ],
-              ),
-            );
-          },
-        );
-      },
-      error: (error, _) => Center(child: Text('Erro: $error')),
-      loading: () => const Center(child: CircularProgressIndicator()),
-    );
-
-    final form = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Motoristas', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Nome do motorista'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _uniqueIdController,
-          decoration: const InputDecoration(labelText: 'Identificador único'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _phoneController,
-          decoration: const InputDecoration(labelText: 'Telefone (opcional)'),
-        ),
-        const SizedBox(height: 12),
-        FilledButton(
-          onPressed: _saving ? null : _createDriver,
-          child: _saving
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Criar motorista'),
-        ),
-      ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Painel de formulário sempre à esquerda, colado na sidebar
-            Container(
-              width: 380,
-              margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black54,
-                      blurRadius: 14,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: SingleChildScrollView(
-                    child: form,
-                  ),
-                ),
-              ),
+              );
+            },
+            loading: () => const _LoadingPanel(),
+            error: (error, _) => _ErrorPanel(
+              message: 'Falha ao carregar motoristas: $error',
             ),
-            // Lista ocupa o restante da área
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 24, right: 16),
-                child: list,
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<DriverRecord> _applyFilters(List<DriverRecord> records) {
+    final query = _search.trim().toLowerCase();
+
+    return records.where((record) {
+      if (query.isNotEmpty) {
+        final matchesQuery = record.name.toLowerCase().contains(query) ||
+            record.phone.toLowerCase().contains(query) ||
+            record.cnh.toLowerCase().contains(query);
+        if (!matchesQuery) return false;
+      }
+
+      if (_status != 'Todos' && record.status.label != _status) return false;
+      if (_vehicle != 'Todos' && record.vehicle != _vehicle) return false;
+      if (_cnh != 'Todas' && record.cnhState.label != _cnh) return false;
+
+      return true;
+    }).toList();
+  }
+}
+
+class _LoadingPanel extends StatelessWidget {
+  const _LoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AdminGlassPanel(
+      child: SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
+
+class _ErrorPanel extends StatelessWidget {
+  const _ErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminGlassPanel(
+      child: SizedBox(
+        height: 120,
+        child: Center(
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFDDE5F0),
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ),
     );
   }
 }

@@ -10,25 +10,31 @@ import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../../widgets/status_pill.dart';
 import '../admin/admin_tenants_screen.dart';
+import '../alerts/alerts_screen.dart';
 import '../assist/assist_create_request_screen.dart';
 import '../assist/assist_requests_screen.dart';
 import '../assist/demand_control_panel_screen.dart';
 import '../attributes/attributes_screen.dart';
 import '../business/business_reference_screens.dart';
 import '../calendars/calendars_screen.dart';
+import '../calls/calls_screen.dart';
 import '../commands/commands_screen.dart';
 import '../communication/zpro_communication_screen.dart';
 import '../common/placeholder_screen.dart';
+import '../clients/clients_screen.dart';
 import '../drivers/drivers_screen.dart';
 import '../events/events_screen.dart';
+import '../finance/finance_screen.dart';
 import '../geofences/geofences_screen.dart';
 import '../groups/groups_screen.dart';
 import '../history/history_screen.dart';
+import '../inventory/inventory_screen.dart';
 import '../journey/journey_checkin_screen.dart';
 import '../maintenance/maintenance_screen.dart';
 import '../map/map_screen.dart';
 import '../mdvr/mdvr_devices_screen.dart';
 import '../notifications/notifications_screen.dart';
+import '../orders/orders_screen.dart';
 import '../permissions/permissions_screen.dart';
 import '../reports/reports_screen.dart';
 import '../settings/settings_screen.dart';
@@ -47,6 +53,8 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   gmaps.GoogleMapController? _googleMapController;
+
+  final bool _showHighlightsRail = false;
 
   bool _menuOpen = true;
   bool _kpiListOpen = false;
@@ -316,7 +324,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             onSelect: _openPanel,
             onLogout: () => ref.read(sessionProvider.notifier).logout(),
           ),
-          _HighlightsRail(open: !_activePanelVisible),
+          if (_showHighlightsRail) _HighlightsRail(open: !_activePanelVisible),
           _KpiVehicleList(
             open: _kpiListOpen,
             title: _activeKpiFilter.title,
@@ -516,111 +524,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ],
         );
       case 'alerts':
-        return const _TraccarToolsPanel(
-          key: ValueKey('alerts-tools'),
-          title: 'Alertas',
-          entries: [
-            _PanelToolEntry(
-              label: 'Eventos',
-              icon: Icons.timeline_outlined,
-              detail: 'Relatório Traccar',
-              child: EventsScreen(),
-            ),
-            _PanelToolEntry(
-              label: 'Notificações',
-              icon: Icons.notifications_none_outlined,
-              detail: 'Regras cadastradas',
-              child: NotificationsScreen(),
-            ),
-            _PanelToolEntry(
-              label: 'Tipos',
-              icon: Icons.category_outlined,
-              detail: 'Catálogo Traccar',
-              child: _NotificationTypesPanel(),
-            ),
-          ],
-        );
+        return const AlertsScreen();
       case 'orders':
-        return const ServiceOrdersReferenceScreen();
+        return const ServiceOrdersScreen();
       case 'calls':
-        return const AssistRequestsScreen();
+        return const CallsScreen();
       case 'clients':
-        return const _FallbackOperationalPanel(
-          title: 'Clientes',
-          icon: Icons.groups_2_outlined,
-          rows: [
-            'Carteira ativa: 24 contratos',
-            'Pendentes de cadastro: 3',
-            'Bloqueios comerciais: 1',
-            'Última atualização comercial: hoje',
-          ],
-        );
+        return const ClientsScreen();
       case 'drivers':
         return const DriversScreen();
       case 'reports':
-        return const _TraccarToolsPanel(
-          key: ValueKey('reports-tools'),
-          title: 'Relatórios',
-          entries: [
-            _PanelToolEntry(
-              label: 'Resumo',
-              icon: Icons.summarize_outlined,
-              child: ReportsScreen(
-                title: 'Resumo',
-                endpointPath: '/reports/summary',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Rotas',
-              icon: Icons.alt_route_outlined,
-              child: ReportsScreen(
-                title: 'Rotas',
-                endpointPath: '/reports/route',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Eventos',
-              icon: Icons.event_note_outlined,
-              child: ReportsScreen(
-                title: 'Eventos',
-                endpointPath: '/reports/events',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Viagens',
-              icon: Icons.trip_origin_outlined,
-              child: ReportsScreen(
-                title: 'Viagens',
-                endpointPath: '/reports/trips',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Paradas',
-              icon: Icons.stop_circle_outlined,
-              child: ReportsScreen(
-                title: 'Paradas',
-                endpointPath: '/reports/stops',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Cercas',
-              icon: Icons.polyline_outlined,
-              child: ReportsScreen(
-                title: 'Cercas',
-                endpointPath: '/reports/geofences',
-              ),
-            ),
-            _PanelToolEntry(
-              label: 'Estatísticas',
-              icon: Icons.insights_outlined,
-              child: StatisticsScreen(),
-            ),
-          ],
-        );
+        return const ReportsScreen();
       case 'finance':
-        return const FinancialManagementScreen();
+        return const FinanceScreen();
       case 'inventory':
-        return const InventoryAssetsScreen();
+        return const InventoryScreen();
       case 'settings':
         return _TraccarToolsPanel(
           key: const ValueKey('settings-tools'),
