@@ -1,4 +1,4 @@
-const DEFAULT_TRACCAR_PROXY_ORIGIN = "http://204.168.191.10";
+const DEFAULT_TRACCAR_PROXY_ORIGIN = "https://app.mackflow.com.br";
 
 function corsHeaders(request) {
   const origin = request.headers.get("Origin") || "*";
