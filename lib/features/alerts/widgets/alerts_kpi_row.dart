@@ -20,13 +20,13 @@ class AlertsKpiRow extends StatelessWidget {
           icon: Icons.today_outlined,
         ),
         _KpiCard(
-          label: 'Criticos',
+          label: 'Críticos',
           value: summary.critical.toString(),
           color: const Color(0xFFE74B4B),
           icon: Icons.priority_high_outlined,
         ),
         _KpiCard(
-          label: 'Em analise',
+          label: 'Em análise',
           value: summary.inAnalysis.toString(),
           color: const Color(0xFFF59E0B),
           icon: Icons.manage_search_outlined,

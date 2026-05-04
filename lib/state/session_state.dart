@@ -157,8 +157,8 @@ class SessionController extends StateNotifier<SessionState> {
       // Força modo demo estável
       const tenantConfig = TenantConfig(
         tenantId: 'demo',
-        companyName: 'SouFind Demo',
-        slug: 'soufind-demo',
+        companyName: 'SouTracking Demo',
+        slug: 'soutracking-demo',
         modules: {
           'tracking': true,
           'assist': true,
@@ -173,7 +173,7 @@ class SessionController extends StateNotifier<SessionState> {
         isMasterAdmin: true,
         isCompanyAdmin: true,
         branding: {
-          'appName': 'SouFind',
+          'appName': 'SouTracking',
           'tagline': 'Central operacional em modo demo',
           'primaryColor': '#2D7DFF',
           'secondaryColor': '#22D3EE',

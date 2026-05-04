@@ -81,7 +81,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir alerta'),
-        content: Text('Excluir "$name" do Traccar real?'),
+        content: Text('Excluir "$name" do servidor de rastreamento?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),

@@ -200,7 +200,7 @@ class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Excluir ${widget.title}'),
-        content: Text('Excluir "$title" do Traccar real?'),
+        content: Text('Excluir "$title" do servidor de rastreamento?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -239,7 +239,6 @@ class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
       if (mounted) setState(() => _deletingId = null);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -306,8 +305,9 @@ class _JsonCrudScreenState extends ConsumerState<JsonCrudScreen> {
                   if (item['id'] is int)
                     IconButton(
                       tooltip: 'Excluir registro',
-                      onPressed:
-                          _deletingId == item['id'] ? null : () => _delete(item),
+                      onPressed: _deletingId == item['id']
+                          ? null
+                          : () => _delete(item),
                       icon: _deletingId == item['id']
                           ? const SizedBox(
                               width: 18,

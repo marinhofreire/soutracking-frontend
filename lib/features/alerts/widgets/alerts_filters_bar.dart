@@ -48,7 +48,7 @@ class AlertsFiltersBar extends StatelessWidget {
         runSpacing: 12,
         children: [
           _FilterField(
-            label: 'Periodo',
+            label: 'Período',
             value: period,
             options: periodOptions,
             onChanged: onPeriodChanged,
@@ -72,7 +72,7 @@ class AlertsFiltersBar extends StatelessWidget {
             onChanged: onStatusChanged,
           ),
           _FilterField(
-            label: 'Veiculo',
+            label: 'Veículo',
             value: vehicle,
             options: vehicleOptions,
             onChanged: onVehicleChanged,
@@ -101,7 +101,7 @@ class _FilterField extends StatelessWidget {
     return SizedBox(
       width: 210,
       child: DropdownButtonFormField<String>(
-        value: value,
+        initialValue: value,
         items: [
           for (final option in options)
             DropdownMenuItem<String>(

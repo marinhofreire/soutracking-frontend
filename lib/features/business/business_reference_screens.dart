@@ -47,7 +47,7 @@ class GeneralPanelScreen extends ConsumerWidget {
                   _KpiStatCard(
                     label: 'Veículos Parados',
                     value: '$stopped',
-                    delta: 'Traccar',
+                    delta: 'SouTracking',
                     color: Color(0xFFFF5A7A),
                     icon: Icons.pause_circle_outline,
                   ),
@@ -61,7 +61,7 @@ class GeneralPanelScreen extends ConsumerWidget {
                   _KpiStatCard(
                     label: 'Ordens Abertas',
                     value: '${orders.length}',
-                    delta: 'Traccar',
+                    delta: 'SouTracking',
                     color: Color(0xFFFFB11B),
                     icon: Icons.assignment_outlined,
                   ),

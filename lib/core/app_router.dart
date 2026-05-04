@@ -85,7 +85,7 @@ class _RoutedSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SouFind')),
+      appBar: AppBar(title: const Text('SouTracking')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: child,

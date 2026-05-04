@@ -85,7 +85,7 @@ extension ReportTypeView on ReportType {
       case ReportType.stops:
         return 'Paradas';
       case ReportType.distance:
-        return 'Distancia';
+        return 'Resumo';
       case ReportType.speed:
         return 'Velocidade';
       case ReportType.alerts:
@@ -93,7 +93,7 @@ extension ReportTypeView on ReportType {
       case ReportType.drivers:
         return 'Motoristas';
       case ReportType.vehicles:
-        return 'Veiculos';
+        return 'Veículos';
     }
   }
 

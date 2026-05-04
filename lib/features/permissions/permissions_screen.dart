@@ -36,9 +36,8 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
         spacing: 10,
         children: [
           OutlinedButton.icon(
-            onPressed: _creatingBinding
-                ? null
-                : () => _openBindingDialog(context),
+            onPressed:
+                _creatingBinding ? null : () => _openBindingDialog(context),
             icon: const Icon(Icons.link_outlined, size: 18),
             label: const Text('Novo vínculo'),
             style: OutlinedButton.styleFrom(
@@ -181,8 +180,8 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
                     child: Text(
                       '${selectedUser.name}  •  ${deterministicLastAccess(selectedUser)}',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF6B7C95),
-                      ),
+                            color: const Color(0xFF6B7C95),
+                          ),
                     ),
                   ),
                 ],
@@ -242,8 +241,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
     final canManage = !user.readonly && !user.disabled;
     final isAdmin = user.administrator;
     final view = !user.disabled;
-    final add =
-        canManage &&
+    final add = canManage &&
         (mode == PermissionsVisualMode.access || module.weight <= 3);
     final edit = isAdmin || (canManage && module.weight <= 2);
     final remove = isAdmin && module.weight <= 3;
@@ -317,10 +315,10 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
         Text(
           title,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: const Color(0xFF4C84FF),
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-          ),
+                color: const Color(0xFF4C84FF),
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
         ),
         const SizedBox(width: 12),
         const Expanded(child: Divider(color: Color(0xFFD4DFEA), thickness: 1)),
@@ -353,9 +351,9 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: const Color(0xFF7A8CA8),
-          fontWeight: FontWeight.w700,
-        ),
+              color: const Color(0xFF7A8CA8),
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }
@@ -387,11 +385,11 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Novo vínculo real Traccar',
+                        'Novo vínculo real SouTracking',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: const Color(0xFF1F2A44),
-                          fontWeight: FontWeight.w700,
-                        ),
+                              color: const Color(0xFF1F2A44),
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<int>(
@@ -431,8 +429,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
                               ? 'Salvando...'
                               : 'Criar vínculo',
                           icon: Icons.check_circle_outline,
-                          onPressed:
-                              _creatingBinding ||
+                          onPressed: _creatingBinding ||
                                   dialogUserId == null ||
                                   dialogDeviceId == null
                               ? null
@@ -519,9 +516,9 @@ class _PermissionRow extends StatelessWidget {
                   child: Text(
                     module.label,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: const Color(0xFF2E405B),
-                      fontWeight: FontWeight.w700,
-                    ),
+                          color: const Color(0xFF2E405B),
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
                 ),
               ],

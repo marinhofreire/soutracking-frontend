@@ -92,7 +92,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir manutenção'),
-        content: Text('Excluir "$name" do Traccar real?'),
+        content: Text('Excluir "$name" do servidor de rastreamento?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),

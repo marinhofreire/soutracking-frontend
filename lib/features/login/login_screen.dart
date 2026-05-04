@@ -28,6 +28,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = session.status == SessionStatus.loading;
     final whiteLabelAsync = ref.watch(whiteLabelProvider);
     final config = whiteLabelAsync.value ?? WhiteLabelConfig.fallback;
+    final logoAsset = config.logoAsset?.trim() ?? '';
+    final hasLogo = logoAsset.isNotEmpty;
 
     return Scaffold(
       body: Center(
@@ -39,13 +41,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  config.appName,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                if (hasLogo)
+                  SizedBox(
+                    height: 80,
+                    child: Image.asset(
+                      logoAsset,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => Text(
+                        config.appName,
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    config.appName,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
                 const SizedBox(height: 8),
                 Text(
                   config.tagline,
@@ -80,9 +101,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: isLoading
                       ? null
                       : () async {
-                          await ref
-                              .read(sessionProvider.notifier)
-                              .login(
+                          await ref.read(sessionProvider.notifier).login(
                                 email: _emailController.text.trim(),
                                 password: _passwordController.text,
                               );

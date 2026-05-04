@@ -20,7 +20,7 @@ class ReportCategoryCards extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Categorias de relatorio',
+            'Categorias de relatório',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,

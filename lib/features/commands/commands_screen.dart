@@ -47,7 +47,7 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
           title: const Text('Confirmar comando remoto'),
           content: Text(
             'Enviar "$_commandType" para o dispositivo #$_deviceId? '
-            'Essa ação será executada no Traccar real.',
+            'Essa ação será executada no servidor de rastreamento.',
           ),
           actions: [
             TextButton(

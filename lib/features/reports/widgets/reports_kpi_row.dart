@@ -14,7 +14,7 @@ class ReportsKpiRow extends StatelessWidget {
       runSpacing: 12,
       children: [
         _KpiCard(
-          label: 'Relatorios gerados',
+          label: 'Relatórios gerados',
           value: summary.generated.toString(),
           color: const Color(0xFF3F8CFF),
           icon: Icons.description_outlined,
@@ -26,13 +26,13 @@ class ReportsKpiRow extends StatelessWidget {
           icon: Icons.event_available_outlined,
         ),
         _KpiCard(
-          label: 'Exportacoes',
+          label: 'Exportações',
           value: summary.exports.toString(),
           color: const Color(0xFFF59E0B),
           icon: Icons.file_download_outlined,
         ),
         _KpiCard(
-          label: 'Alertas criticos',
+          label: 'Alertas críticos',
           value: summary.criticalAlerts.toString(),
           color: const Color(0xFFE74B4B),
           icon: Icons.priority_high_outlined,

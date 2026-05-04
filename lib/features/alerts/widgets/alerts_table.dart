@@ -23,85 +23,89 @@ class AlertsTable extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 2, child: _HeaderCell('ID')),
-                Expanded(flex: 2, child: _HeaderCell('Severidade')),
-                Expanded(flex: 3, child: _HeaderCell('Tipo de alerta')),
-                Expanded(flex: 2, child: _HeaderCell('Veiculo')),
-                Expanded(flex: 2, child: _HeaderCell('Motorista')),
-                Expanded(flex: 3, child: _HeaderCell('Localizacao')),
-                Expanded(flex: 2, child: _HeaderCell('Data/Hora')),
-                Expanded(flex: 2, child: _HeaderCell('Status')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          for (final record in records)
+          if (records.isEmpty)
             Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.84),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFDDE5F0)),
               ),
-              child: Row(
+              child: const Text(
+                'Nenhum alerta encontrado no período selecionado',
+                style: TextStyle(
+                  color: Color(0xFF25344A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
                 children: [
-                  Expanded(flex: 2, child: _ValueCell(record.id)),
-                  Expanded(
-                    flex: 2,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AdminStatusChip(
-                        label: record.severity.label,
-                        color: _severityColor(record.severity),
-                      ),
-                    ),
-                  ),
-                  Expanded(flex: 3, child: _ValueCell(record.type)),
-                  Expanded(flex: 2, child: _ValueCell(record.vehicle)),
-                  Expanded(flex: 2, child: _ValueCell(record.driver)),
-                  Expanded(flex: 3, child: _ValueCell(record.location)),
-                  Expanded(
-                      flex: 2,
-                      child: _ValueCell(_formatDateTime(record.dateTime))),
-                  Expanded(
-                    flex: 2,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AdminStatusChip(
-                        label: record.status.label,
-                        color: _statusColor(record.status),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        _ActionButton(
-                          icon: Icons.visibility_outlined,
-                          color: const Color(0xFF3B82F6),
-                        ),
-                        _ActionButton(
-                          icon: Icons.task_alt_outlined,
-                          color: const Color(0xFF10B981),
-                        ),
-                      ],
-                    ),
-                  ),
+                  Expanded(flex: 2, child: _HeaderCell('ID')),
+                  Expanded(flex: 2, child: _HeaderCell('Severidade')),
+                  Expanded(flex: 3, child: _HeaderCell('Tipo do evento')),
+                  Expanded(flex: 2, child: _HeaderCell('Veículo')),
+                  Expanded(flex: 2, child: _HeaderCell('Horário')),
+                  Expanded(flex: 4, child: _HeaderCell('Descrição')),
+                  Expanded(flex: 2, child: _HeaderCell('Status')),
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+            for (final record in records)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.84),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFDDE5F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(flex: 2, child: _ValueCell(record.id)),
+                    Expanded(
+                      flex: 2,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: AdminStatusChip(
+                          label: record.severity.label,
+                          color: _severityColor(record.severity),
+                        ),
+                      ),
+                    ),
+                    Expanded(flex: 3, child: _ValueCell(record.type)),
+                    Expanded(flex: 2, child: _ValueCell(record.vehicle)),
+                    Expanded(
+                      flex: 2,
+                      child: _ValueCell(_formatDateTime(record.dateTime)),
+                    ),
+                    Expanded(flex: 4, child: _ValueCell(record.description)),
+                    Expanded(
+                      flex: 2,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: record.status == null
+                            ? const _ValueCell('Não informado')
+                            : AdminStatusChip(
+                                label: record.status!.label,
+                                color: _statusColor(record.status!),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -167,34 +171,13 @@ class _ValueCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      maxLines: 1,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: Color(0xFF25344A),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.icon, required this.color});
-
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-        color: color.withValues(alpha: 0.10),
-      ),
-      child: Icon(icon, color: color, size: 16),
     );
   }
 }

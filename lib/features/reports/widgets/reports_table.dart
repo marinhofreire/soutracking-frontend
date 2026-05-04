@@ -20,7 +20,7 @@ class ReportsTable extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Relatorios recentes e salvos',
+            'Relatórios recentes',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -28,90 +28,110 @@ class ReportsTable extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderCell('Nome do relatorio')),
-                Expanded(flex: 2, child: _HeaderCell('Tipo')),
-                Expanded(flex: 2, child: _HeaderCell('Veiculo/Motorista')),
-                Expanded(flex: 2, child: _HeaderCell('Periodo')),
-                Expanded(flex: 1, child: _HeaderCell('Status')),
-                Expanded(flex: 2, child: _HeaderCell('Criado em')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          for (final record in records)
+          if (records.isEmpty)
             Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.84),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFDDE5F0)),
               ),
-              child: Row(
+              child: const Text(
+                'Nenhum relatório encontrado para o período selecionado',
+                style: TextStyle(
+                  color: Color(0xFF25344A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
                 children: [
-                  Expanded(
-                    flex: 3,
-                    child: _NameCell(
-                      name: record.name,
-                      details:
-                          '${record.totalRecords} registros • ${record.format.label}',
-                    ),
-                  ),
-                  Expanded(flex: 2, child: _ValueCell(record.type.label)),
-                  Expanded(
-                    flex: 2,
-                    child: _ValueCell('${record.vehicle} / ${record.driver}'),
-                  ),
-                  Expanded(flex: 2, child: _ValueCell(record.period)),
-                  Expanded(
-                    flex: 1,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AdminStatusChip(
-                        label: record.status.label,
-                        color: _statusColor(record.status),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: _ValueCell(_formatDateTime(record.createdAt)),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        _ActionButton(
-                          icon: Icons.visibility_outlined,
-                          color: const Color(0xFF3B82F6),
-                          onTap: () => onView(record),
-                        ),
-                        _ActionButton(
-                          icon: Icons.picture_as_pdf_outlined,
-                          color: const Color(0xFFE74B4B),
-                          onTap: () {},
-                        ),
-                        _ActionButton(
-                          icon: Icons.grid_on_outlined,
-                          color: const Color(0xFF10B981),
-                          onTap: () {},
-                        ),
-                      ],
-                    ),
-                  ),
+                  Expanded(flex: 3, child: _HeaderCell('Nome do relatório')),
+                  Expanded(flex: 2, child: _HeaderCell('Tipo')),
+                  Expanded(flex: 2, child: _HeaderCell('Veículo/Motorista')),
+                  Expanded(flex: 2, child: _HeaderCell('Período')),
+                  Expanded(flex: 1, child: _HeaderCell('Status')),
+                  Expanded(flex: 2, child: _HeaderCell('Criado em')),
+                  Expanded(flex: 2, child: _HeaderCell('Ações')),
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+            for (final record in records)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.84),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFDDE5F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _NameCell(
+                        name: record.name,
+                        details:
+                            '${record.totalRecords} registros • ${record.format.label}',
+                      ),
+                    ),
+                    Expanded(flex: 2, child: _ValueCell(record.type.label)),
+                    Expanded(
+                      flex: 2,
+                      child: _ValueCell('${record.vehicle} / ${record.driver}'),
+                    ),
+                    Expanded(flex: 2, child: _ValueCell(record.period)),
+                    Expanded(
+                      flex: 1,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: AdminStatusChip(
+                          label: record.status.label,
+                          color: _statusColor(record.status),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: _ValueCell(_formatDateTime(record.createdAt)),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Wrap(
+                        spacing: 6,
+                        children: [
+                          _ActionButton(
+                            icon: Icons.visibility_outlined,
+                            color: const Color(0xFF3B82F6),
+                            onTap: () => onView(record),
+                          ),
+                          _ActionButton(
+                            icon: Icons.picture_as_pdf_outlined,
+                            color: const Color(0xFFE74B4B),
+                            onTap: () {},
+                          ),
+                          _ActionButton(
+                            icon: Icons.grid_on_outlined,
+                            color: const Color(0xFF10B981),
+                            onTap: () {},
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );

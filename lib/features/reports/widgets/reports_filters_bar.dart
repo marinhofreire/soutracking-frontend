@@ -20,10 +20,9 @@ class ReportsFiltersBar extends StatelessWidget {
     required this.onDriverChanged,
     required this.onTypeChanged,
     required this.onStatusChanged,
-    required this.onGenerate,
-    required this.onExportPdf,
-    required this.onExportExcel,
-    required this.onSchedule,
+    required this.onSearch,
+    required this.onExport,
+    required this.onClearFilters,
   });
 
   final String period;
@@ -41,10 +40,9 @@ class ReportsFiltersBar extends StatelessWidget {
   final ValueChanged<String> onDriverChanged;
   final ValueChanged<String> onTypeChanged;
   final ValueChanged<String> onStatusChanged;
-  final VoidCallback onGenerate;
-  final VoidCallback onExportPdf;
-  final VoidCallback onExportExcel;
-  final VoidCallback onSchedule;
+  final VoidCallback onSearch;
+  final VoidCallback onExport;
+  final VoidCallback onClearFilters;
 
   @override
   Widget build(BuildContext context) {
@@ -57,13 +55,13 @@ class ReportsFiltersBar extends StatelessWidget {
             runSpacing: 12,
             children: [
               _FilterField(
-                label: 'Periodo',
+                label: 'Período',
                 value: period,
                 options: periodOptions,
                 onChanged: onPeriodChanged,
               ),
               _FilterField(
-                label: 'Veiculo',
+                label: 'Veículo',
                 value: vehicle,
                 options: vehicleOptions,
                 onChanged: onVehicleChanged,
@@ -75,7 +73,7 @@ class ReportsFiltersBar extends StatelessWidget {
                 onChanged: onDriverChanged,
               ),
               _FilterField(
-                label: 'Tipo de relatorio',
+                label: 'Tipo de relatório',
                 value: type,
                 options: typeOptions,
                 onChanged: onTypeChanged,
@@ -94,24 +92,19 @@ class ReportsFiltersBar extends StatelessWidget {
             runSpacing: 10,
             children: [
               AdminActionButton(
-                label: 'Gerar relatorio',
-                icon: Icons.play_arrow_outlined,
-                onPressed: onGenerate,
+                label: 'Buscar',
+                icon: Icons.search_outlined,
+                onPressed: onSearch,
               ),
               OutlinedButton.icon(
-                onPressed: onExportPdf,
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                label: const Text('Exportar PDF'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onExportExcel,
+                onPressed: onExport,
                 icon: const Icon(Icons.grid_on_outlined, size: 18),
-                label: const Text('Exportar Excel'),
+                label: const Text('Exportar'),
               ),
               OutlinedButton.icon(
-                onPressed: onSchedule,
-                icon: const Icon(Icons.schedule_outlined, size: 18),
-                label: const Text('Agendar'),
+                onPressed: onClearFilters,
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                label: const Text('Limpar filtros'),
               ),
             ],
           ),
@@ -139,7 +132,7 @@ class _FilterField extends StatelessWidget {
     return SizedBox(
       width: 190,
       child: DropdownButtonFormField<String>(
-        value: value,
+        initialValue: value,
         items: [
           for (final option in options)
             DropdownMenuItem<String>(

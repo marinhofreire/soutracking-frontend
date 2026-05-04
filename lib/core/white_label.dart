@@ -20,7 +20,7 @@ class WhiteLabelConfig {
   final String? logoAsset;
 
   static const WhiteLabelConfig fallback = WhiteLabelConfig(
-    appName: 'Sou Fleet',
+    appName: 'SouTracking',
     tagline: 'Gestão inteligente de frotas e ativos',
     primaryColor: Color(0xFF1F6FEB),
     secondaryColor: Color(0xFF1F6FEB),
@@ -98,15 +98,33 @@ class WhiteLabelController extends StateNotifier<AsyncValue<WhiteLabelConfig>> {
   WhiteLabelConfig _normalizeLegacyPalette(WhiteLabelConfig config) {
     final shouldUpgradePrimary = _isLegacyPurple(config.primaryColor);
     final shouldUpgradeSecondary = _isLegacyPurple(config.secondaryColor);
-    if (!shouldUpgradePrimary && !shouldUpgradeSecondary) {
+    final currentName = config.appName.trim().toLowerCase();
+    final shouldUpgradeName =
+        currentName == 'sou fleet' || currentName == 'soufind';
+    final normalizedName = shouldUpgradeName ? 'SouTracking' : config.appName;
+
+    final currentLogo = config.logoAsset?.trim() ?? '';
+    final shouldSetDefaultLogo =
+        currentLogo.isEmpty && normalizedName == 'SouTracking';
+    final normalizedLogo = shouldSetDefaultLogo
+        ? 'assets/branding/soutracking_logo_horizontal.png'
+        : config.logoAsset;
+
+    if (!shouldUpgradePrimary &&
+        !shouldUpgradeSecondary &&
+        !shouldUpgradeName &&
+        !shouldSetDefaultLogo) {
       return config;
     }
+
     return config.copyWith(
+      appName: normalizedName,
       primaryColor:
           shouldUpgradePrimary ? const Color(0xFF1F6FEB) : config.primaryColor,
       secondaryColor: shouldUpgradeSecondary
           ? const Color(0xFF1F6FEB)
           : config.secondaryColor,
+      logoAsset: normalizedLogo,
     );
   }
 

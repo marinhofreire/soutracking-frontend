@@ -220,8 +220,8 @@ class MockTraccarClient extends TraccarClient {
     // Simula config mock: tracking e demandas ativos, integrações críticas desligadas.
     return {
       'tenantId': 'tenant-demo',
-      'companyName': 'SouFind Demo',
-      'slug': 'soufind-demo',
+      'companyName': 'SouTracking Demo',
+      'slug': 'soutracking-demo',
       'role': 'master_admin',
       'modules': {
         'tracking': true,
@@ -235,7 +235,7 @@ class MockTraccarClient extends TraccarClient {
         'reports_plus': false,
       },
       'branding': {
-        'appName': 'SouFind',
+        'appName': 'SouTracking',
         'tagline': 'Central operacional em modo demo',
         'primaryColor': '#2D7DFF',
         'secondaryColor': '#22D3EE',

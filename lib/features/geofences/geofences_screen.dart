@@ -44,7 +44,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
 
     if (lat == null || lon == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe latitude e longitude validas.')),
+        const SnackBar(content: Text('Informe latitude e longitude válidas.')),
       );
       return;
     }
@@ -114,7 +114,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                   Expanded(
                     child: Text(
                       _shapeMode == 'polygon'
-                          ? 'Clique no mapa para adicionar os pontos do poligono'
+                          ? 'Clique no mapa para adicionar os pontos do polígono'
                           : 'Clique no mapa para definir o centro da cerca',
                       style: const TextStyle(
                           color: Color(0xFF526684), fontSize: 12),
@@ -122,7 +122,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                   ),
                   if (_shapeMode == 'polygon') ...[
                     IconButton(
-                      tooltip: 'Desfazer ultimo ponto',
+                      tooltip: 'Desfazer último ponto',
                       visualDensity: VisualDensity.compact,
                       onPressed: _polygonPoints.isEmpty ? null : _undoLastPoint,
                       icon: const Icon(Icons.undo_rounded,
@@ -257,7 +257,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nome da cerca e obrigatorio.')),
+        const SnackBar(content: Text('Nome da cerca é obrigatório.')),
       );
       return;
     }
@@ -267,7 +267,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       if (_polygonPoints.length < 3) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Adicione no minimo 3 pontos para o poligono.'),
+            content: Text('Adicione no mínimo 3 pontos para o polígono.'),
           ),
         );
         return;
@@ -285,7 +285,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       if (lat == null || lon == null || radius == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Nome, latitude, longitude e raio sao obrigatorios.'),
+            content: Text('Nome, latitude, longitude e raio são obrigatórios.'),
           ),
         );
         return;
@@ -336,7 +336,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir cerca'),
-        content: Text('Excluir "$name" do Traccar real?'),
+        content: Text('Excluir "$name" do servidor de rastreamento?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -383,7 +383,24 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     final list = geofencesAsync.when(
       data: (geofences) {
         if (geofences.isEmpty) {
-          return const Center(child: Text('Nenhuma cerca encontrada'));
+          return Center(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.84),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE5F0)),
+              ),
+              child: const Text(
+                'Nenhuma cerca cadastrada no momento',
+                style: TextStyle(
+                  color: Color(0xFF25344A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
         }
         return ListView.separated(
           itemCount: geofences.length,
@@ -425,21 +442,50 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Excluir cerca',
-                    onPressed: _deletingId == fence['id']
-                        ? null
-                        : () => _deleteGeofence(fence),
-                    icon: _deletingId == fence['id']
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.delete_outline,
-                            color: Color(0xFFEF4444),
-                          ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text('Edição visual em estrutura criada.'),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Editar'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Vinculação visual em estrutura criada.',
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.link_outlined, size: 16),
+                        label: const Text('Vincular veículo/grupo'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _deletingId == fence['id']
+                            ? null
+                            : () => _deleteGeofence(fence),
+                        icon: _deletingId == fence['id']
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.delete_outline, size: 16),
+                        label: const Text('Excluir'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -461,7 +507,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
           decoration: const InputDecoration(labelText: 'Tipo de cerca'),
           items: const [
             DropdownMenuItem(value: 'circle', child: Text('Circular')),
-            DropdownMenuItem(value: 'polygon', child: Text('Poligono')),
+            DropdownMenuItem(value: 'polygon', child: Text('Polígono')),
           ],
           onChanged: (value) {
             if (value == null) return;
@@ -593,11 +639,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                   width: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Text(
-                  _shapeMode == 'polygon'
-                      ? 'Criar cerca poligonal'
-                      : 'Criar cerca',
-                ),
+              : const Text('Criar cerca'),
         ),
       ],
     );

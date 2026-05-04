@@ -98,7 +98,7 @@ class TraccarClient {
       throw Exception('Usuário ou senha inválidos. (${response.statusCode})');
     } else if (response.statusCode == 404) {
       throw Exception(
-          'Endpoint não encontrado (404). Verifique a URL do servidor Traccar.');
+          'Endpoint não encontrado (404). Verifique a URL do servidor de rastreamento.');
     }
     throw Exception('Login falhou: ${response.statusCode}');
   }

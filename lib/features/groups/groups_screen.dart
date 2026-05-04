@@ -72,7 +72,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir grupo'),
-        content: Text('Excluir "$name" do Traccar real?'),
+        content: Text('Excluir "$name" do servidor de rastreamento?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),

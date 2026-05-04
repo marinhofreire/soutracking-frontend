@@ -23,11 +23,11 @@ extension AlertSeverityLabel on AlertSeverity {
   String get label {
     switch (this) {
       case AlertSeverity.critical:
-        return 'Critica';
+        return 'Crítica';
       case AlertSeverity.high:
         return 'Alta';
       case AlertSeverity.medium:
-        return 'Media';
+        return 'Média';
       case AlertSeverity.low:
         return 'Baixa';
     }
@@ -46,7 +46,7 @@ extension AlertStatusLabel on AlertStatus {
       case AlertStatus.newAlert:
         return 'Novo';
       case AlertStatus.inAnalysis:
-        return 'Em analise';
+        return 'Em análise';
       case AlertStatus.resolved:
         return 'Resolvido';
     }
@@ -59,18 +59,16 @@ class AlertRecord {
     required this.severity,
     required this.type,
     required this.vehicle,
-    required this.driver,
-    required this.location,
+    required this.description,
     required this.dateTime,
-    required this.status,
+    this.status,
   });
 
   final String id;
   final AlertSeverity severity;
   final String type;
   final String vehicle;
-  final String driver;
-  final String location;
+  final String description;
   final DateTime dateTime;
-  final AlertStatus status;
+  final AlertStatus? status;
 }
