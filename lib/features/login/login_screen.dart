@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/app_constants.dart';
 import '../../core/white_label.dart';
+import '../home/home_shell.dart';
 import '../../state/session_state.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -101,10 +103,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: isLoading
                       ? null
                       : () async {
+                          final email = _emailController.text.trim();
+                          final password = _passwordController.text;
+                          final isDemoOrMock =
+                              presentationMode || kUseMockApi;
+                          final hasFilledCredentials =
+                              email.isNotEmpty && password.isNotEmpty;
+                          final canEnterInDemo =
+                              isDemoOrMock &&
+                              (password == '123456' || hasFilledCredentials);
+
                           await ref.read(sessionProvider.notifier).login(
-                                email: _emailController.text.trim(),
-                                password: _passwordController.text,
+                                email: email,
+                                password: password,
                               );
+
+                          if (!context.mounted) return;
+
+                          final sessionNow = ref.read(sessionProvider);
+                          if (canEnterInDemo || sessionNow.isAuthenticated) {
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                builder: (_) => const HomeShell(),
+                              ),
+                            );
+                          }
                         },
                   child: isLoading
                       ? const SizedBox(

@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/white_label.dart';
+import '../../data/bridge_client.dart';
 import '../../data/models.dart';
 import '../../data/openf1_client.dart';
 import '../../state/session_state.dart';
@@ -907,8 +908,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Abrir chamado',
           icon: Icons.add_comment_outlined,
-          detail: 'Fluxo atual de atendimento',
-          child: CallsScreen(),
+          detail: 'Envio em modo controlado',
+          child: _BridgeTicketCreateScreen(),
         ),
         const _PanelToolEntry(
           label: 'Chamados em andamento',
@@ -964,11 +965,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               label: 'Suporte tecnico',
               icon: Icons.support_agent_outlined,
               description: 'Canal dedicado de suporte tecnico.',
-            ),
-            (
-              label: 'Integracao via Bridge futuramente',
-              icon: Icons.link_outlined,
-              description: 'Integracao sera plugada em etapa futura.',
             ),
           ],
         ),
@@ -4131,6 +4127,461 @@ class _ModulePlaceholderScreen extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _BridgeTicketCreateScreen extends StatefulWidget {
+  const _BridgeTicketCreateScreen();
+
+  @override
+  State<_BridgeTicketCreateScreen> createState() =>
+      _BridgeTicketCreateScreenState();
+}
+
+class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
+  static const List<String> _tipos = [
+    'Suporte tecnico',
+    'Sem comunicacao',
+    'Instalacao',
+    'Manutencao',
+    'Guincho',
+    'Vistoria',
+    'Sinistro',
+  ];
+
+  static const List<String> _prioridades = [
+    'Baixa',
+    'Media',
+    'Alta',
+    'Critica',
+  ];
+
+  final BridgeClient _bridgeClient = const BridgeClient();
+  final TextEditingController _vehicleIdController = TextEditingController();
+  final TextEditingController _descricaoController = TextEditingController();
+  final TextEditingController _souCallDestinoController =
+      TextEditingController();
+  final TextEditingController _souCallMensagemController =
+      TextEditingController();
+
+  String _tipoSelecionado = _tipos.first;
+  String _prioridadeSelecionada = _prioridades[1];
+  bool _isSubmitting = false;
+  bool _isSendingSouCall = false;
+  String? _erro;
+  String? _souCallErro;
+  String? _protocolo;
+  Map<String, dynamic>? _ultimoPayload;
+  Map<String, dynamic>? _ultimoSouCallPayload;
+
+  @override
+  void dispose() {
+    _vehicleIdController.dispose();
+    _descricaoController.dispose();
+    _souCallDestinoController.dispose();
+    _souCallMensagemController.dispose();
+    super.dispose();
+  }
+
+  String _mensagemSugerida({
+    required String tipo,
+    required String prioridade,
+    required String vehicleId,
+  }) {
+    return 'Chamado criado no SouTracking.\n'
+        'Tipo: $tipo\n'
+        'Prioridade: $prioridade\n'
+        'Veiculo: $vehicleId\n'
+        'Status: aguardando envio para SouFind.';
+  }
+
+  Future<void> _criarChamado() async {
+    final vehicleId = _vehicleIdController.text.trim();
+    final descricao = _descricaoController.text.trim();
+    if (vehicleId.isEmpty || descricao.isEmpty) {
+      setState(() {
+        _erro = 'Preencha veiculo e descricao para criar o chamado.';
+      });
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'origem': 'SouTracking',
+      'tipo': _tipoSelecionado,
+      'vehicleId': vehicleId,
+      'descricao': descricao,
+      'prioridade': _prioridadeSelecionada,
+      'destinoFuturo': 'SouFind',
+    };
+
+    setState(() {
+      _isSubmitting = true;
+      _erro = null;
+    });
+
+    try {
+      await _bridgeClient.criarChamado(payload);
+      final protocolo = 'ST-${DateTime.now().millisecondsSinceEpoch}';
+      final mensagem = _mensagemSugerida(
+        tipo: _tipoSelecionado,
+        prioridade: _prioridadeSelecionada,
+        vehicleId: vehicleId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _protocolo = protocolo;
+        _ultimoPayload = payload;
+        _souCallMensagemController.text = mensagem;
+        _souCallErro = null;
+        _ultimoSouCallPayload = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _erro = 'Falha ao criar chamado no modo controlado.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _enviarAvisoSouCall() async {
+    final origemPayload = _ultimoPayload;
+    if (origemPayload == null) {
+      setState(() {
+        _souCallErro = 'Crie o chamado antes de enviar aviso.';
+      });
+      return;
+    }
+
+    final destino = _souCallDestinoController.text.trim();
+    final mensagem = _souCallMensagemController.text.trim();
+    if (destino.isEmpty || mensagem.isEmpty) {
+      setState(() {
+        _souCallErro = 'Preencha destinatario e mensagem para enviar aviso.';
+      });
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'destino': destino,
+      'mensagem': mensagem,
+      'vehicleId': '${origemPayload['vehicleId'] ?? ''}',
+      'payload': {
+        'origem': 'SouTracking',
+        'tipo': '${origemPayload['tipo'] ?? ''}',
+        'prioridade': '${origemPayload['prioridade'] ?? ''}',
+        'destinoFuturo': 'SouFind',
+      },
+    };
+
+    setState(() {
+      _isSendingSouCall = true;
+      _souCallErro = null;
+    });
+
+    try {
+      await _bridgeClient.enviarWhatsapp(payload);
+      if (!mounted) return;
+      setState(() {
+        _ultimoSouCallPayload = payload;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _souCallErro = 'Falha ao enviar aviso em modo controlado.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingSouCall = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        _GlassSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Abrir chamado',
+                style: TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const _PlaceholderInfoLine(
+                icon: Icons.account_tree_outlined,
+                title: 'Origem',
+                value: 'SouTracking',
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _tipoSelecionado,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo do chamado',
+                  border: OutlineInputBorder(),
+                ),
+                items: _tipos
+                    .map(
+                      (tipo) => DropdownMenuItem<String>(
+                        value: tipo,
+                        child: Text(tipo),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _tipoSelecionado = value);
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _vehicleIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Veiculo',
+                  hintText: 'Ex.: ABC-1234 ou ID do veiculo',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _descricaoController,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: 'Descricao',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _prioridadeSelecionada,
+                decoration: const InputDecoration(
+                  labelText: 'Prioridade',
+                  border: OutlineInputBorder(),
+                ),
+                items: _prioridades
+                    .map(
+                      (prioridade) => DropdownMenuItem<String>(
+                        value: prioridade,
+                        child: Text(prioridade),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _prioridadeSelecionada = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _isSubmitting ? null : _criarChamado,
+                icon: _isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_outlined),
+                label: Text(
+                  _isSubmitting ? 'Criando...' : 'Criar chamado',
+                ),
+              ),
+              if (_erro != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _erro!,
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (_protocolo != null && _ultimoPayload != null) ...[
+          const SizedBox(height: 10),
+          _GlassSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Resultado',
+                  style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'chamado criado em modo mock',
+                  style: TextStyle(
+                    color: Color(0xFF047857),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'protocolo simulado: $_protocolo',
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'status: aguardando envio para SouFind',
+                  style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'proximo passo: aviso via SouCall em etapa futura',
+                  style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Payload enviado:',
+                  style: TextStyle(
+                    color: Color(0xFF526684),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _ultimoPayload.toString(),
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _GlassSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Aviso via SouCall',
+                  style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _souCallDestinoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Destinatario WhatsApp',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _souCallMensagemController,
+                  minLines: 4,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Mensagem sugerida',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _isSendingSouCall ? null : _enviarAvisoSouCall,
+                  icon: _isSendingSouCall
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.campaign_outlined),
+                  label: Text(
+                    _isSendingSouCall
+                        ? 'Enviando...'
+                        : 'Enviar aviso via SouCall',
+                  ),
+                ),
+                if (_souCallErro != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _souCallErro!,
+                    style: const TextStyle(
+                      color: Color(0xFFB42318),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+                if (_ultimoSouCallPayload != null) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'aviso enviado em modo mock',
+                    style: TextStyle(
+                      color: Color(0xFF047857),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'destino: ${_ultimoSouCallPayload!['destino']}',
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'status: aguardando integracao real SouCall',
+                    style: TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'payload enviado:',
+                    style: TextStyle(
+                      color: Color(0xFF526684),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _ultimoSouCallPayload.toString(),
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ],
