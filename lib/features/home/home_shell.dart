@@ -1204,7 +1204,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           label: 'Painel demo',
           icon: Icons.dashboard_customize_outlined,
           detail: 'Sessao travada para apresentacao',
-          child: _TelemetryDemoScreen(),
+          child: _TelemetryRaceShowcaseScreen(),
         ),
         ..._placeholderEntries(
           moduleTitle: 'Demo Telemetria',
@@ -5627,6 +5627,1393 @@ class _MdvrFlowLine extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TelemetryRaceShowcaseScreen extends StatefulWidget {
+  const _TelemetryRaceShowcaseScreen();
+
+  @override
+  State<_TelemetryRaceShowcaseScreen> createState() =>
+      _TelemetryRaceShowcaseScreenState();
+}
+
+class _TelemetryRaceShowcaseScreenState
+    extends State<_TelemetryRaceShowcaseScreen> {
+  static const _seasonOptions = ['Temporada atual demo'];
+  static const _raceOptions = ['Austrália', 'China', 'Japão', 'Bahrein'];
+  static const _sessionOptions = ['Treino', 'Classificação', 'Corrida'];
+  static const _driverOptions = ['Bortoleto', 'Verstappen', 'Norris', 'Leclerc'];
+  static const _compareOptions = [
+    'Nenhum',
+    'Verstappen',
+    'Norris',
+    'Leclerc',
+    'Bortoleto',
+  ];
+
+  final Map<String, _RaceTelemetryCircuit> _circuits = {
+    'Austrália': _RaceTelemetryCircuit(
+      raceName: 'Austrália',
+      trackSubtitle: 'Albert Park • Setores 1/2/3',
+      pathPoints: const [
+        Offset(0.13, 0.62),
+        Offset(0.22, 0.79),
+        Offset(0.41, 0.84),
+        Offset(0.64, 0.75),
+        Offset(0.82, 0.58),
+        Offset(0.77, 0.33),
+        Offset(0.57, 0.20),
+        Offset(0.34, 0.23),
+        Offset(0.19, 0.38),
+      ],
+      events: const [
+        _RaceTelemetryEvent(
+          id: 'aus-1',
+          label: 'Frenagem forte',
+          sector: 'Setor 1',
+          position: Offset(0.24, 0.78),
+          accent: Color(0xFFEF4444),
+        ),
+        _RaceTelemetryEvent(
+          id: 'aus-2',
+          label: 'Troca de pneus',
+          sector: 'Setor 2',
+          position: Offset(0.57, 0.71),
+          accent: Color(0xFFF59E0B),
+        ),
+        _RaceTelemetryEvent(
+          id: 'aus-3',
+          label: 'Aceleração máxima',
+          sector: 'Setor 3',
+          position: Offset(0.76, 0.43),
+          accent: Color(0xFF22C55E),
+        ),
+        _RaceTelemetryEvent(
+          id: 'aus-4',
+          label: 'Perda de aderência',
+          sector: 'Setor 1',
+          position: Offset(0.34, 0.24),
+          accent: Color(0xFFA855F7),
+        ),
+        _RaceTelemetryEvent(
+          id: 'aus-5',
+          label: 'Volta rápida',
+          sector: 'Setor 2',
+          position: Offset(0.63, 0.30),
+          accent: Color(0xFF3B82F6),
+        ),
+      ],
+    ),
+    'China': _RaceTelemetryCircuit(
+      raceName: 'China',
+      trackSubtitle: 'Shanghai • Setores 1/2/3',
+      pathPoints: const [
+        Offset(0.15, 0.70),
+        Offset(0.25, 0.82),
+        Offset(0.47, 0.80),
+        Offset(0.69, 0.69),
+        Offset(0.84, 0.52),
+        Offset(0.80, 0.28),
+        Offset(0.60, 0.19),
+        Offset(0.43, 0.27),
+        Offset(0.31, 0.40),
+      ],
+      events: const [
+        _RaceTelemetryEvent(
+          id: 'chi-1',
+          label: 'Entrada no box',
+          sector: 'Setor 1',
+          position: Offset(0.28, 0.81),
+          accent: Color(0xFFEF4444),
+        ),
+        _RaceTelemetryEvent(
+          id: 'chi-2',
+          label: 'Frenagem forte',
+          sector: 'Setor 2',
+          position: Offset(0.49, 0.74),
+          accent: Color(0xFFF59E0B),
+        ),
+        _RaceTelemetryEvent(
+          id: 'chi-3',
+          label: 'Temperatura alta',
+          sector: 'Setor 3',
+          position: Offset(0.77, 0.52),
+          accent: Color(0xFF22C55E),
+        ),
+        _RaceTelemetryEvent(
+          id: 'chi-4',
+          label: 'Aceleração máxima',
+          sector: 'Setor 3',
+          position: Offset(0.69, 0.27),
+          accent: Color(0xFF3B82F6),
+        ),
+      ],
+    ),
+    'Japão': _RaceTelemetryCircuit(
+      raceName: 'Japão',
+      trackSubtitle: 'Suzuka • Setores 1/2/3',
+      pathPoints: const [
+        Offset(0.16, 0.67),
+        Offset(0.23, 0.82),
+        Offset(0.46, 0.84),
+        Offset(0.67, 0.74),
+        Offset(0.79, 0.57),
+        Offset(0.72, 0.40),
+        Offset(0.52, 0.34),
+        Offset(0.41, 0.19),
+        Offset(0.24, 0.31),
+      ],
+      events: const [
+        _RaceTelemetryEvent(
+          id: 'jpn-1',
+          label: 'Perda de aderência',
+          sector: 'Setor 1',
+          position: Offset(0.25, 0.81),
+          accent: Color(0xFFEF4444),
+        ),
+        _RaceTelemetryEvent(
+          id: 'jpn-2',
+          label: 'Frenagem forte',
+          sector: 'Setor 2',
+          position: Offset(0.51, 0.78),
+          accent: Color(0xFFF59E0B),
+        ),
+        _RaceTelemetryEvent(
+          id: 'jpn-3',
+          label: 'Entrada no box',
+          sector: 'Setor 3',
+          position: Offset(0.74, 0.54),
+          accent: Color(0xFF22C55E),
+        ),
+        _RaceTelemetryEvent(
+          id: 'jpn-4',
+          label: 'Volta rápida',
+          sector: 'Setor 2',
+          position: Offset(0.46, 0.22),
+          accent: Color(0xFF3B82F6),
+        ),
+      ],
+    ),
+    'Bahrein': _RaceTelemetryCircuit(
+      raceName: 'Bahrein',
+      trackSubtitle: 'Sakhir • Setores 1/2/3',
+      pathPoints: const [
+        Offset(0.14, 0.72),
+        Offset(0.29, 0.83),
+        Offset(0.50, 0.82),
+        Offset(0.70, 0.72),
+        Offset(0.82, 0.55),
+        Offset(0.77, 0.30),
+        Offset(0.57, 0.19),
+        Offset(0.35, 0.23),
+        Offset(0.21, 0.42),
+      ],
+      events: const [
+        _RaceTelemetryEvent(
+          id: 'bah-1',
+          label: 'Frenagem forte',
+          sector: 'Setor 1',
+          position: Offset(0.30, 0.82),
+          accent: Color(0xFFEF4444),
+        ),
+        _RaceTelemetryEvent(
+          id: 'bah-2',
+          label: 'Temperatura alta',
+          sector: 'Setor 2',
+          position: Offset(0.53, 0.79),
+          accent: Color(0xFFF59E0B),
+        ),
+        _RaceTelemetryEvent(
+          id: 'bah-3',
+          label: 'Troca de pneus',
+          sector: 'Setor 3',
+          position: Offset(0.75, 0.50),
+          accent: Color(0xFF22C55E),
+        ),
+        _RaceTelemetryEvent(
+          id: 'bah-4',
+          label: 'Aceleração máxima',
+          sector: 'Setor 3',
+          position: Offset(0.63, 0.24),
+          accent: Color(0xFF3B82F6),
+        ),
+        _RaceTelemetryEvent(
+          id: 'bah-5',
+          label: 'Volta rápida',
+          sector: 'Setor 2',
+          position: Offset(0.36, 0.25),
+          accent: Color(0xFFA855F7),
+        ),
+      ],
+    ),
+  };
+
+  final Map<String, _RaceTelemetryDriverSnapshot> _baseDriverSnapshots = {
+    'Bortoleto': const _RaceTelemetryDriverSnapshot(
+      tireCompound: 'Macio',
+      tireLife: 62,
+      speedKmh: 298,
+      rpm: 11820,
+      gear: 8,
+      throttle: 92,
+      brake: 17,
+      tireTempC: 96,
+      engineTempC: 104,
+      trackerBattery: 87,
+      ignitionOn: true,
+      gpsSignal: 92,
+      gsmSignal: 88,
+      lastCommunication: 'há 9 s',
+      fuelOrLoad: 54,
+      trackerTemperature: 39,
+      behavior: 'normal',
+    ),
+    'Verstappen': const _RaceTelemetryDriverSnapshot(
+      tireCompound: 'Duro',
+      tireLife: 58,
+      speedKmh: 304,
+      rpm: 12010,
+      gear: 8,
+      throttle: 95,
+      brake: 14,
+      tireTempC: 98,
+      engineTempC: 106,
+      trackerBattery: 90,
+      ignitionOn: true,
+      gpsSignal: 94,
+      gsmSignal: 86,
+      lastCommunication: 'há 7 s',
+      fuelOrLoad: 49,
+      trackerTemperature: 40,
+      behavior: 'atenção',
+    ),
+    'Norris': const _RaceTelemetryDriverSnapshot(
+      tireCompound: 'Médio',
+      tireLife: 66,
+      speedKmh: 301,
+      rpm: 11910,
+      gear: 8,
+      throttle: 90,
+      brake: 18,
+      tireTempC: 95,
+      engineTempC: 103,
+      trackerBattery: 84,
+      ignitionOn: true,
+      gpsSignal: 89,
+      gsmSignal: 85,
+      lastCommunication: 'há 11 s',
+      fuelOrLoad: 56,
+      trackerTemperature: 38,
+      behavior: 'normal',
+    ),
+    'Leclerc': const _RaceTelemetryDriverSnapshot(
+      tireCompound: 'Intermediário',
+      tireLife: 60,
+      speedKmh: 300,
+      rpm: 11760,
+      gear: 7,
+      throttle: 88,
+      brake: 21,
+      tireTempC: 97,
+      engineTempC: 105,
+      trackerBattery: 79,
+      ignitionOn: true,
+      gpsSignal: 87,
+      gsmSignal: 82,
+      lastCommunication: 'há 13 s',
+      fuelOrLoad: 52,
+      trackerTemperature: 41,
+      behavior: 'risco',
+    ),
+  };
+
+  String _selectedSeason = _seasonOptions.first;
+  String _selectedRace = _raceOptions.first;
+  String _selectedSession = _sessionOptions.first;
+  String _selectedDriver = _driverOptions.first;
+  String _selectedCompare = _compareOptions.first;
+  int _selectedEventIndex = 0;
+
+  _RaceTelemetryCircuit get _activeCircuit => _circuits[_selectedRace]!;
+
+  int _sessionSpeedAdjust() {
+    switch (_selectedSession) {
+      case 'Treino':
+        return -9;
+      case 'Classificação':
+        return 6;
+      case 'Corrida':
+        return 0;
+    }
+    return 0;
+  }
+
+  int _sessionRpmAdjust() {
+    switch (_selectedSession) {
+      case 'Treino':
+        return -300;
+      case 'Classificação':
+        return 210;
+      case 'Corrida':
+        return 0;
+    }
+    return 0;
+  }
+
+  int _raceAdjust(String race) {
+    switch (race) {
+      case 'Austrália':
+        return 2;
+      case 'China':
+        return -1;
+      case 'Japão':
+        return 4;
+      case 'Bahrein':
+        return 1;
+    }
+    return 0;
+  }
+
+  _RaceTelemetryDriverSnapshot _snapshotForDriver(String driver) {
+    final base = _baseDriverSnapshots[driver] ?? _baseDriverSnapshots.values.first;
+    final speedAdjust = _sessionSpeedAdjust() + _raceAdjust(_selectedRace);
+    final rpmAdjust = _sessionRpmAdjust() + (_raceAdjust(_selectedRace) * 35);
+
+    final tireLifeShift = _selectedSession == 'Corrida'
+        ? -5
+        : (_selectedSession == 'Classificação' ? -2 : 4);
+
+    return base.copyWith(
+      speedKmh: (base.speedKmh + speedAdjust).clamp(120, 360),
+      rpm: (base.rpm + rpmAdjust).clamp(5000, 14000),
+      tireLife: (base.tireLife + tireLifeShift).clamp(18, 100),
+      fuelOrLoad: (base.fuelOrLoad + (_selectedSession == 'Corrida' ? -4 : 3))
+          .clamp(10, 100),
+      trackerBattery:
+          (base.trackerBattery + (_selectedSession == 'Treino' ? 3 : -2))
+              .clamp(15, 100),
+      behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
+          ? 'risco'
+          : (_selectedSession == 'Classificação' ? 'atenção' : 'normal'),
+    );
+  }
+
+  _RaceTelemetryComparison? _buildComparison(
+    _RaceTelemetryDriverSnapshot principal,
+  ) {
+    if (_selectedCompare == 'Nenhum' || _selectedCompare == _selectedDriver) {
+      return null;
+    }
+
+    final compared = _snapshotForDriver(_selectedCompare);
+    return _RaceTelemetryComparison(
+      mainDriver: _selectedDriver,
+      comparedDriver: _selectedCompare,
+      speedDelta: principal.speedKmh - compared.speedKmh,
+      brakingDelta: principal.brake - compared.brake,
+      throttleDelta: principal.throttle - compared.throttle,
+      tireWearDelta: principal.tireWear - compared.tireWear,
+    );
+  }
+
+  void _selectEventByIndex(int index) {
+    setState(() {
+      _selectedEventIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final activeCircuit = _activeCircuit;
+    final safeSelectedIndex = _selectedEventIndex.clamp(0, activeCircuit.events.length - 1);
+    final selectedEvent = activeCircuit.events[safeSelectedIndex];
+    final driverSnapshot = _snapshotForDriver(_selectedDriver);
+    final comparison = _buildComparison(driverSnapshot);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 1120;
+
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF051428),
+                    Color(0xFF0A1E3A),
+                    Color(0xFF071528),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(color: const Color(0xFF1A3C66)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Demo Telemetria de Corrida',
+                          style: TextStyle(
+                            color: Color(0xFFEAF1FF),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 26,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F2B4C),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFF2B568A)),
+                        ),
+                        child: const Text(
+                          'Snapshot demo',
+                          style: TextStyle(
+                            color: Color(0xFFD6E7FF),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Demonstração técnica com dados públicos/simulados. Sem uso de marca oficial.',
+                    style: TextStyle(
+                      color: Color(0xFF9DB6D8),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B2039),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF1A3D66)),
+              ),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _RaceTelemetryFilterDropdown(
+                    label: 'Temporada',
+                    value: _selectedSeason,
+                    options: _seasonOptions,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _selectedSeason = value);
+                    },
+                  ),
+                  _RaceTelemetryFilterDropdown(
+                    label: 'Prova',
+                    value: _selectedRace,
+                    options: _raceOptions,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedRace = value;
+                        _selectedEventIndex = 0;
+                      });
+                    },
+                  ),
+                  _RaceTelemetryFilterDropdown(
+                    label: 'Sessão',
+                    value: _selectedSession,
+                    options: _sessionOptions,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _selectedSession = value);
+                    },
+                  ),
+                  _RaceTelemetryFilterDropdown(
+                    label: 'Piloto',
+                    value: _selectedDriver,
+                    options: _driverOptions,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _selectedDriver = value);
+                    },
+                  ),
+                  _RaceTelemetryFilterDropdown(
+                    label: 'Comparar com',
+                    value: _selectedCompare,
+                    options: _compareOptions,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _selectedCompare = value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Column(
+                      children: [
+                        _buildCircuitCard(activeCircuit, selectedEvent),
+                        const SizedBox(height: 12),
+                        _buildEventSelector(activeCircuit, safeSelectedIndex),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      children: [
+                        _buildRaceMetricsCard(
+                          driverSnapshot,
+                          comparison,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildFleetMetricsCard(driverSnapshot),
+                        const SizedBox(height: 12),
+                        _buildTranslationCard(theme),
+                        if (comparison != null) ...[
+                          const SizedBox(height: 12),
+                          _buildComparisonCard(comparison),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              Column(
+                children: [
+                  _buildCircuitCard(activeCircuit, selectedEvent),
+                  const SizedBox(height: 12),
+                  _buildEventSelector(activeCircuit, safeSelectedIndex),
+                  const SizedBox(height: 12),
+                  _buildRaceMetricsCard(driverSnapshot, comparison),
+                  const SizedBox(height: 12),
+                  _buildFleetMetricsCard(driverSnapshot),
+                  const SizedBox(height: 12),
+                  _buildTranslationCard(theme),
+                  if (comparison != null) ...[
+                    const SizedBox(height: 12),
+                    _buildComparisonCard(comparison),
+                  ],
+                ],
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCircuitCard(
+    _RaceTelemetryCircuit circuit,
+    _RaceTelemetryEvent selectedEvent,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF091A2F),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1B3A61)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Mapinha da pista',
+                  style: TextStyle(
+                    color: Color(0xFFEAF1FF),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              Text(
+                circuit.raceName,
+                style: const TextStyle(
+                  color: Color(0xFF93C5FD),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            circuit.trackSubtitle,
+            style: const TextStyle(
+              color: Color(0xFFA6BDD8),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Row(
+            children: [
+              _RaceTelemetrySectorBadge(
+                color: Color(0xFF3B82F6),
+                label: 'Setor 1',
+              ),
+              SizedBox(width: 8),
+              _RaceTelemetrySectorBadge(
+                color: Color(0xFFF59E0B),
+                label: 'Setor 2',
+              ),
+              SizedBox(width: 8),
+              _RaceTelemetrySectorBadge(
+                color: Color(0xFF22C55E),
+                label: 'Setor 3',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          AspectRatio(
+            aspectRatio: 1.85,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final height = constraints.maxHeight;
+
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CustomPaint(
+                          painter: _RaceTelemetryCircuitPainter(
+                            pathPoints: circuit.pathPoints,
+                          ),
+                        ),
+                      ),
+                    ),
+                    for (var i = 0; i < circuit.events.length; i++)
+                      Positioned(
+                        left: (circuit.events[i].position.dx * width) - 16,
+                        top: (circuit.events[i].position.dy * height) - 16,
+                        child: Tooltip(
+                          message: 'Esse evento foi aqui',
+                          child: GestureDetector(
+                            onTap: () => _selectEventByIndex(i),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: circuit.events[i]
+                                    .accent
+                                    .withValues(alpha: 0.90),
+                                border: Border.all(
+                                  color: i == _selectedEventIndex
+                                      ? const Color(0xFFFFF7ED)
+                                      : const Color(0xFFDDE8F8),
+                                  width: i == _selectedEventIndex ? 2 : 1.2,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                '${i + 1}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      left: 12,
+                      bottom: 12,
+                      child: Container(
+                        width: width * 0.52,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0C213A).withValues(alpha: 0.94),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF2A4D76)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              selectedEvent.label,
+                              style: TextStyle(
+                                color: selectedEvent.accent,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Esse evento foi aqui',
+                              style: TextStyle(
+                                color: Color(0xFFCFE2FF),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              selectedEvent.sector,
+                              style: const TextStyle(
+                                color: Color(0xFF93B7E7),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventSelector(_RaceTelemetryCircuit circuit, int safeSelectedIndex) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1D33),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF1A3C62)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (var i = 0; i < circuit.events.length; i++)
+            ChoiceChip(
+              selected: i == safeSelectedIndex,
+              onSelected: (_) => _selectEventByIndex(i),
+              label: Text(
+                circuit.events[i].label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              selectedColor: const Color(0xFF1D4E89),
+              labelStyle: TextStyle(
+                color: i == safeSelectedIndex
+                    ? const Color(0xFFEAF1FF)
+                    : const Color(0xFFD8E8FF),
+              ),
+              backgroundColor: const Color(0xFF102A48),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRaceMetricsCard(
+    _RaceTelemetryDriverSnapshot snapshot,
+    _RaceTelemetryComparison? comparison,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF091A2F),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1B3A61)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Métricas de corrida',
+            style: TextStyle(
+              color: Color(0xFFEAF1FF),
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _RaceTelemetryInfoLine(label: 'Piloto', value: _selectedDriver),
+          _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
+          _RaceTelemetryInfoLine(label: 'Sessão', value: _selectedSession),
+          _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
+          _RaceTelemetryInfoLine(
+            label: 'Vida do pneu',
+            value: '${snapshot.tireLife}%',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Velocidade',
+            value: '${snapshot.speedKmh} km/h',
+          ),
+          _RaceTelemetryInfoLine(label: 'RPM', value: '${snapshot.rpm}'),
+          _RaceTelemetryInfoLine(label: 'Marcha', value: '${snapshot.gear}'),
+          _RaceTelemetryInfoLine(
+            label: 'Acelerador',
+            value: '${snapshot.throttle}%',
+          ),
+          _RaceTelemetryInfoLine(label: 'Freio', value: '${snapshot.brake}%'),
+          _RaceTelemetryInfoLine(
+            label: 'Temperatura do pneu',
+            value: '${snapshot.tireTempC}°C',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Temperatura do motor',
+            value: '${snapshot.engineTempC}°C',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Gap para comparação',
+            value: comparison == null
+                ? 'n/a'
+                : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFleetMetricsCard(_RaceTelemetryDriverSnapshot snapshot) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF091A2F),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1B3A61)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Equivalente em frota',
+            style: TextStyle(
+              color: Color(0xFFEAF1FF),
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _RaceTelemetryInfoLine(
+            label: 'Bateria do rastreador',
+            value: '${snapshot.trackerBattery}%',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Ignição',
+            value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Sinal GPS',
+            value: '${snapshot.gpsSignal}%',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Sinal GSM',
+            value: '${snapshot.gsmSignal}%',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Última comunicação',
+            value: snapshot.lastCommunication,
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Temperatura do baú/motor',
+            value: '${snapshot.trackerTemperature}°C',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Nível de combustível/carga',
+            value: '${snapshot.fuelOrLoad}%',
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Comportamento',
+            value: snapshot.behavior,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTranslationCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1D33),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F446F)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Como isso vira valor na frota',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: const Color(0xFFEAF1FF),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'A mesma lógica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veículos de frota, guinchos, caminhões, máquinas e operações críticas.',
+            style: TextStyle(
+              color: Color(0xFFBCD3F3),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const _RaceTelemetryBullet(text: 'detectar condução agressiva;'),
+          const _RaceTelemetryBullet(text: 'prever manutenção;'),
+          const _RaceTelemetryBullet(text: 'monitorar bateria e comunicação;'),
+          const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
+          const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
+          const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
+          const _RaceTelemetryBullet(text: 'enviar aviso via SouCall;'),
+          const _RaceTelemetryBullet(text: 'abrir OS via SouFind futuramente.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonCard(_RaceTelemetryComparison comparison) {
+    String formatDelta(int value, String suffix) {
+      final signal = value >= 0 ? '+' : '';
+      return '$signal$value$suffix';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF091A2F),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1B3A61)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Comparação',
+            style: TextStyle(
+              color: Color(0xFFEAF1FF),
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _RaceTelemetryInfoLine(
+            label: 'Piloto principal',
+            value: comparison.mainDriver,
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Piloto comparado',
+            value: comparison.comparedDriver,
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Diferença de velocidade',
+            value: formatDelta(comparison.speedDelta, ' km/h'),
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Diferença de frenagem',
+            value: formatDelta(comparison.brakingDelta, '%'),
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Diferença de aceleração',
+            value: formatDelta(comparison.throttleDelta, '%'),
+          ),
+          _RaceTelemetryInfoLine(
+            label: 'Diferença de desgaste de pneu',
+            value: formatDelta(comparison.tireWearDelta, '%'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RaceTelemetryFilterDropdown extends StatelessWidget {
+  const _RaceTelemetryFilterDropdown({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 210,
+      child: DropdownButtonFormField<String>(
+        initialValue: value,
+        isDense: true,
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: const Color(0xFF122C4D),
+          labelStyle: const TextStyle(
+            color: Color(0xFFA8C4E9),
+            fontWeight: FontWeight.w700,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF2D588A)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF2D588A)),
+          ),
+        ),
+        dropdownColor: const Color(0xFF0D2440),
+        style: const TextStyle(
+          color: Color(0xFFEAF1FF),
+          fontWeight: FontWeight.w700,
+        ),
+        items: [
+          for (final option in options)
+            DropdownMenuItem<String>(
+              value: option,
+              child: Text(option),
+            ),
+        ],
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+class _RaceTelemetrySectorBadge extends StatelessWidget {
+  const _RaceTelemetrySectorBadge({
+    required this.color,
+    required this.label,
+  });
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.62)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+}
+
+class _RaceTelemetryInfoLine extends StatelessWidget {
+  const _RaceTelemetryInfoLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFFA9C3E8),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Color(0xFFEAF1FF),
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RaceTelemetryBullet extends StatelessWidget {
+  const _RaceTelemetryBullet({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 3),
+            child: Icon(
+              Icons.circle,
+              size: 8,
+              color: Color(0xFF60A5FA),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFFD5E6FF),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RaceTelemetryCircuitPainter extends CustomPainter {
+  const _RaceTelemetryCircuitPainter({required this.pathPoints});
+
+  final List<Offset> pathPoints;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (pathPoints.length < 2) {
+      return;
+    }
+
+    final backgroundPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFF061426), Color(0xFF10233A)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, backgroundPaint);
+
+    final points = [
+      for (final point in pathPoints)
+        Offset(point.dx * size.width, point.dy * size.height),
+    ];
+
+    final sectorColors = const [
+      Color(0xFF3B82F6),
+      Color(0xFFF59E0B),
+      Color(0xFF22C55E),
+    ];
+    final segmentCount = points.length;
+
+    for (var i = 0; i < segmentCount; i++) {
+      final current = points[i];
+      final next = points[(i + 1) % segmentCount];
+      final ratio = i / segmentCount;
+      final sectorIndex = ratio < 0.34
+          ? 0
+          : (ratio < 0.67 ? 1 : 2);
+
+      final glow = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 15
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14)
+        ..color = sectorColors[sectorIndex].withValues(alpha: 0.20);
+      canvas.drawLine(current, next, glow);
+
+      final track = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 9
+        ..color = sectorColors[sectorIndex].withValues(alpha: 0.88);
+      canvas.drawLine(current, next, track);
+
+      final center = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 2.4
+        ..color = const Color(0xFFE2E8F0).withValues(alpha: 0.46);
+      canvas.drawLine(current, next, center);
+    }
+
+    final start = points.first;
+    final finishPaint = Paint()
+      ..color = const Color(0xFFEAF1FF)
+      ..strokeWidth = 3;
+    canvas.drawLine(
+      Offset(start.dx - 9, start.dy - 7),
+      Offset(start.dx + 9, start.dy + 7),
+      finishPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RaceTelemetryCircuitPainter oldDelegate) {
+    return oldDelegate.pathPoints != pathPoints;
+  }
+}
+
+class _RaceTelemetryCircuit {
+  const _RaceTelemetryCircuit({
+    required this.raceName,
+    required this.trackSubtitle,
+    required this.pathPoints,
+    required this.events,
+  });
+
+  final String raceName;
+  final String trackSubtitle;
+  final List<Offset> pathPoints;
+  final List<_RaceTelemetryEvent> events;
+}
+
+class _RaceTelemetryEvent {
+  const _RaceTelemetryEvent({
+    required this.id,
+    required this.label,
+    required this.sector,
+    required this.position,
+    required this.accent,
+  });
+
+  final String id;
+  final String label;
+  final String sector;
+  final Offset position;
+  final Color accent;
+}
+
+class _RaceTelemetryDriverSnapshot {
+  const _RaceTelemetryDriverSnapshot({
+    required this.tireCompound,
+    required this.tireLife,
+    required this.speedKmh,
+    required this.rpm,
+    required this.gear,
+    required this.throttle,
+    required this.brake,
+    required this.tireTempC,
+    required this.engineTempC,
+    required this.trackerBattery,
+    required this.ignitionOn,
+    required this.gpsSignal,
+    required this.gsmSignal,
+    required this.lastCommunication,
+    required this.fuelOrLoad,
+    required this.trackerTemperature,
+    required this.behavior,
+  });
+
+  final String tireCompound;
+  final int tireLife;
+  final int speedKmh;
+  final int rpm;
+  final int gear;
+  final int throttle;
+  final int brake;
+  final int tireTempC;
+  final int engineTempC;
+  final int trackerBattery;
+  final bool ignitionOn;
+  final int gpsSignal;
+  final int gsmSignal;
+  final String lastCommunication;
+  final int fuelOrLoad;
+  final int trackerTemperature;
+  final String behavior;
+
+  int get tireWear => 100 - tireLife;
+
+  _RaceTelemetryDriverSnapshot copyWith({
+    String? tireCompound,
+    int? tireLife,
+    int? speedKmh,
+    int? rpm,
+    int? gear,
+    int? throttle,
+    int? brake,
+    int? tireTempC,
+    int? engineTempC,
+    int? trackerBattery,
+    bool? ignitionOn,
+    int? gpsSignal,
+    int? gsmSignal,
+    String? lastCommunication,
+    int? fuelOrLoad,
+    int? trackerTemperature,
+    String? behavior,
+  }) {
+    return _RaceTelemetryDriverSnapshot(
+      tireCompound: tireCompound ?? this.tireCompound,
+      tireLife: tireLife ?? this.tireLife,
+      speedKmh: speedKmh ?? this.speedKmh,
+      rpm: rpm ?? this.rpm,
+      gear: gear ?? this.gear,
+      throttle: throttle ?? this.throttle,
+      brake: brake ?? this.brake,
+      tireTempC: tireTempC ?? this.tireTempC,
+      engineTempC: engineTempC ?? this.engineTempC,
+      trackerBattery: trackerBattery ?? this.trackerBattery,
+      ignitionOn: ignitionOn ?? this.ignitionOn,
+      gpsSignal: gpsSignal ?? this.gpsSignal,
+      gsmSignal: gsmSignal ?? this.gsmSignal,
+      lastCommunication: lastCommunication ?? this.lastCommunication,
+      fuelOrLoad: fuelOrLoad ?? this.fuelOrLoad,
+      trackerTemperature: trackerTemperature ?? this.trackerTemperature,
+      behavior: behavior ?? this.behavior,
+    );
+  }
+}
+
+class _RaceTelemetryComparison {
+  const _RaceTelemetryComparison({
+    required this.mainDriver,
+    required this.comparedDriver,
+    required this.speedDelta,
+    required this.brakingDelta,
+    required this.throttleDelta,
+    required this.tireWearDelta,
+  });
+
+  final String mainDriver;
+  final String comparedDriver;
+  final int speedDelta;
+  final int brakingDelta;
+  final int throttleDelta;
+  final int tireWearDelta;
 }
 
 class _TelemetryDemoScreen extends StatefulWidget {
