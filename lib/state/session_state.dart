@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/app_constants.dart';
 import '../core/tenant_config.dart';
@@ -16,6 +16,7 @@ class SessionState {
     this.authHeader,
     this.tenantConfig = TenantConfig.fallback,
     this.profileCode = 'OM',
+    this.isAdministrator = false,
   });
 
   final SessionStatus status;
@@ -25,6 +26,7 @@ class SessionState {
   final String? authHeader;
   final TenantConfig tenantConfig;
   final String profileCode;
+  final bool isAdministrator;
 
   bool get isAuthenticated =>
       status == SessionStatus.authenticated &&
@@ -38,6 +40,7 @@ class SessionState {
     String? authHeader,
     TenantConfig? tenantConfig,
     String? profileCode,
+    bool? isAdministrator,
   }) {
     return SessionState(
       status: status ?? this.status,
@@ -47,6 +50,7 @@ class SessionState {
       authHeader: authHeader ?? this.authHeader,
       tenantConfig: tenantConfig ?? this.tenantConfig,
       profileCode: profileCode ?? this.profileCode,
+      isAdministrator: isAdministrator ?? this.isAdministrator,
     );
   }
 }
@@ -71,6 +75,144 @@ class SessionController extends StateNotifier<SessionState> {
 
   final TraccarClient _client;
   final Ref _ref;
+
+  bool? _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value > 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  Map<String, bool> _parseModuleFlags(dynamic raw) {
+    final modules = <String, bool>{};
+
+    void setModule(String key, dynamic value) {
+      final parsed = _asBool(value);
+      if (parsed != null && key.trim().isNotEmpty) {
+        modules[key.trim().toLowerCase()] = parsed;
+      }
+    }
+
+    if (raw is Map) {
+      raw.forEach((key, value) => setModule(key.toString(), value));
+      return modules;
+    }
+
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is String) {
+          modules[item.trim().toLowerCase()] = true;
+        } else if (item is Map) {
+          final key = item['key'] ?? item['name'] ?? item['module'] ?? '';
+          final value = item['enabled'] ?? item['active'] ?? item['value'];
+          setModule(key.toString(), value ?? true);
+        }
+      }
+      return modules;
+    }
+
+    if (raw is String) {
+      final tokens = raw
+          .split(RegExp(r'[,;\\s]+'))
+          .map((it) => it.trim().toLowerCase())
+          .where((it) => it.isNotEmpty);
+      for (final token in tokens) {
+        modules[token] = true;
+      }
+      return modules;
+    }
+
+    return modules;
+  }
+
+  Map<String, bool> _extractUserModules(Map<String, dynamic> user) {
+    final parsed = <String, bool>{};
+
+    void mergeFrom(dynamic raw) {
+      final found = _parseModuleFlags(raw);
+      if (found.isNotEmpty) {
+        parsed.addAll(found);
+      }
+    }
+
+    mergeFrom(user['modules']);
+    mergeFrom(user['features']);
+    mergeFrom(user['permissions']);
+
+    final attrs = user['attributes'];
+    if (attrs is Map) {
+      final casted = attrs.cast<String, dynamic>();
+      mergeFrom(casted['modules']);
+      mergeFrom(casted['features']);
+      mergeFrom(casted['permissions']);
+
+      const knownKeys = [
+        'tracking',
+        'assist',
+        'demand',
+        'communication',
+        'zpro',
+        'ai',
+        'ai_ops',
+        'assistant',
+        'finance',
+        'inventory',
+        'mdvr',
+        'cameras',
+        'data_log',
+        'datalog',
+        'logs',
+        'reports',
+        'reports_plus',
+        'automations',
+        'automation',
+        'rules',
+        'admin',
+      ];
+
+      for (final key in knownKeys) {
+        final parsedValue = _asBool(casted[key]);
+        if (parsedValue != null) {
+          parsed[key] = parsedValue;
+        }
+      }
+    }
+
+    return parsed;
+  }
+
+  TenantConfig _mergeTenantConfigWithUser(
+    TenantConfig tenantConfig,
+    Map<String, dynamic> user,
+  ) {
+    final isAdministrator = user['administrator'] == true;
+    final userModules = _extractUserModules(user);
+
+    if (!isAdministrator && userModules.isEmpty) {
+      return tenantConfig;
+    }
+
+    return TenantConfig(
+      tenantId: tenantConfig.tenantId,
+      companyName: tenantConfig.companyName,
+      slug: tenantConfig.slug,
+      modules: {
+        ...tenantConfig.modules,
+        ...userModules,
+      },
+      isMasterAdmin: tenantConfig.isMasterAdmin || isAdministrator,
+      isCompanyAdmin: tenantConfig.isCompanyAdmin || isAdministrator,
+      branding: tenantConfig.branding,
+    );
+  }
 
   String _normalizeProfileCode(String? raw) {
     final value = (raw ?? '').trim().toUpperCase();
@@ -154,7 +296,7 @@ class SessionController extends StateNotifier<SessionState> {
       email: email,
     );
     if (presentationMode) {
-      // Força modo demo estável
+      // ForÃ§a modo demo estÃ¡vel
       const tenantConfig = TenantConfig(
         tenantId: 'demo',
         companyName: 'SouTracking Demo',
@@ -189,13 +331,14 @@ class SessionController extends StateNotifier<SessionState> {
         error: null,
         tenantConfig: tenantConfig,
         profileCode: 'MA',
+        isAdministrator: true,
       );
       return;
     }
     try {
       final session = await _client.login(email: email, password: password);
-      // Hotfix: removida validação manual de /api/server e /api/devices para permitir build.
-      // Segue fluxo normal após login.
+      // Hotfix: removida validaÃ§Ã£o manual de /api/server e /api/devices para permitir build.
+      // Segue fluxo normal apÃ³s login.
       TenantConfig tenantConfig = TenantConfig.fallback;
       try {
         final tenantRaw = await _client.getTenantConfig(
@@ -214,35 +357,45 @@ class SessionController extends StateNotifier<SessionState> {
           modules: const {
             'tracking': true,
             'assist': false,
-            'demand': true,
-            'mdvr': true,
+            'demand': false,
+            'mdvr': false,
             'admin': false,
-            'zpro': true,
+            'zpro': false,
+            'finance': false,
+            'inventory': false,
+            'ai': false,
+            'data_log': false,
+            'automations': false,
           },
           isMasterAdmin: session.user['administrator'] == true,
           isCompanyAdmin: session.user['administrator'] == true,
           branding: const {
             'appName': 'Soutracking',
-            'tagline': 'Gestão inteligente de frotas e ativos',
+            'tagline': 'GestÃ£o inteligente de frotas e ativos',
             'primaryColor': '#7C5CFF',
             'secondaryColor': '#7C5CFF',
           },
         );
       }
+      final mergedTenantConfig = _mergeTenantConfigWithUser(
+        tenantConfig,
+        session.user,
+      );
       await _ref
           .read(whiteLabelProvider.notifier)
-          .applyBranding(tenantConfig.branding);
+          .applyBranding(mergedTenantConfig.branding);
       final profileCode = _inferProfileCode(
         session.user,
-        tenantConfig: tenantConfig,
+        tenantConfig: mergedTenantConfig,
       );
       state = state.copyWith(
         status: SessionStatus.authenticated,
         cookie: session.cookie,
         authHeader: session.authHeader,
         error: null,
-        tenantConfig: tenantConfig,
+        tenantConfig: mergedTenantConfig,
         profileCode: profileCode,
+        isAdministrator: session.user['administrator'] == true,
       );
     } catch (e) {
       state = state.copyWith(
@@ -252,7 +405,21 @@ class SessionController extends StateNotifier<SessionState> {
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
+    final current = state;
+    try {
+      if (current.cookie?.isNotEmpty == true ||
+          current.authHeader?.isNotEmpty == true) {
+        await _client.deleteEntity(
+          path: '/session',
+          cookie: current.cookie,
+          authHeader: current.authHeader,
+        );
+      }
+    } catch (_) {
+      // Mantem logout local mesmo com falha de rede.
+    }
+
     state = const SessionState(status: SessionStatus.idle);
     _ref.read(whiteLabelProvider.notifier).reset();
   }
@@ -271,22 +438,8 @@ final tenantConfigProvider = Provider<TenantConfig>((ref) {
 
 final devicesProvider = FutureProvider<List<TraccarDevice>>((ref) async {
   final session = ref.watch(sessionProvider);
-  if (presentationMode || !session.isAuthenticated) {
-    // DEMO: nunca lança exception, sempre retorna mock
-    return [
-      TraccarDevice(
-          id: 1,
-          name: 'Veículo 1',
-          status: 'online',
-          lastUpdate: '2026-02-27T12:00:00Z'),
-      TraccarDevice(
-          id: 2,
-          name: 'Veículo 2',
-          status: 'offline',
-          lastUpdate: '2026-02-27T11:00:00Z'),
-      TraccarDevice(
-          id: 3, name: 'Veículo 3', status: 'unknown', lastUpdate: null),
-    ];
+  if (!session.isAuthenticated) {
+    return [];
   }
   final client = ref.watch(traccarClientProvider);
   try {
@@ -295,54 +448,14 @@ final devicesProvider = FutureProvider<List<TraccarDevice>>((ref) async {
       authHeader: session.authHeader,
     );
   } catch (_) {
-    // Nunca propaga erro para UI
-    return [
-      TraccarDevice(
-          id: 1,
-          name: 'Veículo 1',
-          status: 'online',
-          lastUpdate: '2026-02-27T12:00:00Z'),
-      TraccarDevice(
-          id: 2,
-          name: 'Veículo 2',
-          status: 'offline',
-          lastUpdate: '2026-02-27T11:00:00Z'),
-      TraccarDevice(
-          id: 3, name: 'Veículo 3', status: 'unknown', lastUpdate: null),
-    ];
+    return [];
   }
 });
 
 final positionsProvider = FutureProvider<List<TraccarPosition>>((ref) async {
   final session = ref.watch(sessionProvider);
-  if (presentationMode || !session.isAuthenticated) {
-    // DEMO: nunca lança exception, sempre retorna posições mockadas
-    return [
-      TraccarPosition(
-        id: 101,
-        deviceId: 1,
-        latitude: -23.5615,
-        longitude: -46.6554,
-        fixTime: '2026-02-27T12:00:00Z',
-        speed: 28,
-      ),
-      TraccarPosition(
-        id: 102,
-        deviceId: 2,
-        latitude: -23.6002,
-        longitude: -46.6891,
-        fixTime: '2026-02-27T11:58:00Z',
-        speed: 0,
-      ),
-      TraccarPosition(
-        id: 103,
-        deviceId: 3,
-        latitude: -23.5482,
-        longitude: -46.6921,
-        fixTime: '2026-02-27T11:54:00Z',
-        speed: 12,
-      ),
-    ];
+  if (!session.isAuthenticated) {
+    return [];
   }
   final client = ref.watch(traccarClientProvider);
   try {
@@ -372,7 +485,7 @@ FutureProvider<List<Map<String, dynamic>>> _genericListProvider(String path) {
   return FutureProvider<List<Map<String, dynamic>>>((ref) async {
     final session = ref.watch(sessionProvider);
     if (presentationMode || !session.isAuthenticated) {
-      // DEMO: nunca lança exception, sempre retorna vazio
+      // DEMO: nunca lanÃ§a exception, sempre retorna vazio
       return [];
     }
     final client = ref.watch(traccarClientProvider);
@@ -486,7 +599,7 @@ final attributesProvider =
       };
     }
   } catch (_) {
-    // ignora falha de /attributes para não bloquear catálogo
+    // ignora falha de /attributes para nÃ£o bloquear catÃ¡logo
   }
 
   try {

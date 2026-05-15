@@ -1,17 +1,18 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
+import '../../core/app_constants.dart';
 import '../../core/white_label.dart';
 import '../../data/bridge_client.dart';
 import '../../data/models.dart';
 import '../../data/openf1_client.dart';
 import '../../state/session_state.dart';
 import '../../widgets/status_pill.dart';
-import '../admin/admin_tenants_screen.dart';
 import '../alerts/alerts_screen.dart';
 import '../attributes/attributes_screen.dart';
 import '../business/business_reference_screens.dart';
@@ -19,18 +20,21 @@ import '../calls/calls_screen.dart';
 import '../communication/zpro_communication_screen.dart';
 import '../common/placeholder_screen.dart';
 import '../clients/clients_screen.dart';
+import '../commands/commands_screen.dart';
+import '../devices/devices_screen.dart';
 import '../drivers/drivers_screen.dart';
 import '../finance/finance_screen.dart';
 import '../geofences/geofences_screen.dart';
 import '../groups/groups_screen.dart';
 import '../history/history_screen.dart';
 import '../inventory/inventory_screen.dart';
+import '../login/login_screen.dart';
 import '../map/map_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../permissions/permissions_screen.dart';
 import '../reports/reports_screen.dart';
 import '../routes/routes_screen.dart';
-import '../settings/settings_screen.dart';
+import '../telemetry/telemetry_sensors_screen.dart';
 import '../users/users_screen.dart';
 import '../vehicles/vehicles_screen.dart';
 
@@ -95,6 +99,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _openPanel(_OperationalMenuItem item) {
+    if (item.id == 'map') {
+      _blockSurfaceClearUntil = DateTime.now().add(
+        const Duration(milliseconds: 700),
+      );
+      setState(() {
+        _activePanelId = null;
+        _activePanelTitle = null;
+        _menuOpen = true;
+        _kpiListOpen = false;
+        _previewVehicle = null;
+        _selectedVehicle = null;
+      });
+      return;
+    }
+
     _blockSurfaceClearUntil = DateTime.now().add(
       const Duration(milliseconds: 700),
     );
@@ -120,11 +139,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _focusVehicle(snapshot);
   }
 
-  void _openVehicleDetails(_VehicleSnapshot snapshot) {
+  void _openVehicleDetails(
+    _VehicleSnapshot snapshot, {
+    _VehicleBottomTab initialTab = _VehicleBottomTab.overview,
+  }) {
+    // Prevent accidental map tap propagation from clearing the opened panel.
+    _blockSurfaceClearUntil = DateTime.now().add(
+      const Duration(milliseconds: 700),
+    );
     setState(() {
       _selectedVehicle = snapshot.device;
       _previewVehicle = null;
-      _activeBottomTab = _VehicleBottomTab.overview;
+      _activeBottomTab = initialTab;
       _menuOpen = false;
       _kpiListOpen = false;
       _activePanelId = null;
@@ -133,11 +159,46 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _focusVehicle(snapshot);
   }
 
+  void _openVehicleAlerts(_VehicleSnapshot snapshot) {
+    _openVehicleDetails(snapshot, initialTab: _VehicleBottomTab.overview);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Eventos recentes do veiculo carregados.')),
+    );
+  }
+
+  Future<void> _shareVehicle(_VehicleSnapshot snapshot) async {
+    _blockSurfaceClearUntil = DateTime.now().add(
+      const Duration(milliseconds: 700),
+    );
+    final latLng = snapshot.latLngOrNull;
+    if (latLng == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veiculo sem posicao real para compartilhar.'),
+        ),
+      );
+      return;
+    }
+    final mapsUrl =
+        'https://maps.google.com/?q=${latLng.latitude},${latLng.longitude}';
+    final shareText =
+        '${snapshot.device.name} - ${snapshot.speedLabel}\n$mapsUrl';
+    await Clipboard.setData(ClipboardData(text: shareText));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Link do veiculo copiado para compartilhar.')),
+    );
+  }
+
   void _focusVehicle(_VehicleSnapshot snapshot) {
+    final latLng = snapshot.latLngOrNull;
+    if (latLng == null) return;
     _googleMapController?.animateCamera(
       gmaps.CameraUpdate.newCameraPosition(
         gmaps.CameraPosition(
-          target: snapshot.latLng,
+          target: latLng,
           zoom: 16,
           tilt: 45,
           bearing: snapshot.mapBearing,
@@ -157,10 +218,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _selectedVehicle ?? _previewVehicle,
       snapshots,
     );
-    final target = selected?.latLng ??
-        (snapshots.isEmpty
-            ? const gmaps.LatLng(-23.55052, -46.633308)
-            : snapshots.first.latLng);
+    final firstWithPosition = snapshots
+        .where((snapshot) => snapshot.hasPosition)
+        .cast<_VehicleSnapshot?>()
+        .firstOrNull;
+    final target = selected?.latLngOrNull ??
+        firstWithPosition?.latLngOrNull ??
+        const gmaps.LatLng(-23.55052, -46.633308);
     _googleMapController?.animateCamera(
       gmaps.CameraUpdate.newCameraPosition(
         gmaps.CameraPosition(target: target, zoom: 14.5, tilt: 35),
@@ -186,6 +250,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.invalidate(timezonesProvider);
   }
 
+  Future<void> _handleLogout() async {
+    await ref.read(sessionProvider.notifier).logout();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(devicesProvider);
@@ -201,8 +276,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final snapshots = _buildSnapshots(devices, positions);
     _VehicleSnapshot? enrichSnapshot(_VehicleSnapshot? snapshot) {
       if (snapshot == null) return null;
-      final selectedAddress =
-          ref.watch(reverseGeocodeProvider(_geocodeKey(snapshot))).valueOrNull;
+      final geocodeKey = _geocodeKey(snapshot);
+      final selectedAddress = geocodeKey == null
+          ? null
+          : ref.watch(reverseGeocodeProvider(geocodeKey)).valueOrNull;
       final selectedEvents =
           ref.watch(deviceEventsProvider(snapshot.device.id)).valueOrNull ??
               const <Map<String, dynamic>>[];
@@ -229,9 +306,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         latestEvents.isNotEmpty ? latestEvents.length : snapshotKpis.alerts;
     final kpis = snapshotKpis.copyWith(alerts: realAlertCount);
     final filteredSnapshots = _filterSnapshots(snapshots, _activeKpiFilter);
+    final currentSession = ref.watch(sessionProvider);
     final menuItems = _menuWithRealtimeBadges(
+      session: currentSession,
       alertCount: realAlertCount,
       orderCount: ref.watch(ordersProvider).valueOrNull?.length ?? 0,
+      usePilotMenu: _isPilotView(currentSession),
+      showDataLog: _shouldShowDataLogMenu(currentSession),
     );
 
     return Scaffold(
@@ -279,6 +360,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             activeSubtitle: _panelSubtitle(_activePanelId),
             onRefresh: _refreshOperationalData,
             onClosePanel: _closePanel,
+            onLogout: () {
+              _handleLogout();
+            },
           ),
           if (!_activePanelVisible)
             Positioned(
@@ -306,7 +390,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             items: menuItems,
             activeId: _activePanelId,
             onSelect: _openPanel,
-            onLogout: () => ref.read(sessionProvider.notifier).logout(),
+            onLogout: () {
+              _handleLogout();
+            },
           ),
           if (_showHighlightsRail) _HighlightsRail(open: !_activePanelVisible),
           _KpiVehicleList(
@@ -326,6 +412,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             _VehicleCompactPopup(
               snapshot: previewSnapshot,
               onDetails: () => _openVehicleDetails(previewSnapshot),
+              onAlerts: () => _openVehicleAlerts(previewSnapshot),
+              onShare: () {
+                _shareVehicle(previewSnapshot);
+              },
+              onMore: () => _openVehicleDetails(
+                previewSnapshot,
+                initialTab: _VehicleBottomTab.commands,
+              ),
               onClose: () => setState(() => _previewVehicle = null),
             ),
           _VehicleBottomBar(
@@ -357,6 +451,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return 'Monitoramento em tempo real';
       case 'vehicles':
         return 'Cadastro e ciclo de vida da frota';
+      case 'devices':
+        return 'Gestao operacional de rastreadores';
       case 'routes':
         return 'Historico, replay e quilometragem';
       case 'alerts':
@@ -376,13 +472,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'mdvr':
         return 'Monitoramento de cameras e evidencias';
       case 'telemetry-demo':
-        return 'Demonstracao de telemetria';
+        return 'Telemetria operacional em tempo real';
+      case 'logs':
+        return 'Data log por comunicacao do dispositivo';
       case 'reports':
-        return 'Relatórios operacionais e executivos';
+        return 'RelatÃ³rios operacionais e executivos';
       case 'automations':
         return 'Regras e gatilhos automaticos';
       case 'settings':
-        return 'Governança e parâmetros do ambiente';
+        return 'GovernanÃ§a e parÃ¢metros do ambiente';
       default:
         return 'Painel integrado';
     }
@@ -392,20 +490,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     List<TraccarDevice> devices,
     List<TraccarPosition> positions,
   ) {
-    final positionByDeviceId = <int, TraccarPosition>{
-      for (final position in positions) position.deviceId: position,
-    };
-    const fallbackCenter = gmaps.LatLng(-23.55052, -46.633308);
+    final positionByDeviceId = <int, TraccarPosition>{};
+    for (final position in positions) {
+      final current = positionByDeviceId[position.deviceId];
+      if (current == null) {
+        positionByDeviceId[position.deviceId] = position;
+        continue;
+      }
+      final currentTime = DateTime.tryParse(current.fixTime);
+      final nextTime = DateTime.tryParse(position.fixTime);
+      if (nextTime != null &&
+          (currentTime == null || nextTime.isAfter(currentTime))) {
+        positionByDeviceId[position.deviceId] = position;
+      }
+    }
 
     return [
       for (var i = 0; i < devices.length; i++)
         _VehicleSnapshot(
           device: devices[i],
           position: positionByDeviceId[devices[i].id],
-          fallbackLatLng: gmaps.LatLng(
-            fallbackCenter.latitude + (i * 0.018),
-            fallbackCenter.longitude + (i.isEven ? i * 0.018 : -i * 0.016),
-          ),
           index: i,
         ),
     ];
@@ -422,8 +526,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return null;
   }
 
-  String _geocodeKey(_VehicleSnapshot snapshot) {
-    final latLng = snapshot.latLng;
+  String? _geocodeKey(_VehicleSnapshot snapshot) {
+    final latLng = snapshot.latLngOrNull;
+    if (latLng == null) return null;
     return '${latLng.latitude.toStringAsFixed(6)},'
         '${latLng.longitude.toStringAsFixed(6)}';
   }
@@ -451,11 +556,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   List<_OperationalMenuItem> _menuWithRealtimeBadges({
+    required SessionState session,
     required int alertCount,
     required int orderCount,
+    required bool usePilotMenu,
+    required bool showDataLog,
   }) {
+    final rawMenu = usePilotMenu ? _pixeltiPilotMenu : _operationalMenu;
+    final baseMenu = showDataLog
+        ? rawMenu
+        : rawMenu.where((item) => item.id != 'logs').toList(growable: false);
+    final filteredMenu = _filterMenuForSession(baseMenu, session);
     return [
-      for (final item in _operationalMenu)
+      for (final item in filteredMenu)
         if (item.id == 'alerts')
           item.copyWith(badge: _badgeText(alertCount))
         else if (item.id == 'tickets')
@@ -465,9 +578,117 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ];
   }
 
+  List<_OperationalMenuItem> _filterMenuForSession(
+    List<_OperationalMenuItem> items,
+    SessionState session,
+  ) {
+    if (_isAdminSession(session)) {
+      return items;
+    }
+
+    final modules = session.tenantConfig.modules;
+    bool enabled(String key) => modules[key] == true;
+
+    // Menus com backend/API operacional para perfil cliente.
+    const apiBackedMenuIds = {
+      'dashboard',
+      'map',
+      'vehicles',
+      'devices',
+      'routes',
+      'alerts',
+      'geofences',
+      'reports',
+    };
+
+    bool allowByModule(String menuId) {
+      switch (menuId) {
+        case 'dashboard':
+        case 'map':
+        case 'vehicles':
+        case 'routes':
+        case 'alerts':
+          return enabled('tracking') ||
+              enabled('fleet') ||
+              enabled('monitoring');
+        case 'devices':
+          return enabled('tracking') || enabled('devices');
+        case 'geofences':
+          return enabled('tracking') ||
+              enabled('geofences') ||
+              enabled('geofence');
+        case 'tickets':
+          return enabled('demand') || enabled('assist');
+        case 'communication':
+          return enabled('zpro') || enabled('communication');
+        case 'ai-operations':
+          return enabled('ai') || enabled('ai_ops') || enabled('assistant');
+        case 'finance':
+          return enabled('finance');
+        case 'inventory':
+          return enabled('inventory');
+        case 'mdvr':
+          return enabled('mdvr') || enabled('cameras');
+        case 'logs':
+          return enabled('data_log') || enabled('datalog') || enabled('logs');
+        case 'reports':
+          return enabled('tracking') ||
+              enabled('reports') ||
+              enabled('reports_plus');
+        case 'automations':
+          return enabled('automations') ||
+              enabled('automation') ||
+              enabled('rules');
+        case 'settings':
+          return enabled('admin');
+        default:
+          return true;
+      }
+    }
+
+    return items
+        .where((item) => apiBackedMenuIds.contains(item.id))
+        .where((item) => allowByModule(item.id))
+        .toList(growable: false);
+  }
+
   String? _badgeText(int value) {
     if (value <= 0) return null;
     return value > 99 ? '99+' : '$value';
+  }
+
+  bool _isPixeltiUser(SessionState session) {
+    return (session.email ?? '').trim().toLowerCase() ==
+        'pixelti@soutracking.com.br';
+  }
+
+  bool _isAdminSession(SessionState session) {
+    final profile = session.profileCode.trim().toUpperCase();
+    return session.isAdministrator ||
+        profile == 'MA' ||
+        profile == 'AE' ||
+        session.tenantConfig.isMasterAdmin ||
+        session.tenantConfig.isCompanyAdmin;
+  }
+
+  bool _isPilotView(SessionState session) {
+    return kPixeltiPilotMode || _isPixeltiUser(session);
+  }
+
+  bool _shouldShowDataLogMenu(SessionState session) {
+    if (_isAdminSession(session)) {
+      return true;
+    }
+    if (_isPixeltiUser(session)) {
+      return false;
+    }
+    if (kEnableDataLogMenu) {
+      return true;
+    }
+    final modules = session.tenantConfig.modules;
+    return modules['data_log'] == true ||
+        modules['datalog'] == true ||
+        modules['logs'] == true;
   }
 
   Widget _panelFor(String? id) {
@@ -478,6 +699,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return _buildMapPanel();
       case 'vehicles':
         return _buildVehiclesPanel();
+      case 'devices':
+        return _buildDevicesPanel();
       case 'routes':
         return _buildRoutesPanel();
       case 'alerts':
@@ -498,6 +721,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return _buildMdvrPanel();
       case 'telemetry-demo':
         return _buildTelemetryDemoPanel();
+      case 'logs':
+        return _buildLogsPanel();
       case 'reports':
         return _buildReportsPanel();
       case 'automations':
@@ -537,6 +762,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     required String moduleTitle,
     required List<({String label, IconData icon, String description})> items,
   }) {
+    if (!kShowPlaceholderPanels) {
+      return const <_PanelToolEntry>[];
+    }
     return [
       for (final item in items)
         _placeholderEntry(
@@ -549,6 +777,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildDashboardPanel() {
+    if (_isPilotView(ref.watch(sessionProvider))) {
+      return _TraccarToolsPanel(
+        key: const ValueKey('dashboard-tools'),
+        title: 'Dashboard',
+        entries: const [
+          _PanelToolEntry(
+            label: 'Visao geral',
+            icon: Icons.space_dashboard_outlined,
+            detail: 'Resumo em tempo real',
+            child: GeneralPanelScreen(),
+          ),
+          _PanelToolEntry(
+            label: 'Frota em tempo real',
+            icon: Icons.directions_car_outlined,
+            detail: 'Dados do SouTracking',
+            child: VehiclesScreen(),
+          ),
+          _PanelToolEntry(
+            label: 'Alertas criticos',
+            icon: Icons.warning_amber_outlined,
+            detail: 'Eventos de risco',
+            child: AlertsScreen(),
+          ),
+        ],
+      );
+    }
+
     return _TraccarToolsPanel(
       key: const ValueKey('dashboard-tools'),
       title: 'Dashboard',
@@ -583,18 +838,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           detail: 'Visao financeira',
           child: FinanceScreen(),
         ),
-        _placeholderEntry(
-          moduleTitle: 'Dashboard',
-          label: 'Saude da operacao',
-          icon: Icons.health_and_safety_outlined,
-          description:
-              'Painel de saude operacional com qualidade de sinais e riscos.',
-          cards: const [
-            'Sinal de rastreamento por regiao',
-            'Latencia media de eventos',
-            'Status de sensores criticos',
-          ],
-        ),
+        if (kShowPlaceholderPanels)
+          _placeholderEntry(
+            moduleTitle: 'Dashboard',
+            label: 'Saude da operacao',
+            icon: Icons.health_and_safety_outlined,
+            description:
+                'Painel de saude operacional com qualidade de sinais e riscos.',
+            cards: const [
+              'Sinal de rastreamento por regiao',
+              'Latencia media de eventos',
+              'Status de sensores criticos',
+            ],
+          ),
       ],
     );
   }
@@ -603,63 +859,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return _TraccarToolsPanel(
       key: const ValueKey('map-tools'),
       title: 'Mapa',
-      entries: [
-        const _PanelToolEntry(
-          label: 'Mapa em tempo real',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Mapa principal',
           icon: Icons.map_outlined,
-          detail: 'Base SouTracking ativa',
+          detail: 'Monitoramento em tempo real',
           child: MapScreen(),
-        ),
-        const _PanelToolEntry(
-          label: 'Veiculos no mapa',
-          icon: Icons.pin_drop_outlined,
-          detail: 'Posicionamento ao vivo',
-          child: MapScreen(),
-        ),
-        ..._placeholderEntries(
-          moduleTitle: 'Mapa',
-          items: const [
-            (
-              label: 'Puxar localizacao',
-              icon: Icons.my_location_outlined,
-              description:
-                  'Acao rapida para solicitar posicao atual do veiculo.',
-            ),
-            (
-              label: 'Criar alerta',
-              icon: Icons.add_alert_outlined,
-              description:
-                  'Criacao visual de alerta contextual a partir do mapa.',
-            ),
-            (
-              label: 'Abrir chamado',
-              icon: Icons.confirmation_number_outlined,
-              description: 'Atalho para abrir chamado com contexto da posicao.',
-            ),
-            (
-              label: 'Enviar WhatsApp',
-              icon: Icons.forum_outlined,
-              description:
-                  'Fluxo visual de envio de mensagem para cliente e motorista.',
-            ),
-            (
-              label: 'Ver cameras',
-              icon: Icons.videocam_outlined,
-              description:
-                  'Atalho para visualizar cameras associadas ao veiculo.',
-            ),
-            (
-              label: 'Camadas do mapa',
-              icon: Icons.layers_outlined,
-              description: 'Controle de camadas e filtros de exibicao no mapa.',
-            ),
-          ],
         ),
       ],
     );
   }
 
   Widget _buildVehiclesPanel() {
+    if (_isPilotView(ref.watch(sessionProvider))) {
+      return _TraccarToolsPanel(
+        key: const ValueKey('vehicles-tools'),
+        title: 'Veiculos',
+        entries: const [
+          _PanelToolEntry(
+            label: 'Lista de veiculos',
+            icon: Icons.list_alt_outlined,
+            detail: 'Cadastro atual da frota',
+            child: VehiclesScreen(),
+          ),
+        ],
+      );
+    }
+
     return _TraccarToolsPanel(
       key: const ValueKey('vehicles-tools'),
       title: 'Veiculos',
@@ -719,7 +945,43 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
+  Widget _buildDevicesPanel() {
+    return _TraccarToolsPanel(
+      key: const ValueKey('devices-tools'),
+      title: 'Dispositivos',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Lista de dispositivos',
+          icon: Icons.gps_fixed_outlined,
+          detail: 'Cadastro operacional',
+          child: DevicesScreen(),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRoutesPanel() {
+    if (_isPilotView(ref.watch(sessionProvider))) {
+      return _TraccarToolsPanel(
+        key: const ValueKey('routes-tools'),
+        title: 'Rotas',
+        entries: const [
+          _PanelToolEntry(
+            label: 'Historico de rota',
+            icon: Icons.route_outlined,
+            detail: 'Consulta real',
+            child: RoutesScreen(),
+          ),
+          _PanelToolEntry(
+            label: 'Replay',
+            icon: Icons.replay_circle_filled_outlined,
+            detail: 'Replay visual',
+            child: RoutesScreen(),
+          ),
+        ],
+      );
+    }
+
     return _TraccarToolsPanel(
       key: const ValueKey('routes-tools'),
       title: 'Rotas',
@@ -733,12 +995,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Replay',
           icon: Icons.replay_circle_filled_outlined,
-          detail: 'Estrutura criada',
-          child: _ModulePlaceholderScreen(
-            moduleTitle: 'Rotas',
-            submenuTitle: 'Replay',
-            description: 'Estrutura visual criada e padronizada.',
-          ),
+          detail: 'Replay visual',
+          child: RoutesScreen(),
         ),
         ..._placeholderEntries(
           moduleTitle: 'Rotas',
@@ -775,6 +1033,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildAlertsPanel() {
+    if (_isPilotView(ref.watch(sessionProvider))) {
+      return _TraccarToolsPanel(
+        key: const ValueKey('alerts-tools'),
+        title: 'Alertas',
+        entries: const [
+          _PanelToolEntry(
+            label: 'Lista de alertas',
+            icon: Icons.notifications_active_outlined,
+            detail: 'Eventos ativos',
+            child: AlertsScreen(),
+          ),
+        ],
+      );
+    }
+
     return _TraccarToolsPanel(
       key: const ValueKey('alerts-tools'),
       title: 'Alertas',
@@ -794,34 +1067,35 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Monitoramento visual de limites de velocidade.',
             ),
             (
-              label: 'Ignição',
+              label: 'IgniÃ§Ã£o',
               icon: Icons.power_settings_new_outlined,
-              description: 'Eventos de ignição ligada e desligada.',
+              description: 'Eventos de igniÃ§Ã£o ligada e desligada.',
             ),
             (
-              label: 'Entrada/saída de cerca',
+              label: 'Entrada/saÃ­da de cerca',
               icon: Icons.fence_outlined,
               description: 'Alertas de cruzamento de geofence.',
             ),
             (
-              label: 'Sem comunicação',
+              label: 'Sem comunicaÃ§Ã£o',
               icon: Icons.portable_wifi_off_outlined,
-              description: 'Detecção de perda de comunicação com rastreador.',
+              description:
+                  'DetecÃ§Ã£o de perda de comunicaÃ§Ã£o com rastreador.',
             ),
             (
               label: 'Bateria baixa',
               icon: Icons.battery_alert_outlined,
-              description: 'Fila de dispositivos com bateria crítica.',
+              description: 'Fila de dispositivos com bateria crÃ­tica.',
             ),
             (
-              label: 'Botão de pânico',
+              label: 'BotÃ£o de pÃ¢nico',
               icon: Icons.sos_outlined,
-              description: 'Canal de emergência com prioridade alta.',
+              description: 'Canal de emergÃªncia com prioridade alta.',
             ),
             (
               label: 'Jammer/suspeita',
               icon: Icons.gps_not_fixed_outlined,
-              description: 'Indicadores visuais de interferência ou jammer.',
+              description: 'Indicadores visuais de interferÃªncia ou jammer.',
             ),
             (
               label: 'Alertas por WhatsApp',
@@ -831,7 +1105,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             (
               label: 'Regras de alerta',
               icon: Icons.rule_folder_outlined,
-              description: 'Configuração visual de regras operacionais.',
+              description: 'ConfiguraÃ§Ã£o visual de regras operacionais.',
             ),
           ],
         ),
@@ -862,37 +1136,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             (
               label: 'Criar cerca por endereco',
               icon: Icons.location_on_outlined,
-              description: 'Criação guiada usando endereço como referência.',
+              description:
+                  'CriaÃ§Ã£o guiada usando endereÃ§o como referÃªncia.',
             ),
             (
               label: 'Criar cerca por raio',
               icon: Icons.radio_button_checked_outlined,
-              description: 'Definição de cerca circular por raio.',
+              description: 'DefiniÃ§Ã£o de cerca circular por raio.',
             ),
             (
               label: 'Cerca residencial',
               icon: Icons.home_work_outlined,
-              description: 'Modelo rápido para cercas residenciais.',
+              description: 'Modelo rÃ¡pido para cercas residenciais.',
             ),
             (
               label: 'Cerca comercial',
               icon: Icons.storefront_outlined,
-              description: 'Modelo rápido para cercas comerciais.',
+              description: 'Modelo rÃ¡pido para cercas comerciais.',
             ),
             (
               label: 'Area de risco',
               icon: Icons.report_problem_outlined,
-              description: 'Classificação visual de zonas de risco.',
+              description: 'ClassificaÃ§Ã£o visual de zonas de risco.',
             ),
             (
               label: 'Area permitida',
               icon: Icons.check_circle_outline,
-              description: 'Classificação visual de zonas permitidas.',
+              description: 'ClassificaÃ§Ã£o visual de zonas permitidas.',
             ),
             (
               label: 'Cerca inteligente via IA',
               icon: Icons.psychology_outlined,
-              description: 'Estrutura para sugestão automática de cercas.',
+              description: 'Estrutura para sugestÃ£o automÃ¡tica de cercas.',
             ),
           ],
         ),
@@ -1198,91 +1473,106 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget _buildTelemetryDemoPanel() {
     return _TraccarToolsPanel(
       key: const ValueKey('telemetry-demo-tools'),
-      title: 'Demo Telemetria',
+      title: 'Telemetria',
       entries: [
         const _PanelToolEntry(
-          label: 'Painel demo',
-          icon: Icons.dashboard_customize_outlined,
-          detail: 'Sessao travada para apresentacao',
-          child: _TelemetryRaceShowcaseScreen(),
+          label: 'Frota em tempo real',
+          icon: Icons.directions_car_outlined,
+          detail: 'Visao operacional',
+          child: VehiclesScreen(),
         ),
-        ..._placeholderEntries(
-          moduleTitle: 'Demo Telemetria',
-          items: const [
-            (
-              label: 'OpenF1',
-              icon: Icons.sports_motorsports_outlined,
-              description: 'Estrutura visual para integracao OpenF1.',
-            ),
-            (
-              label: 'Corrida real travada',
-              icon: Icons.flag_outlined,
-              description: 'Cenario demo de corrida fixa para apresentacao.',
-            ),
-            (
-              label: 'Mapa do circuito',
-              icon: Icons.track_changes_outlined,
-              description: 'Visualizacao do circuito em mapa dedicado.',
-            ),
-            (
-              label: 'Evento clicavel',
-              icon: Icons.touch_app_outlined,
-              description: 'Interacao visual com eventos da corrida.',
-            ),
-            (
-              label: 'Telemetria avancada',
-              icon: Icons.insights_outlined,
-              description: 'Cards de telemetria com metricas simuladas.',
-            ),
-            (
-              label: 'Relatorio travado',
-              icon: Icons.article_outlined,
-              description: 'Relatorio demonstrativo com dados fixos.',
-            ),
-            (
-              label: 'Replay da sessao',
-              icon: Icons.replay_outlined,
-              description: 'Fluxo visual de replay da sessao.',
-            ),
-          ],
+        const _PanelToolEntry(
+          label: 'Dispositivos',
+          icon: Icons.gps_fixed_outlined,
+          detail: 'Visao operacional em tempo real',
+          child: DevicesScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Comandos',
+          icon: Icons.terminal_outlined,
+          detail: 'Acoes remotas no equipamento',
+          child: CommandsScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Sensores',
+          icon: Icons.sensors_outlined,
+          detail: 'Dados enviados pelo equipamento',
+          child: TelemetrySensorsScreen(),
+        ),
+        if (kEnableFormulaTelemetryDemo)
+          const _PanelToolEntry(
+            label: 'Demo Formula 1',
+            icon: Icons.sports_motorsports_outlined,
+            detail: 'Opcional para apresentacao',
+            child: _TelemetryRaceShowcaseScreen(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLogsPanel() {
+    return _TraccarToolsPanel(
+      key: const ValueKey('logs-tools'),
+      title: 'Data Log',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Logs por comunicacao',
+          icon: Icons.article_outlined,
+          detail: 'Linha a linha por dispositivo e periodo',
+          child: HistoryScreen(),
         ),
       ],
     );
   }
 
   Widget _buildReportsPanel() {
+    if (_isPilotView(ref.watch(sessionProvider))) {
+      return _TraccarToolsPanel(
+        key: const ValueKey('reports-tools'),
+        title: 'Relatorios',
+        entries: const [
+          _PanelToolEntry(
+            label: 'Rotas',
+            icon: Icons.route_outlined,
+            detail: 'Relatorios atuais',
+            child: ReportsScreen(),
+          ),
+        ],
+      );
+    }
+
     return _TraccarToolsPanel(
       key: const ValueKey('reports-tools'),
-      title: 'Relatórios',
+      title: 'RelatÃ³rios',
       entries: [
         const _PanelToolEntry(
           label: 'Rotas',
           icon: Icons.route_outlined,
-          detail: 'Relatórios atuais',
+          detail: 'RelatÃ³rios atuais',
           child: ReportsScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Relatórios',
+          moduleTitle: 'RelatÃ³rios',
           items: const [
             (
               label: 'Viagens',
               icon: Icons.luggage_outlined,
-              description: 'Relatório de viagens por período.',
+              description: 'RelatÃ³rio de viagens por perÃ­odo.',
             ),
             (
               label: 'Paradas',
               icon: Icons.pause_circle_outline,
-              description: 'Relatório de paradas e tempos de espera.',
+              description: 'RelatÃ³rio de paradas e tempos de espera.',
             ),
             (
               label: 'Eventos',
               icon: Icons.event_note_outlined,
-              description: 'Relatório consolidado de eventos.',
+              description: 'RelatÃ³rio consolidado de eventos.',
             ),
             (
               label: 'Resumo',
               icon: Icons.summarize_outlined,
-              description: 'Resumo executivo para gestão.',
+              description: 'Resumo executivo para gestÃ£o.',
             ),
           ],
         ),
@@ -1350,16 +1640,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget _buildSettingsPanel() {
     return _TraccarToolsPanel(
       key: const ValueKey('settings-tools'),
-      title: 'Configurações',
+      title: 'ConfiguraÃ§Ãµes',
       entries: [
         const _PanelToolEntry(
-          label: 'Usuários',
+          label: 'UsuÃ¡rios',
           icon: Icons.people_outline,
-          detail: 'Gestão de contas',
+          detail: 'GestÃ£o de contas',
           child: UsersScreen(),
         ),
         const _PanelToolEntry(
-          label: 'Permissões',
+          label: 'Dispositivos',
+          icon: Icons.gps_fixed_outlined,
+          detail: 'Cadastro operacional',
+          child: DevicesScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'PermissÃµes',
           icon: Icons.vpn_key_outlined,
           detail: 'Controle de acesso',
           child: PermissionsScreen(),
@@ -1367,14 +1663,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Grupos',
           icon: Icons.folder_shared_outlined,
-          detail: 'Organização operacional',
+          detail: 'OrganizaÃ§Ã£o operacional',
           child: GroupsScreen(),
-        ),
-        _placeholderEntry(
-          moduleTitle: 'Configurações',
-          label: 'Dispositivos',
-          icon: Icons.gps_fixed_outlined,
-          description: 'Estrutura visual de cadastro de dispositivos.',
         ),
         const _PanelToolEntry(
           label: 'Motoristas',
@@ -1383,16 +1673,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: DriversScreen(),
         ),
         const _PanelToolEntry(
-          label: 'Notificações',
+          label: 'NotificaÃ§Ãµes',
           icon: Icons.notifications_outlined,
-          detail: 'Preferências de alerta',
+          detail: 'PreferÃªncias de alerta',
           child: NotificationsScreen(),
         ),
         const _PanelToolEntry(
-          label: 'Servidor de rastreamento',
+          label: 'Status do Servidor',
           icon: Icons.dns_outlined,
-          detail: 'Servidor e anúncios',
-          child: _ServerAnnouncementPanel(),
+          detail: 'Saude e configuracoes operacionais',
+          child: _ServerStatusPanel(),
         ),
       ],
     );
@@ -1429,9 +1719,14 @@ class _OperationalMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final snapshotsWithPosition = snapshots
+        .where((snapshot) => snapshot.hasPosition)
+        .toList(growable: false);
     final initialTarget = snapshots.isEmpty
         ? const gmaps.LatLng(-23.55052, -46.633308)
-        : snapshots.first.latLng;
+        : (snapshotsWithPosition.isNotEmpty
+            ? snapshotsWithPosition.first.latLng
+            : const gmaps.LatLng(-23.55052, -46.633308));
     final selected = snapshots
         .where((snapshot) => snapshot.device.id == selectedDeviceId)
         .cast<_VehicleSnapshot?>()
@@ -1459,7 +1754,7 @@ class _OperationalMap extends StatelessWidget {
       onCameraMove: onCameraMove,
       onTap: (_) => onMapTap(),
       markers: {
-        for (final snapshot in snapshots)
+        for (final snapshot in snapshotsWithPosition)
           gmaps.Marker(
             markerId: gmaps.MarkerId('vehicle-${snapshot.device.id}'),
             position: snapshot.latLng,
@@ -1470,7 +1765,7 @@ class _OperationalMap extends StatelessWidget {
           ),
       },
       circles: {
-        for (final snapshot in snapshots.where((it) => it.hasAlert))
+        for (final snapshot in snapshotsWithPosition.where((it) => it.hasAlert))
           gmaps.Circle(
             circleId: gmaps.CircleId('alert-${snapshot.device.id}'),
             center: snapshot.latLng,
@@ -1479,7 +1774,7 @@ class _OperationalMap extends StatelessWidget {
             strokeColor: Colors.redAccent.withValues(alpha: 0.42),
             strokeWidth: 2,
           ),
-        if (selected != null)
+        if (selected != null && selected.hasPosition)
           gmaps.Circle(
             circleId: gmaps.CircleId('selected-${selected.device.id}'),
             center: selected.latLng,
@@ -1590,6 +1885,7 @@ class _TopSearchBar extends StatelessWidget {
     required this.activeSubtitle,
     required this.onRefresh,
     required this.onClosePanel,
+    required this.onLogout,
   });
 
   final WhiteLabelConfig brand;
@@ -1601,12 +1897,13 @@ class _TopSearchBar extends StatelessWidget {
   final String activeSubtitle;
   final VoidCallback onRefresh;
   final VoidCallback onClosePanel;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
     final title = activeTitle?.trim().isNotEmpty == true
         ? activeTitle!.trim()
-        : 'OperaÃ§Ã£o';
+        : 'OperaÃƒÂ§ÃƒÂ£o';
     final brandName =
         brand.appName.trim().isEmpty ? 'SouTracking' : brand.appName.trim();
     final brandLogoAsset = brand.logoAsset?.trim() ?? '';
@@ -1719,7 +2016,7 @@ class _TopSearchBar extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    title == 'Ordens de ServiÃ§o'
+                                    title == 'Ordens de ServiÃƒÂ§o'
                                         ? 'Ordens de Servico - Operacao integrada'
                                         : '$title - Dados de Rastreamento',
                                     maxLines: 1,
@@ -1807,7 +2104,7 @@ class _TopSearchBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            const _ProfileMenuButton(),
+            _ProfileMenuButton(onLogout: onLogout),
           ],
         ),
       ),
@@ -1816,7 +2113,9 @@ class _TopSearchBar extends StatelessWidget {
 }
 
 class _ProfileMenuButton extends StatelessWidget {
-  const _ProfileMenuButton();
+  const _ProfileMenuButton({required this.onLogout});
+
+  final VoidCallback onLogout;
 
   static const List<({String id, String label, IconData icon})> _profileItems =
       [
@@ -1857,10 +2156,13 @@ class _ProfileMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'Menu do perfil',
       onSelected: (value) {
+        if (value == 'logout') {
+          onLogout();
+          return;
+        }
         final label = labelById[value] ?? value;
-        final message = value == 'logout'
-            ? 'Acao visual: Sair (sem backend nesta etapa).'
-            : '$label: estrutura criada. Integracao sera plugada em etapa futura.';
+        final message =
+            '$label: estrutura criada. Integracao sera plugada em etapa futura.';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );
@@ -2422,7 +2724,7 @@ class _VehicleListTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${snapshot.speedLabel} â€¢ ${snapshot.ignitionLabel}',
+                      '${snapshot.speedLabel} Ã¢â‚¬Â¢ ${snapshot.ignitionLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -2610,17 +2912,17 @@ class _HighlightsRail extends StatelessWidget {
                   _HighlightItem(
                     icon: Icons.map_outlined,
                     title: 'Mapa como plano de fundo',
-                    text: 'Google Maps hÃ­brido sempre visÃ­vel.',
+                    text: 'Google Maps hÃƒÂ­brido sempre visÃƒÂ­vel.',
                   ),
                   _HighlightItem(
                     icon: Icons.layers_outlined,
-                    title: 'Menus translÃºcidos',
-                    text: 'PainÃ©is claros sobre o mapa.',
+                    title: 'Menus translÃƒÂºcidos',
+                    text: 'PainÃƒÂ©is claros sobre o mapa.',
                   ),
                   _HighlightItem(
                     icon: Icons.speed_rounded,
-                    title: 'TrÃ¡fego e velocidade',
-                    text: 'TrÃ¡fego Google + telemetria do veÃ­culo.',
+                    title: 'TrÃƒÂ¡fego e velocidade',
+                    text: 'TrÃƒÂ¡fego Google + telemetria do veÃƒÂ­culo.',
                   ),
                 ],
               ),
@@ -2694,11 +2996,17 @@ class _VehicleCompactPopup extends StatelessWidget {
   const _VehicleCompactPopup({
     required this.snapshot,
     required this.onDetails,
+    required this.onAlerts,
+    required this.onShare,
+    required this.onMore,
     required this.onClose,
   });
 
   final _VehicleSnapshot snapshot;
   final VoidCallback onDetails;
+  final VoidCallback onAlerts;
+  final VoidCallback onShare;
+  final VoidCallback onMore;
   final VoidCallback onClose;
 
   @override
@@ -2801,19 +3109,19 @@ class _VehicleCompactPopup extends StatelessWidget {
                             _PopupAction(
                               icon: Icons.notifications_none_outlined,
                               tooltip: 'Alertas',
-                              onTap: onDetails,
+                              onTap: onAlerts,
                             ),
                             const SizedBox(width: 8),
                             _PopupAction(
                               icon: Icons.share_outlined,
                               tooltip: 'Compartilhar',
-                              onTap: onDetails,
+                              onTap: onShare,
                             ),
                             const SizedBox(width: 8),
                             _PopupAction(
                               icon: Icons.more_horiz_rounded,
-                              tooltip: 'Mais opÃ§Ãµes',
-                              onTap: onDetails,
+                              tooltip: 'Mais opÃƒÂ§ÃƒÂµes',
+                              onTap: onMore,
                             ),
                           ],
                         ),
@@ -2947,7 +3255,7 @@ class _VehicleBottomContent extends StatelessWidget {
           children: [
             _VehicleMetricPair(label: 'Velocidade', value: snapshot.speedLabel),
             _VehicleMetricPair(
-                label: 'IgniÃ§Ã£o', value: snapshot.ignitionLabel),
+                label: 'IgniÃƒÂ§ÃƒÂ£o', value: snapshot.ignitionLabel),
             _VehicleMetricPair(label: 'Bateria', value: snapshot.batteryLabel),
             _VehicleMetricPair(label: 'Motorista', value: snapshot.driverName),
           ],
@@ -3052,7 +3360,7 @@ class _BottomTabContent extends StatelessWidget {
           icon: Icons.image_outlined,
           title: 'Fotos',
           detail:
-              'EspaÃ§o pronto para fotos, MDVR e evidÃªncias do dispositivo.',
+              'EspaÃƒÂ§o pronto para fotos, MDVR e evidÃƒÂªncias do dispositivo.',
         );
       case _VehicleBottomTab.commands:
         return _VehicleCommandsTab(snapshot: snapshot);
@@ -3077,19 +3385,19 @@ class _BottomOverviewDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = [
       _DetailCard(
-        title: 'LocalizaÃ§Ã£o Atual',
+        title: 'LocalizaÃƒÂ§ÃƒÂ£o Atual',
         icon: Icons.place_outlined,
         body: snapshot.address,
         action: 'Ver no mapa',
       ),
       _DetailCard(
-        title: 'Ãšltimos Eventos',
+        title: 'ÃƒÅ¡ltimos Eventos',
         icon: Icons.timeline_outlined,
         body: snapshot.eventsSummary,
       ),
       _SpeedChartCard(snapshot: snapshot),
       _DetailCard(
-        title: 'InformaÃ§Ãµes',
+        title: 'InformaÃƒÂ§ÃƒÂµes',
         icon: Icons.badge_outlined,
         body:
             'Modelo   ${snapshot.modelLabel}\nAno      2022\nGrupo    Frota SP - Vans',
@@ -3133,10 +3441,10 @@ class _VehicleInfoTab extends StatelessWidget {
       padding: EdgeInsets.zero,
       children: [
         _DetailCard(
-          title: 'InformaÃ§Ãµes do veÃ­culo',
+          title: 'InformaÃƒÂ§ÃƒÂµes do veÃƒÂ­culo',
           icon: Icons.badge_outlined,
           body:
-              'Modelo   ${snapshot.modelLabel}\nMotorista ${snapshot.driverName}\nIgniÃ§Ã£o  ${snapshot.ignitionLabel}\nBateria  ${snapshot.batteryLabel}',
+              'Modelo   ${snapshot.modelLabel}\nMotorista ${snapshot.driverName}\nIgniÃƒÂ§ÃƒÂ£o  ${snapshot.ignitionLabel}\nBateria  ${snapshot.batteryLabel}',
         ),
         const SizedBox(height: 10),
         _DetailCard(
@@ -3242,7 +3550,7 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
   @override
   Widget build(BuildContext context) {
     final commands = [
-      ('positionSingle', Icons.my_location_outlined, 'PosiÃ§Ã£o'),
+      ('positionSingle', Icons.my_location_outlined, 'PosiÃƒÂ§ÃƒÂ£o'),
       ('engineStop', Icons.lock_outline_rounded, 'Bloquear'),
       ('engineResume', Icons.lock_open_rounded, 'Desbloquear'),
       ('alarm', Icons.notifications_active_outlined, 'Alarme'),
@@ -3278,9 +3586,9 @@ String _humanizeEventType(String type) {
     case 'deviceUnknown':
       return 'Status desconhecido';
     case 'ignitionOn':
-      return 'IgniÃ§Ã£o ligada';
+      return 'IgniÃƒÂ§ÃƒÂ£o ligada';
     case 'ignitionOff':
-      return 'IgniÃ§Ã£o desligada';
+      return 'IgniÃƒÂ§ÃƒÂ£o desligada';
     case 'deviceMoving':
       return 'Em movimento';
     case 'deviceStopped':
@@ -3326,7 +3634,7 @@ class _BottomStatusCard extends StatelessWidget {
           _StatusLine(snapshot: snapshot),
           const SizedBox(height: 10),
           Text(
-            'Ãšltimo Ponto: ${snapshot.relativeLastPoint}',
+            'ÃƒÅ¡ltimo Ponto: ${snapshot.relativeLastPoint}',
             style: const TextStyle(
               color: Color(0xFF526684),
               fontWeight: FontWeight.w700,
@@ -3439,11 +3747,11 @@ class _VehicleTabChip extends StatelessWidget {
 }
 
 enum _VehicleBottomTab {
-  overview('VisÃ£o Geral', Icons.dashboard_customize_outlined),
+  overview('VisÃƒÂ£o Geral', Icons.dashboard_customize_outlined),
   photos('Fotos', Icons.image_outlined),
   commands('Comandos', Icons.terminal_rounded),
-  chart('GrÃ¡fico', Icons.show_chart_outlined),
-  info('InformaÃ§Ãµes', Icons.info_outline_rounded);
+  chart('GrÃƒÂ¡fico', Icons.show_chart_outlined),
+  info('InformaÃƒÂ§ÃƒÂµes', Icons.info_outline_rounded);
 
   const _VehicleBottomTab(this.label, this.icon);
 
@@ -3545,7 +3853,7 @@ class _SpeedChartCard extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  'Velocidade (Ãºltimas 2 horas)',
+                  'Velocidade (ÃƒÂºltimas 2 horas)',
                   style: TextStyle(
                     color: Color(0xFF1F2A44),
                     fontWeight: FontWeight.w900,
@@ -5640,9 +5948,14 @@ class _TelemetryRaceShowcaseScreen extends StatefulWidget {
 class _TelemetryRaceShowcaseScreenState
     extends State<_TelemetryRaceShowcaseScreen> {
   static const _seasonOptions = ['Temporada atual demo'];
-  static const _raceOptions = ['Austrália', 'China', 'Japão', 'Bahrein'];
-  static const _sessionOptions = ['Treino', 'Classificação', 'Corrida'];
-  static const _driverOptions = ['Bortoleto', 'Verstappen', 'Norris', 'Leclerc'];
+  static const _raceOptions = ['AustrÃ¡lia', 'China', 'JapÃ£o', 'Bahrein'];
+  static const _sessionOptions = ['Treino', 'ClassificaÃ§Ã£o', 'Corrida'];
+  static const _driverOptions = [
+    'Bortoleto',
+    'Verstappen',
+    'Norris',
+    'Leclerc'
+  ];
   static const _compareOptions = [
     'Nenhum',
     'Verstappen',
@@ -5652,9 +5965,9 @@ class _TelemetryRaceShowcaseScreenState
   ];
 
   final Map<String, _RaceTelemetryCircuit> _circuits = {
-    'Austrália': _RaceTelemetryCircuit(
-      raceName: 'Austrália',
-      trackSubtitle: 'Albert Park • Setores 1/2/3',
+    'AustrÃ¡lia': _RaceTelemetryCircuit(
+      raceName: 'AustrÃ¡lia',
+      trackSubtitle: 'Albert Park â€¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.13, 0.62),
         Offset(0.22, 0.79),
@@ -5683,21 +5996,21 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'aus-3',
-          label: 'Aceleração máxima',
+          label: 'AceleraÃ§Ã£o mÃ¡xima',
           sector: 'Setor 3',
           position: Offset(0.76, 0.43),
           accent: Color(0xFF22C55E),
         ),
         _RaceTelemetryEvent(
           id: 'aus-4',
-          label: 'Perda de aderência',
+          label: 'Perda de aderÃªncia',
           sector: 'Setor 1',
           position: Offset(0.34, 0.24),
           accent: Color(0xFFA855F7),
         ),
         _RaceTelemetryEvent(
           id: 'aus-5',
-          label: 'Volta rápida',
+          label: 'Volta rÃ¡pida',
           sector: 'Setor 2',
           position: Offset(0.63, 0.30),
           accent: Color(0xFF3B82F6),
@@ -5706,7 +6019,7 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'China': _RaceTelemetryCircuit(
       raceName: 'China',
-      trackSubtitle: 'Shanghai • Setores 1/2/3',
+      trackSubtitle: 'Shanghai â€¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.15, 0.70),
         Offset(0.25, 0.82),
@@ -5742,16 +6055,16 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'chi-4',
-          label: 'Aceleração máxima',
+          label: 'AceleraÃ§Ã£o mÃ¡xima',
           sector: 'Setor 3',
           position: Offset(0.69, 0.27),
           accent: Color(0xFF3B82F6),
         ),
       ],
     ),
-    'Japão': _RaceTelemetryCircuit(
-      raceName: 'Japão',
-      trackSubtitle: 'Suzuka • Setores 1/2/3',
+    'JapÃ£o': _RaceTelemetryCircuit(
+      raceName: 'JapÃ£o',
+      trackSubtitle: 'Suzuka â€¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.16, 0.67),
         Offset(0.23, 0.82),
@@ -5766,7 +6079,7 @@ class _TelemetryRaceShowcaseScreenState
       events: const [
         _RaceTelemetryEvent(
           id: 'jpn-1',
-          label: 'Perda de aderência',
+          label: 'Perda de aderÃªncia',
           sector: 'Setor 1',
           position: Offset(0.25, 0.81),
           accent: Color(0xFFEF4444),
@@ -5787,7 +6100,7 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'jpn-4',
-          label: 'Volta rápida',
+          label: 'Volta rÃ¡pida',
           sector: 'Setor 2',
           position: Offset(0.46, 0.22),
           accent: Color(0xFF3B82F6),
@@ -5796,7 +6109,7 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'Bahrein': _RaceTelemetryCircuit(
       raceName: 'Bahrein',
-      trackSubtitle: 'Sakhir • Setores 1/2/3',
+      trackSubtitle: 'Sakhir â€¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.14, 0.72),
         Offset(0.29, 0.83),
@@ -5832,14 +6145,14 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'bah-4',
-          label: 'Aceleração máxima',
+          label: 'AceleraÃ§Ã£o mÃ¡xima',
           sector: 'Setor 3',
           position: Offset(0.63, 0.24),
           accent: Color(0xFF3B82F6),
         ),
         _RaceTelemetryEvent(
           id: 'bah-5',
-          label: 'Volta rápida',
+          label: 'Volta rÃ¡pida',
           sector: 'Setor 2',
           position: Offset(0.36, 0.25),
           accent: Color(0xFFA855F7),
@@ -5863,7 +6176,7 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 92,
       gsmSignal: 88,
-      lastCommunication: 'há 9 s',
+      lastCommunication: 'hÃ¡ 9 s',
       fuelOrLoad: 54,
       trackerTemperature: 39,
       behavior: 'normal',
@@ -5882,13 +6195,13 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 94,
       gsmSignal: 86,
-      lastCommunication: 'há 7 s',
+      lastCommunication: 'hÃ¡ 7 s',
       fuelOrLoad: 49,
       trackerTemperature: 40,
-      behavior: 'atenção',
+      behavior: 'atenÃ§Ã£o',
     ),
     'Norris': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'Médio',
+      tireCompound: 'MÃ©dio',
       tireLife: 66,
       speedKmh: 301,
       rpm: 11910,
@@ -5901,13 +6214,13 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 89,
       gsmSignal: 85,
-      lastCommunication: 'há 11 s',
+      lastCommunication: 'hÃ¡ 11 s',
       fuelOrLoad: 56,
       trackerTemperature: 38,
       behavior: 'normal',
     ),
     'Leclerc': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'Intermediário',
+      tireCompound: 'IntermediÃ¡rio',
       tireLife: 60,
       speedKmh: 300,
       rpm: 11760,
@@ -5920,7 +6233,7 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 87,
       gsmSignal: 82,
-      lastCommunication: 'há 13 s',
+      lastCommunication: 'hÃ¡ 13 s',
       fuelOrLoad: 52,
       trackerTemperature: 41,
       behavior: 'risco',
@@ -5940,7 +6253,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -9;
-      case 'Classificação':
+      case 'ClassificaÃ§Ã£o':
         return 6;
       case 'Corrida':
         return 0;
@@ -5952,7 +6265,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -300;
-      case 'Classificação':
+      case 'ClassificaÃ§Ã£o':
         return 210;
       case 'Corrida':
         return 0;
@@ -5962,11 +6275,11 @@ class _TelemetryRaceShowcaseScreenState
 
   int _raceAdjust(String race) {
     switch (race) {
-      case 'Austrália':
+      case 'AustrÃ¡lia':
         return 2;
       case 'China':
         return -1;
-      case 'Japão':
+      case 'JapÃ£o':
         return 4;
       case 'Bahrein':
         return 1;
@@ -5975,13 +6288,14 @@ class _TelemetryRaceShowcaseScreenState
   }
 
   _RaceTelemetryDriverSnapshot _snapshotForDriver(String driver) {
-    final base = _baseDriverSnapshots[driver] ?? _baseDriverSnapshots.values.first;
+    final base =
+        _baseDriverSnapshots[driver] ?? _baseDriverSnapshots.values.first;
     final speedAdjust = _sessionSpeedAdjust() + _raceAdjust(_selectedRace);
     final rpmAdjust = _sessionRpmAdjust() + (_raceAdjust(_selectedRace) * 35);
 
     final tireLifeShift = _selectedSession == 'Corrida'
         ? -5
-        : (_selectedSession == 'Classificação' ? -2 : 4);
+        : (_selectedSession == 'ClassificaÃ§Ã£o' ? -2 : 4);
 
     return base.copyWith(
       speedKmh: (base.speedKmh + speedAdjust).clamp(120, 360),
@@ -5994,7 +6308,7 @@ class _TelemetryRaceShowcaseScreenState
               .clamp(15, 100),
       behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
           ? 'risco'
-          : (_selectedSession == 'Classificação' ? 'atenção' : 'normal'),
+          : (_selectedSession == 'ClassificaÃ§Ã£o' ? 'atenÃ§Ã£o' : 'normal'),
     );
   }
 
@@ -6026,7 +6340,8 @@ class _TelemetryRaceShowcaseScreenState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final activeCircuit = _activeCircuit;
-    final safeSelectedIndex = _selectedEventIndex.clamp(0, activeCircuit.events.length - 1);
+    final safeSelectedIndex =
+        _selectedEventIndex.clamp(0, activeCircuit.events.length - 1);
     final selectedEvent = activeCircuit.events[safeSelectedIndex];
     final driverSnapshot = _snapshotForDriver(_selectedDriver);
     final comparison = _buildComparison(driverSnapshot);
@@ -6091,7 +6406,7 @@ class _TelemetryRaceShowcaseScreenState
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Demonstração técnica com dados públicos/simulados. Sem uso de marca oficial.',
+                    'DemonstraÃ§Ã£o tÃ©cnica com dados pÃºblicos/simulados. Sem uso de marca oficial.',
                     style: TextStyle(
                       color: Color(0xFF9DB6D8),
                       fontWeight: FontWeight.w600,
@@ -6135,7 +6450,7 @@ class _TelemetryRaceShowcaseScreenState
                     },
                   ),
                   _RaceTelemetryFilterDropdown(
-                    label: 'Sessão',
+                    label: 'SessÃ£o',
                     value: _selectedSession,
                     options: _sessionOptions,
                     onChanged: (value) {
@@ -6323,8 +6638,7 @@ class _TelemetryRaceShowcaseScreenState
                               height: 32,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: circuit.events[i]
-                                    .accent
+                                color: circuit.events[i].accent
                                     .withValues(alpha: 0.90),
                                 border: Border.all(
                                   color: i == _selectedEventIndex
@@ -6352,7 +6666,8 @@ class _TelemetryRaceShowcaseScreenState
                         width: width * 0.52,
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0C213A).withValues(alpha: 0.94),
+                          color:
+                              const Color(0xFF0C213A).withValues(alpha: 0.94),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: const Color(0xFF2A4D76)),
                         ),
@@ -6399,7 +6714,8 @@ class _TelemetryRaceShowcaseScreenState
     );
   }
 
-  Widget _buildEventSelector(_RaceTelemetryCircuit circuit, int safeSelectedIndex) {
+  Widget _buildEventSelector(
+      _RaceTelemetryCircuit circuit, int safeSelectedIndex) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -6447,7 +6763,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Métricas de corrida',
+            'MÃ©tricas de corrida',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -6457,7 +6773,7 @@ class _TelemetryRaceShowcaseScreenState
           const SizedBox(height: 8),
           _RaceTelemetryInfoLine(label: 'Piloto', value: _selectedDriver),
           _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
-          _RaceTelemetryInfoLine(label: 'Sessão', value: _selectedSession),
+          _RaceTelemetryInfoLine(label: 'SessÃ£o', value: _selectedSession),
           _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
           _RaceTelemetryInfoLine(
             label: 'Vida do pneu',
@@ -6476,14 +6792,14 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(label: 'Freio', value: '${snapshot.brake}%'),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do pneu',
-            value: '${snapshot.tireTempC}°C',
+            value: '${snapshot.tireTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do motor',
-            value: '${snapshot.engineTempC}°C',
+            value: '${snapshot.engineTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Gap para comparação',
+            label: 'Gap para comparaÃ§Ã£o',
             value: comparison == null
                 ? 'n/a'
                 : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
@@ -6518,7 +6834,7 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.trackerBattery}%',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Ignição',
+            label: 'IgniÃ§Ã£o',
             value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
           ),
           _RaceTelemetryInfoLine(
@@ -6530,15 +6846,15 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.gsmSignal}%',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Última comunicação',
+            label: 'Ãšltima comunicaÃ§Ã£o',
             value: snapshot.lastCommunication,
           ),
           _RaceTelemetryInfoLine(
-            label: 'Temperatura do baú/motor',
-            value: '${snapshot.trackerTemperature}°C',
+            label: 'Temperatura do baÃº/motor',
+            value: '${snapshot.trackerTemperature}Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Nível de combustível/carga',
+            label: 'NÃ­vel de combustÃ­vel/carga',
             value: '${snapshot.fuelOrLoad}%',
           ),
           _RaceTelemetryInfoLine(
@@ -6570,16 +6886,17 @@ class _TelemetryRaceShowcaseScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'A mesma lógica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veículos de frota, guinchos, caminhões, máquinas e operações críticas.',
+            'A mesma lÃ³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃ­culos de frota, guinchos, caminhÃµes, mÃ¡quinas e operaÃ§Ãµes crÃ­ticas.',
             style: TextStyle(
               color: Color(0xFFBCD3F3),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const _RaceTelemetryBullet(text: 'detectar condução agressiva;'),
-          const _RaceTelemetryBullet(text: 'prever manutenção;'),
-          const _RaceTelemetryBullet(text: 'monitorar bateria e comunicação;'),
+          const _RaceTelemetryBullet(text: 'detectar conduÃ§Ã£o agressiva;'),
+          const _RaceTelemetryBullet(text: 'prever manutenÃ§Ã£o;'),
+          const _RaceTelemetryBullet(
+              text: 'monitorar bateria e comunicaÃ§Ã£o;'),
           const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
           const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
           const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
@@ -6607,7 +6924,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Comparação',
+            'ComparaÃ§Ã£o',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -6624,19 +6941,19 @@ class _TelemetryRaceShowcaseScreenState
             value: comparison.comparedDriver,
           ),
           _RaceTelemetryInfoLine(
-            label: 'Diferença de velocidade',
+            label: 'DiferenÃ§a de velocidade',
             value: formatDelta(comparison.speedDelta, ' km/h'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'Diferença de frenagem',
+            label: 'DiferenÃ§a de frenagem',
             value: formatDelta(comparison.brakingDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'Diferença de aceleração',
+            label: 'DiferenÃ§a de aceleraÃ§Ã£o',
             value: formatDelta(comparison.throttleDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'Diferença de desgaste de pneu',
+            label: 'DiferenÃ§a de desgaste de pneu',
             value: formatDelta(comparison.tireWearDelta, '%'),
           ),
         ],
@@ -6842,9 +7159,7 @@ class _RaceTelemetryCircuitPainter extends CustomPainter {
       final current = points[i];
       final next = points[(i + 1) % segmentCount];
       final ratio = i / segmentCount;
-      final sectorIndex = ratio < 0.34
-          ? 0
-          : (ratio < 0.67 ? 1 : 2);
+      final sectorIndex = ratio < 0.34 ? 0 : (ratio < 0.67 ? 1 : 2);
 
       final glow = Paint()
         ..style = PaintingStyle.stroke
@@ -7449,7 +7764,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       selected: i == safeIndex,
                       onSelected: (_) => setState(() => _selectedIndex = i),
                       label: Text(
-                        '${safeEvents[i].cornerLabel} • ${safeEvents[i].eventLabel}',
+                        '${safeEvents[i].cornerLabel} â€¢ ${safeEvents[i].eventLabel}',
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -7467,7 +7782,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${selectedEvent.cornerLabel} • ${selectedEvent.eventTime}',
+                      '${selectedEvent.cornerLabel} â€¢ ${selectedEvent.eventTime}',
                       style: const TextStyle(
                         color: Color(0xFFEAF1FF),
                         fontWeight: FontWeight.w900,
@@ -7485,7 +7800,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Velocidade ${selectedEvent.speedKmh} km/h • RPM ${selectedEvent.rpm} • Marcha ${selectedEvent.gear}',
+                      'Velocidade ${selectedEvent.speedKmh} km/h â€¢ RPM ${selectedEvent.rpm} â€¢ Marcha ${selectedEvent.gear}',
                       style: const TextStyle(
                         color: Color(0xFFDCEAFE),
                         fontWeight: FontWeight.w700,
@@ -7493,7 +7808,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       ),
                     ),
                     Text(
-                      'Acelerador ${selectedEvent.throttle}% • Freio ${selectedEvent.brake}% • Temp ${selectedEvent.temperatureC}C',
+                      'Acelerador ${selectedEvent.throttle}% â€¢ Freio ${selectedEvent.brake}% â€¢ Temp ${selectedEvent.temperatureC}C',
                       style: const TextStyle(
                         color: Color(0xFFDCEAFE),
                         fontWeight: FontWeight.w700,
@@ -7545,7 +7860,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${event.time} • ${event.section} • ${event.event}',
+                          '${event.time} â€¢ ${event.section} â€¢ ${event.event}',
                           style: const TextStyle(
                             color: Color(0xFFDCEAFE),
                             fontWeight: FontWeight.w700,
@@ -7607,7 +7922,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Demonstração técnica com dados públicos/snapshot. Sem uso de marca oficial.',
+                'DemonstraÃ§Ã£o tÃ©cnica com dados pÃºblicos/snapshot. Sem uso de marca oficial.',
                 style: TextStyle(
                   color: Color(0xFF8FAED6),
                   fontWeight: FontWeight.w600,
@@ -8441,7 +8756,7 @@ class _TelemetryLivePanel extends StatelessWidget {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'GPS 23°42\'45.8"S   46°41\'19.6"W',
+                  'GPS 23Â°42\'45.8"S   46Â°41\'19.6"W',
                   style: TextStyle(
                     color: Color(0xFFD3E4FF),
                     fontWeight: FontWeight.w700,
@@ -8927,8 +9242,8 @@ class _TraccarToolsPanelState extends State<_TraccarToolsPanel> {
     if (widget.entries.isEmpty) {
       return const _EmptyToolState(
         icon: Icons.dashboard_customize_outlined,
-        title: 'Nenhuma opÃ§Ã£o disponÃ­vel',
-        detail: 'Este painel ainda nÃ£o possui ferramentas configuradas.',
+        title: 'Nenhuma opÃƒÂ§ÃƒÂ£o disponÃƒÂ­vel',
+        detail: 'Este painel ainda nÃƒÂ£o possui ferramentas configuradas.',
       );
     }
     final selected = widget.entries[_selectedIndex];
@@ -9079,54 +9394,369 @@ class _NotificationTypesPanel extends ConsumerWidget {
   }
 }
 
-class _ServerAnnouncementPanel extends ConsumerWidget {
-  const _ServerAnnouncementPanel();
+enum _ServerPanelState {
+  online,
+  noPermission,
+  unavailable,
+  error,
+}
+
+class _ServerPanelSnapshot {
+  const _ServerPanelSnapshot({
+    required this.state,
+    required this.apiStatus,
+    required this.lastReadAt,
+    required this.environment,
+    required this.userLabel,
+    required this.timezone,
+    required this.serviceVersion,
+    required this.operationalConfig,
+    required this.communicationLevel,
+    required this.defaultCoordinates,
+    this.message,
+  });
+
+  final _ServerPanelState state;
+  final String apiStatus;
+  final DateTime lastReadAt;
+  final String environment;
+  final String userLabel;
+  final String timezone;
+  final String serviceVersion;
+  final String operationalConfig;
+  final String communicationLevel;
+  final String defaultCoordinates;
+  final String? message;
+}
+
+final _serverPanelSnapshotProvider = FutureProvider<_ServerPanelSnapshot>((
+  ref,
+) async {
+  final currentSession = ref.watch(sessionProvider);
+  final now = DateTime.now();
+
+  if (presentationMode || !currentSession.isAuthenticated) {
+    return _ServerPanelSnapshot(
+      state: _ServerPanelState.unavailable,
+      apiStatus: 'Indisponivel',
+      lastReadAt: now,
+      environment: _resolveEnvironmentLabel(kTraccarBaseUrl),
+      userLabel: 'Nao autenticado',
+      timezone: 'Nao informado',
+      serviceVersion: 'Nao informado',
+      operationalConfig: 'Nao informado',
+      communicationLevel: 'Nao informado',
+      defaultCoordinates: 'Nao informado',
+      message: 'Faca login para consultar o status do servidor.',
+    );
+  }
+
+  final client = ref.watch(traccarClientProvider);
+  try {
+    final sessionList = await client.getList(
+      path: '/session',
+      cookie: currentSession.cookie,
+      authHeader: currentSession.authHeader,
+    );
+    final server = await client.getServer(
+      cookie: currentSession.cookie,
+      authHeader: currentSession.authHeader,
+    );
+
+    List<String> timezones = const <String>[];
+    try {
+      timezones = await client.getTimezones(
+        cookie: currentSession.cookie,
+        authHeader: currentSession.authHeader,
+      );
+    } catch (_) {
+      // Timezone is complementary and should not block server status.
+    }
+
+    final sessionData =
+        sessionList.isNotEmpty ? sessionList.first : <String, dynamic>{};
+    final userName = _cleanText(sessionData['name'], fallback: 'Usuario atual');
+    final userEmail = _cleanText(sessionData['email']);
+    final userLabel = userEmail == '-' ? userName : '$userName <$userEmail>';
+
+    return _ServerPanelSnapshot(
+      state: _ServerPanelState.online,
+      apiStatus: 'Operacional',
+      lastReadAt: now,
+      environment: _resolveEnvironmentLabel(kTraccarBaseUrl),
+      userLabel: userLabel,
+      timezone: _resolveTimezone(server, sessionData, timezones),
+      serviceVersion: _cleanText(server['version']),
+      operationalConfig: _resolveOperationalConfig(server),
+      communicationLevel: _resolveCommunicationLevel(server),
+      defaultCoordinates: _resolveCoordinates(server),
+    );
+  } catch (error) {
+    final code = _extractHttpStatusCode(error);
+    if (code == 401 || code == 403) {
+      return _ServerPanelSnapshot(
+        state: _ServerPanelState.noPermission,
+        apiStatus: 'Sem permissao',
+        lastReadAt: now,
+        environment: _resolveEnvironmentLabel(kTraccarBaseUrl),
+        userLabel: _cleanText(currentSession.email, fallback: 'Usuario atual'),
+        timezone: 'Nao informado',
+        serviceVersion: 'Nao informado',
+        operationalConfig: 'Nao informado',
+        communicationLevel: 'Nao informado',
+        defaultCoordinates: 'Nao informado',
+        message:
+            'Seu usuario nao tem permissao para consultar essas configuracoes.',
+      );
+    }
+    if (code != null && code >= 500) {
+      return _ServerPanelSnapshot(
+        state: _ServerPanelState.unavailable,
+        apiStatus: 'Indisponivel',
+        lastReadAt: now,
+        environment: _resolveEnvironmentLabel(kTraccarBaseUrl),
+        userLabel: _cleanText(currentSession.email, fallback: 'Usuario atual'),
+        timezone: 'Nao informado',
+        serviceVersion: 'Nao informado',
+        operationalConfig: 'Nao informado',
+        communicationLevel: 'Nao informado',
+        defaultCoordinates: 'Nao informado',
+        message:
+            'Servico temporariamente indisponivel. Tente novamente em instantes.',
+      );
+    }
+
+    return _ServerPanelSnapshot(
+      state: _ServerPanelState.error,
+      apiStatus: code == null ? 'Erro controlado' : 'Erro controlado ($code)',
+      lastReadAt: now,
+      environment: _resolveEnvironmentLabel(kTraccarBaseUrl),
+      userLabel: _cleanText(currentSession.email, fallback: 'Usuario atual'),
+      timezone: 'Nao informado',
+      serviceVersion: 'Nao informado',
+      operationalConfig: 'Nao informado',
+      communicationLevel: 'Nao informado',
+      defaultCoordinates: 'Nao informado',
+      message:
+          'Nao foi possivel concluir a leitura agora. Verifique a sessao e tente atualizar.',
+    );
+  }
+});
+
+String _cleanText(dynamic value, {String fallback = '-'}) {
+  final text = (value ?? '').toString().trim();
+  return text.isEmpty ? fallback : text;
+}
+
+int? _extractHttpStatusCode(Object error) {
+  final raw = error.toString();
+  final match =
+      RegExp(r'(?:^|[^0-9])([1-5][0-9]{2})(?:[^0-9]|$)').firstMatch(raw);
+  if (match == null) return null;
+  return int.tryParse(match.group(1) ?? '');
+}
+
+String _resolveEnvironmentLabel(String baseUrl) {
+  final uri = Uri.tryParse(baseUrl);
+  if (uri == null || uri.host.trim().isEmpty) {
+    return 'Nao identificado';
+  }
+  final host = uri.host.toLowerCase();
+  final isPrivateIp = RegExp(
+    r'^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)',
+  ).hasMatch(host);
+  if (host == 'localhost' || host == '127.0.0.1' || isPrivateIp) {
+    return 'Interno';
+  }
+  if (host.contains('homolog') ||
+      host.contains('staging') ||
+      host.contains('dev')) {
+    return 'Homologacao';
+  }
+  return 'Producao';
+}
+
+String _resolveTimezone(
+  Map<String, dynamic> server,
+  Map<String, dynamic> sessionData,
+  List<String> timezones,
+) {
+  final candidates = <dynamic>[
+    sessionData['timezone'],
+    server['timezone'],
+    (sessionData['attributes'] is Map)
+        ? (sessionData['attributes'] as Map)['timezone']
+        : null,
+  ];
+  for (final value in candidates) {
+    final text = _cleanText(value, fallback: '');
+    if (text.isNotEmpty) {
+      return text;
+    }
+  }
+
+  if (timezones.contains('America/Sao_Paulo')) {
+    return 'America/Sao_Paulo';
+  }
+  return 'Nao informado';
+}
+
+String _resolveCommunicationLevel(Map<String, dynamic> server) {
+  var level = 0;
+  if (server['emailEnabled'] == true) level++;
+  if (server['textEnabled'] == true) level++;
+  if (server['geocoderEnabled'] == true) level++;
+
+  if (level >= 3) return 'Alto';
+  if (level == 2) return 'Medio';
+  if (level == 1) return 'Basico';
+  return 'Essencial';
+}
+
+String _resolveOperationalConfig(Map<String, dynamic> server) {
+  final systemMode =
+      server['readonly'] == true ? 'Sistema em leitura' : 'Sistema operacional';
+  final deviceMode = server['deviceReadonly'] == true
+      ? 'Dispositivos protegidos'
+      : 'Dispositivos operacionais';
+  final registration = server['registration'] == true
+      ? 'Cadastro externo ativo'
+      : 'Cadastro externo inativo';
+  return '$systemMode | $deviceMode | $registration';
+}
+
+String _resolveCoordinates(Map<String, dynamic> server) {
+  final lat = server['latitude'];
+  final lon = server['longitude'];
+  if (lat is num && lon is num) {
+    return '${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}';
+  }
+  return 'Nao informado';
+}
+
+String _formatReadTime(DateTime value) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(value.day)}/${two(value.month)}/${value.year} '
+      '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+}
+
+String _serverStateLabel(_ServerPanelState state) {
+  switch (state) {
+    case _ServerPanelState.online:
+      return 'Online';
+    case _ServerPanelState.noPermission:
+      return 'Sem permissao';
+    case _ServerPanelState.unavailable:
+      return 'Indisponivel';
+    case _ServerPanelState.error:
+      return 'Erro controlado';
+  }
+}
+
+IconData _serverStateIcon(_ServerPanelState state) {
+  switch (state) {
+    case _ServerPanelState.online:
+      return Icons.cloud_done_outlined;
+    case _ServerPanelState.noPermission:
+      return Icons.lock_outline;
+    case _ServerPanelState.unavailable:
+      return Icons.cloud_off_outlined;
+    case _ServerPanelState.error:
+      return Icons.error_outline;
+  }
+}
+
+class _ServerStatusPanel extends ConsumerWidget {
+  const _ServerStatusPanel();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final serverAsync = ref.watch(serverProvider);
-    final timezonesAsync = ref.watch(timezonesProvider);
-    return serverAsync.when(
-      data: (server) {
-        final announcement = '${server?['announcement'] ?? ''}'.trim();
-        final version = '${server?['version'] ?? '-'}';
-        final readonly = server?['readonly'] == true ? 'Sim' : 'Não';
-        final deviceReadonly =
-            server?['deviceReadonly'] == true ? 'Sim' : 'Não';
-        final timezones = timezonesAsync.valueOrNull ?? const <String>[];
+    final statusAsync = ref.watch(_serverPanelSnapshotProvider);
+    return statusAsync.when(
+      data: (status) {
         return ListView(
           children: [
             _SimpleToolRow(
-              icon: Icons.dns_outlined,
-              title: 'Servidor de rastreamento',
-              detail: 'Versão $version',
+              icon: _serverStateIcon(status.state),
+              title: 'Status do Servidor',
+              detail: _serverStateLabel(status.state),
             ),
             const SizedBox(height: 8),
             _SimpleToolRow(
-              icon: Icons.lock_outline,
-              title: 'Modo leitura',
-              detail: 'Sistema: $readonly • Dispositivos: $deviceReadonly',
-            ),
-            const SizedBox(height: 8),
-            _SimpleToolRow(
-              icon: Icons.campaign_outlined,
-              title: 'Anúncio',
-              detail: announcement.isEmpty
-                  ? 'Sem anúncio configurado no servidor.'
-                  : announcement,
+              icon: Icons.person_outline,
+              title: 'Usuario atual',
+              detail: status.userLabel,
             ),
             const SizedBox(height: 8),
             _SimpleToolRow(
               icon: Icons.public_outlined,
-              title: 'Fusos disponíveis',
-              detail:
-                  '${timezones.length} opções retornadas pelo servidor de rastreamento',
+              title: 'Ambiente',
+              detail: status.environment,
             ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.schedule_outlined,
+              title: 'Timezone',
+              detail: status.timezone,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.verified_outlined,
+              title: 'Versao do servico',
+              detail: status.serviceVersion,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.settings_suggest_outlined,
+              title: 'Configuracoes operacionais',
+              detail: status.operationalConfig,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.wifi_tethering_outlined,
+              title: 'Nivel de comunicacao',
+              detail: status.communicationLevel,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.pin_drop_outlined,
+              title: 'Coordenadas padrao',
+              detail: status.defaultCoordinates,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.network_check_outlined,
+              title: 'Status da API',
+              detail: status.apiStatus,
+            ),
+            const SizedBox(height: 8),
+            _SimpleToolRow(
+              icon: Icons.schedule_outlined,
+              title: 'Ultima leitura',
+              detail: _formatReadTime(status.lastReadAt),
+            ),
+            if ((status.message ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _SimpleToolRow(
+                icon: Icons.info_outline,
+                title: 'Observacao',
+                detail: status.message!,
+              ),
+            ],
           ],
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('Erro: $error')),
+      error: (_, __) => ListView(
+        children: const [
+          _SimpleToolRow(
+            icon: Icons.error_outline,
+            title: 'Status do Servidor',
+            detail:
+                'Erro controlado ao carregar os dados. Atualize o painel e tente novamente.',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -9361,7 +9991,7 @@ class _FleetKpis {
       if (snapshot.isOperationalOnline) {
         online++;
       } else {
-        // Status offline/unknown ou atualização antiga entram no offline operacional.
+        // Status offline/unknown ou atualizaÃ§Ã£o antiga entram no offline operacional.
         offline++;
       }
 
@@ -9402,7 +10032,6 @@ class _VehicleSnapshot {
   const _VehicleSnapshot({
     required this.device,
     required this.position,
-    required this.fallbackLatLng,
     required this.index,
     this.resolvedAddress,
     this.recentEvents = const [],
@@ -9410,7 +10039,6 @@ class _VehicleSnapshot {
 
   final TraccarDevice device;
   final TraccarPosition? position;
-  final gmaps.LatLng fallbackLatLng;
   final int index;
   final String? resolvedAddress;
   final List<Map<String, dynamic>> recentEvents;
@@ -9422,17 +10050,20 @@ class _VehicleSnapshot {
     return _VehicleSnapshot(
       device: device,
       position: position,
-      fallbackLatLng: fallbackLatLng,
       index: index,
       resolvedAddress: resolvedAddress ?? this.resolvedAddress,
       recentEvents: recentEvents ?? this.recentEvents,
     );
   }
 
-  gmaps.LatLng get latLng {
+  gmaps.LatLng? get latLngOrNull {
     final current = position;
-    if (current == null) return fallbackLatLng;
+    if (current == null) return null;
     return gmaps.LatLng(current.latitude, current.longitude);
+  }
+
+  gmaps.LatLng get latLng {
+    return latLngOrNull ?? const gmaps.LatLng(-23.55052, -46.633308);
   }
 
   String get normalizedStatus => device.status.toLowerCase().trim();
@@ -9443,7 +10074,7 @@ class _VehicleSnapshot {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
         normalizedStatus == 'nao informado' ||
-        normalizedStatus == 'não informado' ||
+        normalizedStatus == 'nÃ£o informado' ||
         normalizedStatus == 'n/a';
   }
 
@@ -9649,9 +10280,9 @@ class _VehicleSnapshot {
     if (parsed == null) return 'Nao informado';
     final diff = DateTime.now().difference(parsed);
     if (diff.inMinutes < 1) return 'agora';
-    if (diff.inMinutes < 60) return 'hÃ¡ ${diff.inMinutes} min';
-    if (diff.inHours < 24) return 'hÃ¡ ${diff.inHours} h';
-    return 'hÃ¡ ${diff.inDays} dias';
+    if (diff.inMinutes < 60) return 'hÃƒÂ¡ ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'hÃƒÂ¡ ${diff.inHours} h';
+    return 'hÃƒÂ¡ ${diff.inDays} dias';
   }
 
   String get sensorSummary {
@@ -9779,12 +10410,17 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ),
   _OperationalMenuItem(
     id: 'telemetry-demo',
-    label: 'Demo Telemetria',
-    icon: Icons.sports_motorsports_outlined,
+    label: 'Telemetria',
+    icon: Icons.sensors_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'logs',
+    label: 'Data Log',
+    icon: Icons.article_outlined,
   ),
   _OperationalMenuItem(
     id: 'reports',
-    label: 'Relatórios',
+    label: 'RelatÃ³rios',
     icon: Icons.insert_chart_outlined,
   ),
   _OperationalMenuItem(
@@ -9794,7 +10430,41 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ),
   _OperationalMenuItem(
     id: 'settings',
-    label: 'Configurações',
+    label: 'ConfiguraÃ§Ãµes',
     icon: Icons.settings_outlined,
+  ),
+];
+
+const List<_OperationalMenuItem> _pixeltiPilotMenu = [
+  _OperationalMenuItem(
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: Icons.space_dashboard_outlined,
+  ),
+  _OperationalMenuItem(id: 'map', label: 'Mapa', icon: Icons.map_outlined),
+  _OperationalMenuItem(
+    id: 'vehicles',
+    label: 'Veiculos',
+    icon: Icons.directions_car_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'devices',
+    label: 'Dispositivos',
+    icon: Icons.gps_fixed_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'routes',
+    label: 'Rotas',
+    icon: Icons.route_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'alerts',
+    label: 'Alertas',
+    icon: Icons.warning_amber_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'reports',
+    label: 'Relatorios',
+    icon: Icons.insert_chart_outlined,
   ),
 ];
