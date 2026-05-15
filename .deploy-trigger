@@ -1,1 +1,2 @@
 trigger: deploy Cloudflare Pages
+release: 2026-05-15-1.0.1+2
