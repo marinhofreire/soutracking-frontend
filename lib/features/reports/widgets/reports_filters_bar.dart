@@ -21,7 +21,11 @@ class ReportsFiltersBar extends StatelessWidget {
     required this.onTypeChanged,
     required this.onStatusChanged,
     required this.onSearch,
-    required this.onExport,
+    required this.onExportCsv,
+    required this.onExportHtml,
+    required this.onExportPdf,
+    required this.canExport,
+    required this.pdfEnabled,
     required this.onClearFilters,
   });
 
@@ -41,7 +45,11 @@ class ReportsFiltersBar extends StatelessWidget {
   final ValueChanged<String> onTypeChanged;
   final ValueChanged<String> onStatusChanged;
   final VoidCallback onSearch;
-  final VoidCallback onExport;
+  final VoidCallback onExportCsv;
+  final VoidCallback onExportHtml;
+  final VoidCallback onExportPdf;
+  final bool canExport;
+  final bool pdfEnabled;
   final VoidCallback onClearFilters;
 
   @override
@@ -97,9 +105,19 @@ class ReportsFiltersBar extends StatelessWidget {
                 onPressed: onSearch,
               ),
               OutlinedButton.icon(
-                onPressed: onExport,
+                onPressed: canExport ? onExportCsv : null,
                 icon: const Icon(Icons.grid_on_outlined, size: 18),
                 label: const Text('Exportar'),
+              ),
+              OutlinedButton.icon(
+                onPressed: canExport ? onExportHtml : null,
+                icon: const Icon(Icons.language_outlined, size: 18),
+                label: const Text('HTML'),
+              ),
+              OutlinedButton.icon(
+                onPressed: pdfEnabled ? onExportPdf : null,
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                label: Text(pdfEnabled ? 'PDF' : 'PDF em desenvolvimento'),
               ),
               OutlinedButton.icon(
                 onPressed: onClearFilters,

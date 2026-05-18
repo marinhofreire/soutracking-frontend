@@ -155,129 +155,112 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
           Center(child: Text('Erro ao carregar comandos: $error')),
     );
 
-    final form = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Comandos remotos',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 12),
-        devicesAsync.when(
-          data: (devices) {
-            return DropdownButtonFormField<int?>(
-              initialValue: _deviceId,
-              items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('Selecionar dispositivo'),
-                ),
-                ...devices.map(
-                  (device) => DropdownMenuItem<int?>(
-                    value: device.id,
-                    child: Text('${device.name} (#${device.id})'),
-                  ),
-                ),
-              ],
-              onChanged: (value) => setState(() => _deviceId = value),
-              decoration: const InputDecoration(labelText: 'Dispositivo'),
-            );
-          },
-          loading: () => const LinearProgressIndicator(),
-          error: (error, _) => Text('Erro ao carregar dispositivos: $error'),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _commandType,
-          items: commandItems,
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _commandType = value);
-          },
-          decoration: const InputDecoration(labelText: 'Tipo de comando'),
-        ),
-        if (_commandType == 'custom') ...[
-          const SizedBox(height: 12),
-          TextField(
-            controller: _customDataController,
-            decoration: const InputDecoration(
-              labelText: 'Payload custom',
-              hintText: 'Ex: AT+RST',
-            ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE5F0)),
           ),
-        ],
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            FilledButton.icon(
-              onPressed: _sending ? null : _sendCommand,
-              icon: _sending
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_outlined),
-              label: Text(_sending ? 'Enviando...' : 'Enviar comando'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => ref.invalidate(commandsProvider),
-              icon: const Icon(Icons.refresh_outlined),
-              label: const Text('Atualizar lista'),
-            ),
-          ],
-        ),
-      ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 900;
-        if (isWide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Container(
-                width: 380,
-                margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFFFF),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF183153).withValues(alpha: 0.12),
-                        blurRadius: 14,
-                        offset: Offset(0, 8),
+              const Text(
+                'Comandos remotos',
+                style: TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              SizedBox(
+                width: 300,
+                child: devicesAsync.when(
+                  data: (devices) {
+                    return DropdownButtonFormField<int?>(
+                      initialValue: _deviceId,
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('Selecionar dispositivo'),
+                        ),
+                        ...devices.map(
+                          (device) => DropdownMenuItem<int?>(
+                            value: device.id,
+                            child: Text('${device.name} (#${device.id})'),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) => setState(() => _deviceId = value),
+                      decoration: const InputDecoration(
+                        labelText: 'Dispositivo',
+                        border: OutlineInputBorder(),
+                        isDense: true,
                       ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(child: form),
+                    );
+                  },
+                  loading: () => const LinearProgressIndicator(),
+                  error: (error, _) =>
+                      Text('Erro ao carregar dispositivos: $error'),
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _commandType,
+                  items: commandItems,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _commandType = value);
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de comando',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 24, right: 16),
-                  child: list,
+              if (_commandType == 'custom')
+                SizedBox(
+                  width: 240,
+                  child: TextField(
+                    controller: _customDataController,
+                    decoration: const InputDecoration(
+                      labelText: 'Payload custom',
+                      hintText: 'Ex: AT+RST',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
                 ),
+              FilledButton.icon(
+                onPressed: _sending ? null : _sendCommand,
+                icon: _sending
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_outlined),
+                label: Text(_sending ? 'Enviando...' : 'Enviar comando'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(commandsProvider),
+                icon: const Icon(Icons.refresh_outlined),
+                label: const Text('Atualizar lista'),
               ),
             ],
-          );
-        }
-
-        return ListView(
-          children: [
-            form,
-            const SizedBox(height: 16),
-            SizedBox(height: 460, child: list),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(child: list),
+      ],
     );
   }
 }

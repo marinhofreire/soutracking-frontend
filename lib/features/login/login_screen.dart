@@ -18,7 +18,29 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
   bool _obscurePassword = true;
+
+  static const _pixelRefSize = Size(1672, 941);
+  static const _pixelRefZoom = 0.95;
+  static const _emailFieldRefRect = Rect.fromLTWH(569, 450, 532, 96);
+  static const _passwordFieldRefRect = Rect.fromLTWH(569, 560, 532, 96);
+  static const _forgotButtonRefRect = Rect.fromLTWH(928, 684, 188, 42);
+  static const _submitButtonRefRect = Rect.fromLTWH(569, 713, 540, 77);
+  static const _errorRefRect = Rect.fromLTWH(569, 798, 540, 36);
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocusNode.addListener(_rebuildForFocus);
+    _passwordFocusNode.addListener(_rebuildForFocus);
+  }
+
+  void _rebuildForFocus() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   Future<void> _submitLogin(BuildContext context) async {
     final session = ref.read(sessionProvider);
@@ -52,8 +74,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
+    _emailFocusNode.removeListener(_rebuildForFocus);
+    _passwordFocusNode.removeListener(_rebuildForFocus);
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -63,6 +89,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = session.status == SessionStatus.loading;
     final whiteLabelAsync = ref.watch(whiteLabelProvider);
     final config = whiteLabelAsync.value ?? WhiteLabelConfig.fallback;
+    final usePixelReferenceLogin =
+        config.appName.trim().toLowerCase().contains('soutracking');
+
+    if (usePixelReferenceLogin) {
+      return _buildPixelReferenceLogin(
+        context: context,
+        session: session,
+        isLoading: isLoading,
+      );
+    }
+
     final media = MediaQuery.of(context);
     final isCompact = media.size.width < 760;
     final cardPadding = isCompact
@@ -414,6 +451,288 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
       ),
+    );
+  }
+
+  Widget _buildPixelReferenceLogin({
+    required BuildContext context,
+    required SessionState session,
+    required bool isLoading,
+  }) {
+    return Scaffold(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+          final fullCoverRect = _coverRect(viewport, _pixelRefSize);
+          final coverRect = Rect.fromCenter(
+            center: fullCoverRect.center,
+            width: fullCoverRect.width * _pixelRefZoom,
+            height: fullCoverRect.height * _pixelRefZoom,
+          );
+          final coverScale = coverRect.width / _pixelRefSize.width;
+
+          Rect scaleRefRect(Rect source) {
+            return Rect.fromLTWH(
+              coverRect.left + source.left * coverScale,
+              coverRect.top + source.top * coverScale,
+              source.width * coverScale,
+              source.height * coverScale,
+            );
+          }
+
+          final emailRect = scaleRefRect(_emailFieldRefRect);
+          final passwordRect = scaleRefRect(_passwordFieldRefRect);
+          final forgotRect = scaleRefRect(_forgotButtonRefRect);
+          final submitRect = scaleRefRect(_submitButtonRefRect);
+          final errorRect = scaleRefRect(_errorRefRect);
+          final fieldFontSize = (21.0 * coverScale).clamp(15.0, 23.0);
+          final buttonRadius = (10 * coverScale).clamp(8.0, 14.0);
+          final inputRadius = (10 * coverScale).clamp(8.0, 12.0).toDouble();
+          final emailInputFocused = _emailFocusNode.hasFocus;
+          final passwordInputFocused = _passwordFocusNode.hasFocus;
+          final emailHasText = _emailController.text.isNotEmpty;
+          final passwordHasText = _passwordController.text.isNotEmpty;
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fromRect(
+                rect: coverRect,
+                child: Image.asset(
+                  'assets/branding/login_pixel_reference.png',
+                  fit: BoxFit.fill,
+                ),
+              ),
+              Positioned.fromRect(
+                rect: emailRect,
+                child: TextField(
+                  controller: _emailController,
+                  focusNode: _emailFocusNode,
+                  keyboardType: TextInputType.emailAddress,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: TextStyle(
+                    color: const Color(0xFFE7F0FF),
+                    fontSize: fieldFontSize,
+                    fontWeight: FontWeight.w500,
+                    height: 1.0,
+                  ),
+                  cursorColor: const Color(0xFF3DAFFF),
+                  decoration: _pixelInputDecoration(
+                    hintText: 'Digite seu e-mail',
+                    fillColor: emailInputFocused || emailHasText
+                        ? const Color(0x66080C12)
+                        : const Color(0x3D080C12),
+                    borderColor: const Color(0x66A2A8B2),
+                    focusedBorderColor: const Color(0xFFF9C61B),
+                    borderRadius: inputRadius,
+                    hintFontSize: fieldFontSize * 0.9,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 18 * coverScale,
+                      vertical: 14 * coverScale,
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) {
+                    if (!isLoading) {
+                      _submitLogin(context);
+                    }
+                  },
+                ),
+              ),
+              Positioned.fromRect(
+                rect: passwordRect,
+                child: TextField(
+                  controller: _passwordController,
+                  focusNode: _passwordFocusNode,
+                  obscureText: _obscurePassword,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: TextStyle(
+                    color: const Color(0xFFE7F0FF),
+                    fontSize: fieldFontSize,
+                    fontWeight: FontWeight.w500,
+                    height: 1.0,
+                  ),
+                  cursorColor: const Color(0xFF3DAFFF),
+                  decoration: _pixelInputDecoration(
+                    hintText: 'Digite sua senha',
+                    fillColor: passwordInputFocused || passwordHasText
+                        ? const Color(0x66080C12)
+                        : const Color(0x3D080C12),
+                    borderColor: const Color(0x66A2A8B2),
+                    focusedBorderColor: const Color(0xFFF9C61B),
+                    borderRadius: inputRadius,
+                    hintFontSize: fieldFontSize * 0.9,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 18 * coverScale,
+                      vertical: 14 * coverScale,
+                    ),
+                    suffix: IconButton(
+                      onPressed: () {
+                        setState(() => _obscurePassword = !_obscurePassword);
+                      },
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: const Color(0xFFAAB2BE),
+                        size: 20 * coverScale,
+                      ),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) {
+                    if (!isLoading) {
+                      _submitLogin(context);
+                    }
+                  },
+                ),
+              ),
+              Positioned.fromRect(
+                rect: forgotRect,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {},
+                    borderRadius: BorderRadius.circular(8),
+                    splashColor: const Color(0x223DAFFF),
+                    highlightColor: const Color(0x123DAFFF),
+                  ),
+                ),
+              ),
+              Positioned.fromRect(
+                rect: submitRect,
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(buttonRadius),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(buttonRadius),
+                    onTap: isLoading
+                        ? null
+                        : () {
+                            _submitLogin(context);
+                          },
+                    splashColor: const Color(0x18FFFFFF),
+                    highlightColor: const Color(0x10FFFFFF),
+                    child: Center(
+                      child: isLoading
+                          ? SizedBox(
+                              width: 22 * coverScale,
+                              height: 22 * coverScale,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF111111),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+              if (session.status == SessionStatus.error)
+                Positioned.fromRect(
+                  rect: errorRect,
+                  child: Center(
+                    child: Text(
+                      session.error ?? 'Falha ao autenticar',
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: const Color(0xFFFF7A7A),
+                        fontSize: (13.5 * coverScale).clamp(11.0, 16.0),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Rect _coverRect(Size output, Size input) {
+    if (output.width <= 0 || output.height <= 0) {
+      return Rect.zero;
+    }
+    final scale = math.max(
+      output.width / input.width,
+      output.height / input.height,
+    );
+    final fittedSize = Size(input.width * scale, input.height * scale);
+    final dx = (output.width - fittedSize.width) / 2;
+    final dy = (output.height - fittedSize.height) / 2;
+    return Rect.fromLTWH(dx, dy, fittedSize.width, fittedSize.height);
+  }
+
+  InputDecoration _pixelInputDecoration({
+    String? hintText,
+    required Color fillColor,
+    required Color borderColor,
+    required Color focusedBorderColor,
+    required double borderRadius,
+    required double hintFontSize,
+    required EdgeInsets contentPadding,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      isCollapsed: false,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: BorderSide(
+          color: borderColor,
+          width: 1.0,
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: BorderSide(
+          color: borderColor,
+          width: 1.0,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: BorderSide(
+          color: focusedBorderColor,
+          width: 1.2,
+        ),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: BorderSide(
+          color: borderColor.withValues(alpha: 0.4),
+          width: 1.0,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: const BorderSide(
+          color: Color(0xFFE56363),
+          width: 1.0,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadius),
+        borderSide: const BorderSide(
+          color: Color(0xFFE56363),
+          width: 1.2,
+        ),
+      ),
+      hintText: hintText,
+      hintStyle: const TextStyle(
+        color: Color(0xFFA5ADB9),
+        fontWeight: FontWeight.w400,
+      ).copyWith(fontSize: hintFontSize),
+      contentPadding: contentPadding,
+      filled: true,
+      fillColor: fillColor,
+      suffixIconConstraints: const BoxConstraints(
+        minWidth: 46,
+        minHeight: 46,
+      ),
+      suffixIcon: suffix,
     );
   }
 }

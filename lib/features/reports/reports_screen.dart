@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../admin/admin_reference_ui.dart';
 import 'models/report_models.dart';
+import 'services/report_export_service.dart';
 import 'widgets/report_category_cards.dart';
 import 'widgets/reports_filters_bar.dart';
 import 'widgets/reports_kpi_row.dart';
@@ -148,6 +149,7 @@ List<ReportRecord> _mapReportRecords({
   final selectedType = _typeFromLabel(selectedTypeLabel);
 
   for (final raw in rawRecords) {
+    final attributes = _asMap(raw['attributes']);
     final createdAt = _resolveDateTime(raw) ?? DateTime.now();
     final deviceId = _resolveInt(raw['deviceId']);
     final type =
@@ -164,6 +166,15 @@ List<ReportRecord> _mapReportRecords({
         createdAt: createdAt,
         format: ReportFormat.screen,
         totalRecords: _resolveCount(raw),
+        deviceId: deviceId,
+        latitude: _resolveLatitude(raw, attributes),
+        longitude: _resolveLongitude(raw, attributes),
+        speedKnots: _resolveSpeedKnots(raw, attributes),
+        ignition: _resolveIgnition(raw, attributes),
+        battery: _resolveBattery(raw, attributes),
+        eventType: _resolveEventType(raw),
+        address: _resolveAddress(raw, attributes),
+        attributes: attributes,
       ),
     );
   }
@@ -221,20 +232,20 @@ String _resolveName(Map<String, dynamic> raw, ReportType type) {
 
   switch (type) {
     case ReportType.routes:
-      return 'Relatório de rotas';
+      return 'RelatÃ³rio de rotas';
     case ReportType.trips:
-      return 'Relatório de viagens';
+      return 'RelatÃ³rio de viagens';
     case ReportType.stops:
-      return 'Relatório de paradas';
+      return 'RelatÃ³rio de paradas';
     case ReportType.distance:
-      return 'Relatório de resumo';
+      return 'RelatÃ³rio de resumo';
     default:
-      return 'Relatório de eventos';
+      return 'RelatÃ³rio de eventos';
   }
 }
 
 String _resolveVehicleName(int? deviceId, Map<int, TraccarDevice> devicesById) {
-  if (deviceId == null) return 'Não informado';
+  if (deviceId == null) return 'NÃ£o informado';
   final device = devicesById[deviceId];
   final name = device?.name.trim() ?? '';
   if (name.isNotEmpty) return name;
@@ -254,7 +265,7 @@ String _resolveDriver(Map<String, dynamic> raw) {
       return text;
     }
   }
-  return 'Não informado';
+  return 'NÃ£o informado';
 }
 
 String _resolvePeriod(Map<String, dynamic> raw, DateTime from, DateTime to) {
@@ -298,6 +309,142 @@ int _resolveCount(Map<String, dynamic> raw) {
   return 1;
 }
 
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, mapValue) => MapEntry(key.toString(), mapValue),
+    );
+  }
+  return const <String, dynamic>{};
+}
+
+double? _asDouble(dynamic value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value);
+  }
+  return null;
+}
+
+bool? _asBool(dynamic value) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is num) {
+    return value > 0;
+  }
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true' ||
+        normalized == '1' ||
+        normalized == 'on' ||
+        normalized == 'ligada' ||
+        normalized == 'sim') {
+      return true;
+    }
+    if (normalized == 'false' ||
+        normalized == '0' ||
+        normalized == 'off' ||
+        normalized == 'desligada' ||
+        normalized == 'nao' ||
+        normalized == 'nÃ£o') {
+      return false;
+    }
+  }
+  return null;
+}
+
+double? _resolveLatitude(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  return _asDouble(raw['latitude']) ?? _asDouble(attributes['latitude']);
+}
+
+double? _resolveLongitude(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  return _asDouble(raw['longitude']) ?? _asDouble(attributes['longitude']);
+}
+
+double? _resolveSpeedKnots(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  return _asDouble(raw['speed']) ?? _asDouble(attributes['speed']);
+}
+
+bool? _resolveIgnition(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  final rawValue =
+      raw['ignition'] ?? attributes['ignition'] ?? attributes['ignitionOn'];
+  return _asBool(rawValue);
+}
+
+String? _resolveBattery(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  final value = raw['battery'] ??
+      attributes['battery'] ??
+      attributes['batteryLevel'] ??
+      attributes['power'] ??
+      attributes['batteryVoltage'];
+  if (value == null) {
+    return null;
+  }
+  if (value is num) {
+    final number = value.toDouble();
+    if (!number.isFinite) {
+      return null;
+    }
+    if (number > 20) {
+      return '${number.toStringAsFixed(0)}%';
+    }
+    return '${number.toStringAsFixed(2)} V';
+  }
+  final text = value.toString().trim();
+  if (text.isEmpty || text.toLowerCase() == 'null') {
+    return null;
+  }
+  return text;
+}
+
+String? _resolveAddress(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> attributes,
+) {
+  final candidates = [
+    raw['address'],
+    attributes['address'],
+    attributes['geocoder'],
+    attributes['formattedAddress'],
+  ];
+  for (final candidate in candidates) {
+    final text = '${candidate ?? ''}'.trim();
+    if (text.isNotEmpty && text.toLowerCase() != 'null') {
+      return text;
+    }
+  }
+  return null;
+}
+
+String? _resolveEventType(Map<String, dynamic> raw) {
+  final text = '${raw['type'] ?? ''}'.trim();
+  if (text.isEmpty) {
+    return null;
+  }
+  return text;
+}
+
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
@@ -311,7 +458,45 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _vehicle = 'Todos';
   String _driver = 'Todos';
   String _status = 'Todos';
+  bool _hasSearched = false;
+  static const bool _pdfEnabled = false;
   int _revision = 0;
+
+  Future<void> _exportRecords(
+    List<ReportRecord> records,
+    ReportExportFormat format, {
+    ReportRecord? singleRecord,
+  }) async {
+    if (format == ReportExportFormat.pdf) {
+      _showAction('PDF em desenvolvimento');
+      return;
+    }
+    if (!_hasSearched) {
+      _showAction('Busque um relatorio antes de exportar');
+      return;
+    }
+    final target = singleRecord == null ? records : <ReportRecord>[singleRecord];
+    if (target.isEmpty) {
+      _showAction('Busque um relatorio antes de exportar');
+      return;
+    }
+    final result = await exportReports(
+      records: target,
+      format: format,
+      scopeLabel: _buildScopeLabel(singleRecord),
+    );
+    if (!mounted) {
+      return;
+    }
+    _showAction(result.message);
+  }
+
+  String _buildScopeLabel(ReportRecord? singleRecord) {
+    if (singleRecord != null) {
+      return '${singleRecord.type.label}_${singleRecord.vehicle}';
+    }
+    return '$_type|$_period|$_vehicle|$_status';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -326,8 +511,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
 
     return AdminReferenceScaffold(
-      title: 'Relatórios',
-      breadcrumbs: const ['Operação', 'Relatórios'],
+      title: 'RelatÃ³rios',
+      breadcrumbs: const ['OperaÃ§Ã£o', 'RelatÃ³rios'],
       selectedMenu: 'reports',
       child: listAsync.when(
         data: (records) {
@@ -361,6 +546,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             'Todos',
             ...{for (final item in records) item.status.label},
           ];
+          final canExport = true;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,6 +558,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 onGenerate: (type) {
                   setState(() {
                     _type = type.label;
+                    _hasSearched = false;
                     _revision++;
                   });
                 },
@@ -388,22 +575,46 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 driverOptions: driverOptions,
                 typeOptions: typeOptions,
                 statusOptions: statusOptions,
-                onPeriodChanged: (value) => setState(() => _period = value),
-                onVehicleChanged: (value) => setState(() => _vehicle = value),
-                onDriverChanged: (value) => setState(() => _driver = value),
-                onTypeChanged: (value) => setState(() => _type = value),
-                onStatusChanged: (value) => setState(() => _status = value),
+                onPeriodChanged: (value) => setState(() {
+                  _period = value;
+                  _hasSearched = false;
+                }),
+                onVehicleChanged: (value) => setState(() {
+                  _vehicle = value;
+                  _hasSearched = false;
+                }),
+                onDriverChanged: (value) => setState(() {
+                  _driver = value;
+                  _hasSearched = false;
+                }),
+                onTypeChanged: (value) => setState(() {
+                  _type = value;
+                  _hasSearched = false;
+                }),
+                onStatusChanged: (value) => setState(() {
+                  _status = value;
+                  _hasSearched = false;
+                }),
                 onSearch: () {
                   setState(() {
+                    _hasSearched = true;
                     _revision++;
                   });
                 },
-                onExport: () {
-                  final message = filtered.isEmpty
-                      ? 'Nenhum dado disponível para exportação.'
-                      : 'Exportação preparada para os registros filtrados.';
-                  _showAction(message);
-                },
+                onExportCsv: () => _exportRecords(
+                  filtered,
+                  ReportExportFormat.csv,
+                ),
+                onExportHtml: () => _exportRecords(
+                  filtered,
+                  ReportExportFormat.html,
+                ),
+                onExportPdf: () => _exportRecords(
+                  filtered,
+                  ReportExportFormat.pdf,
+                ),
+                canExport: canExport,
+                pdfEnabled: _pdfEnabled,
                 onClearFilters: () {
                   setState(() {
                     _period = '30 dias';
@@ -411,6 +622,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     _driver = 'Todos';
                     _type = 'Eventos';
                     _status = 'Todos';
+                    _hasSearched = false;
                     _revision++;
                   });
                 },
@@ -419,13 +631,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               ReportsTable(
                 records: filtered,
                 onView: (record) => _showAction('Visualizando ${record.name}.'),
+                onExportPdf: (record) => _exportRecords(
+                  filtered,
+                  ReportExportFormat.pdf,
+                  singleRecord: record,
+                ),
+                onExportExcel: (record) => _exportRecords(
+                  filtered,
+                  ReportExportFormat.csv,
+                  singleRecord: record,
+                ),
+                canExportRow: filtered.isNotEmpty,
+                pdfEnabled: _pdfEnabled,
               ),
             ],
           );
         },
         loading: () => const _LoadingPanel(),
         error: (error, _) => _ErrorPanel(
-          message: 'Falha ao carregar relatórios: $error',
+          message: 'Falha ao carregar relatÃ³rios: $error',
         ),
       ),
     );
@@ -469,15 +693,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _categoryDescription(ReportType type) {
     switch (type) {
       case ReportType.routes:
-        return 'Percursos e variações por período.';
+        return 'Percursos e variaÃ§Ãµes por perÃ­odo.';
       case ReportType.trips:
-        return 'Viagens concluídas e tempos de trajeto.';
+        return 'Viagens concluÃ­das e tempos de trajeto.';
       case ReportType.stops:
-        return 'Paradas e permanência por local.';
+        return 'Paradas e permanÃªncia por local.';
       case ReportType.events:
         return 'Eventos operacionais registrados.';
       case ReportType.distance:
-        return 'Resumo consolidado do período selecionado.';
+        return 'Resumo consolidado do perÃ­odo selecionado.';
       default:
         return 'Categoria operacional.';
     }
@@ -538,3 +762,4 @@ class _ErrorPanel extends StatelessWidget {
     );
   }
 }
+

@@ -2,11 +2,16 @@ import 'package:flutter/foundation.dart';
 
 const String kAppName = 'SouTracking';
 
-const String _kDefaultTraccarHttpOrigin = 'https://app.mackflow.com.br';
+const String _kDefaultTraccarHttpOrigin = 'http://api.soutracking.com.br';
 const String _kTraccarBaseUrlFromEnv = String.fromEnvironment(
   'API_ORIGIN',
   defaultValue: '',
 );
+const String _kSouAssistBaseUrlFromEnv = String.fromEnvironment(
+  'SOUASSIST_API_ORIGIN',
+  defaultValue: '',
+);
+const String _kDefaultSouAssistHttpOrigin = 'http://api.soutracking.com.br';
 
 String _resolveTraccarBaseUrl() {
   final envValue = _kTraccarBaseUrlFromEnv.trim();
@@ -30,11 +35,25 @@ String _resolveTraccarBaseUrl() {
 
 // Default para Traccar SEM /api para evitar /api/api.
 final String kTraccarBaseUrl = _resolveTraccarBaseUrl();
+
+String _resolveSouAssistBaseUrl() {
+  final souAssistEnv = _kSouAssistBaseUrlFromEnv.trim();
+  if (souAssistEnv.isNotEmpty) {
+    return souAssistEnv;
+  }
+
+  // Mantem o backend de tenant alinhado com API_ORIGIN quando nao houver
+  // override dedicado para SOUASSIST_API_ORIGIN.
+  final traccarEnv = _kTraccarBaseUrlFromEnv.trim();
+  if (traccarEnv.isNotEmpty) {
+    return traccarEnv;
+  }
+
+  return _kDefaultSouAssistHttpOrigin;
+}
+
 // Base dedicada do backend SouFind (demanda/tenant), isolada do Traccar.
-const String kSouAssistApiBaseUrl = String.fromEnvironment(
-  'SOUASSIST_API_ORIGIN',
-  defaultValue: 'https://api.souassit.com.br',
-);
+final String kSouAssistApiBaseUrl = _resolveSouAssistBaseUrl();
 const String kGoogleMapsApiKey = 'AIzaSyDX-KnRJNMbZKp_EPiSdYPxo-XE5LvdHiY';
 const bool kEnableRoadSpeedLimits = bool.fromEnvironment(
   'ENABLE_ROAD_SPEED_LIMITS',
@@ -57,6 +76,26 @@ const bool presentationMode = bool.fromEnvironment(
   'PRESENTATION_MODE',
   defaultValue: false,
 ); // true = DEMO (estável para prints), false = PROD (usa API real)
+
+const bool kPixeltiPilotMode = bool.fromEnvironment(
+  'PIXELTI_PILOT',
+  defaultValue: false,
+);
+
+const bool kEnableDataLogMenu = bool.fromEnvironment(
+  'ENABLE_DATA_LOG',
+  defaultValue: false,
+);
+
+final bool kEnableFormulaTelemetryDemo = const bool.fromEnvironment(
+  'ENABLE_FORMULA_TELEMETRY_DEMO',
+  defaultValue: false,
+);
+
+const bool kShowPlaceholderPanels = bool.fromEnvironment(
+  'SHOW_PLACEHOLDER_PANELS',
+  defaultValue: false,
+);
 
 // Log do endpoint Traccar em uso (aparece no console ao iniciar app)
 void logTraccarBaseUrl({String? endpoint}) {

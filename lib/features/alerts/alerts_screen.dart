@@ -157,6 +157,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   onVehicleChanged: (value) => setState(() => _vehicle = value),
                 ),
                 const SizedBox(height: 12),
+                const _DevelopmentNotice(),
+                const SizedBox(height: 12),
                 AlertsTable(records: filtered),
               ],
             );
@@ -204,6 +206,12 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       final typeCode = (event['type'] ?? '').toString().trim();
       final deviceId =
           event['deviceId'] is int ? event['deviceId'] as int : null;
+      final latitude = _resolveLatitude(event, attributes);
+      final longitude = _resolveLongitude(event, attributes);
+      final speedKnots = _resolveSpeedKnots(event, attributes);
+      final ignition = _resolveIgnition(event, attributes);
+      final battery = _resolveBattery(event, attributes);
+      final address = _resolveAddress(event, attributes);
 
       records.add(
         AlertRecord(
@@ -214,6 +222,13 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
           description: _resolveDescription(event, attributes),
           dateTime: dateTime,
           status: _resolveStatus(event, attributes),
+          latitude: latitude,
+          longitude: longitude,
+          speedKnots: speedKnots,
+          ignition: ignition,
+          battery: battery,
+          address: address,
+          attributes: attributes,
         ),
       );
     }
@@ -460,6 +475,84 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     return normalized == 'true' || normalized == '1' || normalized == 'yes';
   }
 
+  double? _resolveLatitude(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    return _asDouble(event['latitude']) ?? _asDouble(attributes['latitude']);
+  }
+
+  double? _resolveLongitude(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    return _asDouble(event['longitude']) ?? _asDouble(attributes['longitude']);
+  }
+
+  double? _resolveSpeedKnots(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    return _asDouble(event['speed']) ?? _asDouble(attributes['speed']);
+  }
+
+  bool? _resolveIgnition(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    final raw =
+        event['ignition'] ?? attributes['ignition'] ?? attributes['ignitionOn'];
+    return _asBool(raw);
+  }
+
+  String? _resolveBattery(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    final raw = event['battery'] ??
+        attributes['battery'] ??
+        attributes['batteryLevel'] ??
+        attributes['power'] ??
+        attributes['batteryVoltage'];
+    if (raw == null) {
+      return null;
+    }
+    if (raw is num) {
+      final value = raw.toDouble();
+      if (!value.isFinite) {
+        return null;
+      }
+      if (value > 20) {
+        return '${value.toStringAsFixed(0)}%';
+      }
+      return '${value.toStringAsFixed(2)} V';
+    }
+    final text = raw.toString().trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  String? _resolveAddress(
+    Map<String, dynamic> event,
+    Map<String, dynamic> attributes,
+  ) {
+    final candidates = <dynamic>[
+      event['address'],
+      attributes['address'],
+      attributes['geocoder'],
+      attributes['formattedAddress'],
+    ];
+    for (final candidate in candidates) {
+      final text = candidate?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return null;
+  }
+
   double? _asDouble(dynamic value) {
     if (value is num) {
       return value.toDouble();
@@ -468,6 +561,75 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return double.tryParse(value);
     }
     return null;
+  }
+
+  bool? _asBool(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value > 0;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' ||
+          normalized == '1' ||
+          normalized == 'on' ||
+          normalized == 'ligada' ||
+          normalized == 'sim') {
+        return true;
+      }
+      if (normalized == 'false' ||
+          normalized == '0' ||
+          normalized == 'off' ||
+          normalized == 'desligada' ||
+          normalized == 'nao' ||
+          normalized == 'nÃ£o') {
+        return false;
+      }
+    }
+    return null;
+  }
+}
+
+class _DevelopmentNotice extends StatelessWidget {
+  const _DevelopmentNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.construction_outlined,
+            size: 18,
+            color: Color(0xFFB45309),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Submenus especificos de alertas: Em desenvolvimento.',
+              style: TextStyle(
+                color: Color(0xFF9A3412),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

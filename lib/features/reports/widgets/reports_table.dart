@@ -8,10 +8,18 @@ class ReportsTable extends StatelessWidget {
     super.key,
     required this.records,
     required this.onView,
+    required this.onExportPdf,
+    required this.onExportExcel,
+    required this.canExportRow,
+    required this.pdfEnabled,
   });
 
   final List<ReportRecord> records;
   final ValueChanged<ReportRecord> onView;
+  final ValueChanged<ReportRecord> onExportPdf;
+  final ValueChanged<ReportRecord> onExportExcel;
+  final bool canExportRow;
+  final bool pdfEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -118,12 +126,14 @@ class ReportsTable extends StatelessWidget {
                           _ActionButton(
                             icon: Icons.picture_as_pdf_outlined,
                             color: const Color(0xFFE74B4B),
-                            onTap: () {},
+                            enabled: pdfEnabled,
+                            onTap: () => onExportPdf(record),
                           ),
                           _ActionButton(
                             icon: Icons.grid_on_outlined,
                             color: const Color(0xFF10B981),
-                            onTap: () {},
+                            enabled: canExportRow,
+                            onTap: () => onExportExcel(record),
                           ),
                         ],
                       ),
@@ -239,26 +249,38 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.enabled = true,
   });
 
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(8),
       child: Container(
         width: 30,
         height: 30,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
-          color: color.withValues(alpha: 0.10),
+          border: Border.all(
+            color: enabled
+                ? color.withValues(alpha: 0.35)
+                : const Color(0xFFA3B1C6).withValues(alpha: 0.55),
+          ),
+          color: enabled
+              ? color.withValues(alpha: 0.10)
+              : const Color(0xFFE2E8F0).withValues(alpha: 0.50),
         ),
-        child: Icon(icon, color: color, size: 16),
+        child: Icon(
+          icon,
+          color: enabled ? color : const Color(0xFF94A3B8),
+          size: 16,
+        ),
       ),
     );
   }

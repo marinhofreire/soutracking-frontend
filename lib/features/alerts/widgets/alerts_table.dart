@@ -33,7 +33,7 @@ class AlertsTable extends StatelessWidget {
                 border: Border.all(color: const Color(0xFFDDE5F0)),
               ),
               child: const Text(
-                'Nenhum alerta encontrado no período selecionado',
+                'Nenhum alerta encontrado no periodo selecionado',
                 style: TextStyle(
                   color: Color(0xFF25344A),
                   fontWeight: FontWeight.w600,
@@ -52,9 +52,9 @@ class AlertsTable extends StatelessWidget {
                   Expanded(flex: 2, child: _HeaderCell('ID')),
                   Expanded(flex: 2, child: _HeaderCell('Severidade')),
                   Expanded(flex: 3, child: _HeaderCell('Tipo do evento')),
-                  Expanded(flex: 2, child: _HeaderCell('Veículo')),
-                  Expanded(flex: 2, child: _HeaderCell('Horário')),
-                  Expanded(flex: 4, child: _HeaderCell('Descrição')),
+                  Expanded(flex: 2, child: _HeaderCell('Veiculo')),
+                  Expanded(flex: 2, child: _HeaderCell('Horario')),
+                  Expanded(flex: 4, child: _HeaderCell('Descricao')),
                   Expanded(flex: 2, child: _HeaderCell('Status')),
                 ],
               ),
@@ -70,36 +70,103 @@ class AlertsTable extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFDDE5F0)),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(flex: 2, child: _ValueCell(record.id)),
-                    Expanded(
-                      flex: 2,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: AdminStatusChip(
-                          label: record.severity.label,
-                          color: _severityColor(record.severity),
+                    Row(
+                      children: [
+                        Expanded(flex: 2, child: _ValueCell(record.id)),
+                        Expanded(
+                          flex: 2,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: AdminStatusChip(
+                              label: record.severity.label,
+                              color: _severityColor(record.severity),
+                            ),
+                          ),
                         ),
+                        Expanded(flex: 3, child: _ValueCell(record.type)),
+                        Expanded(flex: 2, child: _ValueCell(record.vehicle)),
+                        Expanded(
+                          flex: 2,
+                          child: _ValueCell(_formatDateTime(record.dateTime)),
+                        ),
+                        Expanded(flex: 4, child: _ValueCell(record.description)),
+                        Expanded(
+                          flex: 2,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: record.status == null
+                                ? const _ValueCell('Nao informado')
+                                : AdminStatusChip(
+                                    label: record.status!.label,
+                                    color: _statusColor(record.status!),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                    ),
-                    Expanded(flex: 3, child: _ValueCell(record.type)),
-                    Expanded(flex: 2, child: _ValueCell(record.vehicle)),
-                    Expanded(
-                      flex: 2,
-                      child: _ValueCell(_formatDateTime(record.dateTime)),
-                    ),
-                    Expanded(flex: 4, child: _ValueCell(record.description)),
-                    Expanded(
-                      flex: 2,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: record.status == null
-                            ? const _ValueCell('Não informado')
-                            : AdminStatusChip(
-                                label: record.status!.label,
-                                color: _statusColor(record.status!),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFD),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE4EBF5)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Dados tecnicos reais',
+                            style: TextStyle(
+                              color: Color(0xFF3B4D66),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            children: [
+                              _TechField(
+                                label: 'Lat/Lng',
+                                value: record.latLngLabel,
                               ),
+                              _TechField(
+                                label: 'Velocidade',
+                                value: record.speedKmhLabel,
+                              ),
+                              _TechField(
+                                label: 'Ignicao',
+                                value: record.ignitionLabel,
+                              ),
+                              _TechField(
+                                label: 'Bateria',
+                                value: record.batteryLabel,
+                              ),
+                              _TechField(
+                                label: 'Endereco',
+                                value: record.addressLabel,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Attributes: ${record.attributesSummaryLabel}',
+                            style: const TextStyle(
+                              color: Color(0xFF4B5F7A),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -177,6 +244,28 @@ class _ValueCell extends StatelessWidget {
         color: Color(0xFF25344A),
         fontWeight: FontWeight.w700,
         fontSize: 12,
+      ),
+    );
+  }
+}
+
+class _TechField extends StatelessWidget {
+  const _TechField({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '$label: $value',
+      style: const TextStyle(
+        color: Color(0xFF334155),
+        fontWeight: FontWeight.w700,
+        fontSize: 11,
       ),
     );
   }

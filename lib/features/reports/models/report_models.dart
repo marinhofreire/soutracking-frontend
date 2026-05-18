@@ -60,6 +60,15 @@ class ReportRecord {
     required this.createdAt,
     required this.format,
     required this.totalRecords,
+    this.deviceId,
+    this.latitude,
+    this.longitude,
+    this.speedKnots,
+    this.ignition,
+    this.battery,
+    this.eventType,
+    this.address,
+    this.attributes = const <String, dynamic>{},
   });
 
   final String name;
@@ -71,6 +80,73 @@ class ReportRecord {
   final DateTime createdAt;
   final ReportFormat format;
   final int totalRecords;
+  final int? deviceId;
+  final double? latitude;
+  final double? longitude;
+  final double? speedKnots;
+  final bool? ignition;
+  final String? battery;
+  final String? eventType;
+  final String? address;
+  final Map<String, dynamic> attributes;
+
+  String get latitudeLabel {
+    if (latitude == null) {
+      return 'Nao informado';
+    }
+    return latitude!.toStringAsFixed(6);
+  }
+
+  String get longitudeLabel {
+    if (longitude == null) {
+      return 'Nao informado';
+    }
+    return longitude!.toStringAsFixed(6);
+  }
+
+  String get speedKmhLabel {
+    if (speedKnots == null) {
+      return 'Nao informado';
+    }
+    final kmh = speedKnots! * 1.852;
+    return '${kmh.toStringAsFixed(1)} km/h';
+  }
+
+  String get ignitionLabel {
+    if (ignition == null) {
+      return 'Nao informado';
+    }
+    return ignition! ? 'Ligada' : 'Desligada';
+  }
+
+  String get batteryLabel {
+    final text = battery?.trim() ?? '';
+    return text.isEmpty ? 'Nao informado' : text;
+  }
+
+  String get addressLabel {
+    final text = address?.trim() ?? '';
+    return text.isEmpty ? 'Nao informado' : text;
+  }
+
+  String get attributesSummaryLabel {
+    if (attributes.isEmpty) {
+      return 'Nao informado';
+    }
+    final summary = <String>[];
+    for (final entry in attributes.entries) {
+      final key = entry.key.trim();
+      if (key.isEmpty) continue;
+      final value = '${entry.value ?? ''}'.trim();
+      if (value.isEmpty || value.toLowerCase() == 'null') continue;
+      summary.add('$key=$value');
+      if (summary.length >= 6) break;
+    }
+    if (summary.isEmpty) {
+      return 'Nao informado';
+    }
+    return summary.join(' | ');
+  }
 }
 
 extension ReportTypeView on ReportType {

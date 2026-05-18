@@ -392,8 +392,12 @@ class TraccarClient {
       body: jsonEncode(body),
     );
 
-    if (response.statusCode != 200) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Falha ao atualizar $path: ${response.statusCode}');
+    }
+
+    if (response.statusCode == 204 || response.body.trim().isEmpty) {
+      return <String, dynamic>{};
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;

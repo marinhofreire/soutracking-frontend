@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -16,9 +17,11 @@ import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
 import '../attributes/attributes_screen.dart';
 import '../business/business_reference_screens.dart';
+import '../calendars/calendars_screen.dart';
 import '../calls/calls_screen.dart';
 import '../communication/zpro_communication_screen.dart';
 import '../common/placeholder_screen.dart';
+import '../common/report_screen.dart';
 import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
 import '../devices/devices_screen.dart';
@@ -29,11 +32,14 @@ import '../groups/groups_screen.dart';
 import '../history/history_screen.dart';
 import '../inventory/inventory_screen.dart';
 import '../login/login_screen.dart';
+import '../maintenance/maintenance_screen.dart';
 import '../map/map_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../permissions/permissions_screen.dart';
 import '../reports/reports_screen.dart';
 import '../routes/routes_screen.dart';
+import '../settings/settings_screen.dart';
+import '../statistics/statistics_screen.dart';
 import '../telemetry/telemetry_sensors_screen.dart';
 import '../users/users_screen.dart';
 import '../vehicles/vehicles_screen.dart';
@@ -314,6 +320,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       usePilotMenu: _isPilotView(currentSession),
       showDataLog: _shouldShowDataLogMenu(currentSession),
     );
+    final pixelTelemetryMode = _activePanelId == 'telemetry-demo';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -350,20 +357,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             const Positioned.fill(
               child: _NoVehiclesMapHint(),
             ),
-          _TopSearchBar(
-            brand: brand,
-            onMenuTap: _toggleMenu,
-            menuOpen: _menuOpen,
-            alertCount: realAlertCount,
-            panelOpen: _activePanelVisible,
-            activeTitle: _activePanelTitle,
-            activeSubtitle: _panelSubtitle(_activePanelId),
-            onRefresh: _refreshOperationalData,
-            onClosePanel: _closePanel,
-            onLogout: () {
-              _handleLogout();
-            },
-          ),
+          if (!pixelTelemetryMode)
+            _TopSearchBar(
+              brand: brand,
+              onMenuTap: _toggleMenu,
+              menuOpen: _menuOpen,
+              alertCount: realAlertCount,
+              panelOpen: _activePanelVisible,
+              activeTitle: _activePanelTitle,
+              activeSubtitle: _panelSubtitle(_activePanelId),
+              onRefresh: _refreshOperationalData,
+              onClosePanel: _closePanel,
+              onLogout: () {
+                _handleLogout();
+              },
+            ),
           if (!_activePanelVisible)
             Positioned(
               left: _menuOpen ? 226 : 80,
@@ -385,30 +393,46 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               onZoomIn: () => _zoomBy(1),
               onZoomOut: () => _zoomBy(-1),
             ),
-          _SideMenu(
-            open: _menuOpen,
-            items: menuItems,
-            activeId: _activePanelId,
-            onSelect: _openPanel,
-            onLogout: () {
-              _handleLogout();
-            },
-          ),
+          if (!pixelTelemetryMode)
+            _SideMenu(
+              open: _menuOpen,
+              items: menuItems,
+              activeId: _activePanelId,
+              onSelect: _openPanel,
+              onLogout: () {
+                _handleLogout();
+              },
+            ),
           if (_showHighlightsRail) _HighlightsRail(open: !_activePanelVisible),
-          _KpiVehicleList(
-            open: _kpiListOpen,
-            title: _activeKpiFilter.title,
-            snapshots: filteredSnapshots,
-            onVehicleTap: _previewVehicleOnMap,
-          ),
-          _IntegratedPanel(
-            open: _activePanelVisible,
-            title: _activePanelTitle ?? '',
-            subtitle: _panelSubtitle(_activePanelId),
-            onClose: _closePanel,
-            child: _panelFor(_activePanelId),
-          ),
-          if (previewSnapshot != null)
+          if (!pixelTelemetryMode)
+            _KpiVehicleList(
+              open: _kpiListOpen,
+              title: _activeKpiFilter.title,
+              snapshots: filteredSnapshots,
+              onVehicleTap: _previewVehicleOnMap,
+            ),
+          if (!pixelTelemetryMode)
+            _IntegratedPanel(
+              open: _activePanelVisible,
+              title: _activePanelTitle ?? '',
+              subtitle: _panelSubtitle(_activePanelId),
+              hideHeader: _activePanelId == 'logs',
+              onClose: _closePanel,
+              child: _panelFor(_activePanelId),
+            ),
+          if (pixelTelemetryMode)
+            Positioned.fill(
+              child: _SurfaceGuard(
+                child: _PixelTelemetryWorkspace(
+                  snapshots: snapshots,
+                  onClose: _closePanel,
+                  onRefresh: _refreshOperationalData,
+                  onOpenMenuItem: _openPanel,
+                  menuItems: menuItems,
+                ),
+              ),
+            ),
+          if (!pixelTelemetryMode && previewSnapshot != null)
             _VehicleCompactPopup(
               snapshot: previewSnapshot,
               onDetails: () => _openVehicleDetails(previewSnapshot),
@@ -422,15 +446,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               ),
               onClose: () => setState(() => _previewVehicle = null),
             ),
-          _VehicleBottomBar(
-            snapshot: selectedSnapshot,
-            activeTab: _activeBottomTab,
-            onTabChanged: (tab) => setState(() => _activeBottomTab = tab),
-            onClose: () => setState(() => _selectedVehicle = null),
-          ),
-          if (devicesAsync.isLoading ||
-              positionsAsync.isLoading ||
-              latestEventsAsync.isLoading)
+          if (!pixelTelemetryMode)
+            _VehicleBottomBar(
+              snapshot: selectedSnapshot,
+              activeTab: _activeBottomTab,
+              onTabChanged: (tab) => setState(() => _activeBottomTab = tab),
+              onClose: () => setState(() => _selectedVehicle = null),
+            ),
+          if (!pixelTelemetryMode &&
+              (devicesAsync.isLoading ||
+                  positionsAsync.isLoading ||
+                  latestEventsAsync.isLoading))
             const Positioned(
               right: 24,
               top: 86,
@@ -1321,51 +1347,82 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return _TraccarToolsPanel(
       key: const ValueKey('ai-operations-tools'),
       title: 'IA Operacional',
-      entries: _placeholderEntries(
-        moduleTitle: 'IA Operacional',
-        items: const [
-          (
-            label: 'Criar alerta por IA',
-            icon: Icons.auto_awesome_outlined,
-            description: 'Assistente para criacao automatica de alertas.',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Criar alerta por IA',
+          icon: Icons.auto_awesome_outlined,
+          detail: 'Assistente ativo para alertas',
+          child: _AiOperationAssistantScreen(
+            operationId: 'alerta',
+            title: 'Criar alerta por IA',
+            description:
+                'Sugere e envia um alerta operacional com base no contexto informado.',
           ),
-          (
-            label: 'Criar cerca por IA',
-            icon: Icons.psychology_outlined,
-            description: 'Assistente para sugestao de cercas.',
+        ),
+        _PanelToolEntry(
+          label: 'Criar cerca por IA',
+          icon: Icons.psychology_outlined,
+          detail: 'Assistente ativo para geofence',
+          child: _AiOperationAssistantScreen(
+            operationId: 'cerca',
+            title: 'Criar cerca por IA',
+            description:
+                'Sugere parametros de cerca e registra a criacao no fluxo operacional.',
           ),
-          (
-            label: 'Criar relatorio por IA',
-            icon: Icons.analytics_outlined,
-            description: 'Geracao assistida de relatorios.',
+        ),
+        _PanelToolEntry(
+          label: 'Criar relatorio por IA',
+          icon: Icons.analytics_outlined,
+          detail: 'Assistente ativo para relatorios',
+          child: _AiOperationAssistantScreen(
+            operationId: 'relatorio',
+            title: 'Criar relatorio por IA',
+            description:
+                'Monta e dispara uma solicitacao de relatorio assistida por prompt.',
           ),
-          (
-            label: 'Criar chamado por IA',
-            icon: Icons.support_outlined,
-            description: 'Abertura assistida de chamados.',
+        ),
+        _PanelToolEntry(
+          label: 'Criar chamado por IA',
+          icon: Icons.support_outlined,
+          detail: 'Fluxo ativo de abertura',
+          child: _BridgeTicketCreateScreen(),
+        ),
+        _PanelToolEntry(
+          label: 'Resumo diario',
+          icon: Icons.calendar_view_day_outlined,
+          detail: 'Visao consolidada da operacao',
+          child: StatisticsScreen(),
+        ),
+        _PanelToolEntry(
+          label: 'Diagnostico de risco',
+          icon: Icons.monitor_heart_outlined,
+          detail: 'Eventos criticos em tempo real',
+          child: AlertsScreen(),
+        ),
+        _PanelToolEntry(
+          label: 'Sugestao de acao',
+          icon: Icons.tips_and_updates_outlined,
+          detail: 'Recomendacao operacional',
+          child: _AiOperationAssistantScreen(
+            operationId: 'acao',
+            title: 'Sugestao de acao',
+            description:
+                'Registra recomendacoes de acao priorizadas para o operador.',
           ),
-          (
-            label: 'Resumo diario',
-            icon: Icons.calendar_view_day_outlined,
-            description: 'Resumo diario da operacao com IA.',
+        ),
+        _PanelToolEntry(
+          label: 'Regras inteligentes',
+          icon: Icons.rule_outlined,
+          detail: 'Motor ativo de regras IA',
+          child: _AutomationWorkbenchScreen(
+            title: 'Regras inteligentes',
+            description:
+                'Configura regras orientadas por IA com gatilhos e acao recomendada.',
+            scope: 'ia-rules',
+            actionType: 'evento',
           ),
-          (
-            label: 'Diagnostico de risco',
-            icon: Icons.monitor_heart_outlined,
-            description: 'Analise de risco com recomendacoes.',
-          ),
-          (
-            label: 'Sugestao de acao',
-            icon: Icons.tips_and_updates_outlined,
-            description: 'Sugestoes de acao priorizadas para operacao.',
-          ),
-          (
-            label: 'Regras inteligentes',
-            icon: Icons.rule_outlined,
-            description: 'Motor visual para regras inteligentes.',
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1511,18 +1568,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildLogsPanel() {
-    return _TraccarToolsPanel(
-      key: const ValueKey('logs-tools'),
-      title: 'Data Log',
-      entries: const [
-        _PanelToolEntry(
-          label: 'Logs por comunicacao',
-          icon: Icons.article_outlined,
-          detail: 'Linha a linha por dispositivo e periodo',
-          child: HistoryScreen(),
-        ),
-      ],
-    );
+    return const HistoryScreen();
   }
 
   Widget _buildReportsPanel() {
@@ -1550,6 +1596,113 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           icon: Icons.route_outlined,
           detail: 'RelatÃ³rios atuais',
           child: ReportsScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Combinado',
+          icon: Icons.merge_type_outlined,
+          detail: 'Endpoint /reports/combined',
+          child: ReportScreen(
+            title: 'Relatorio Combinado',
+            endpointPath: '/reports/combined',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Eventos',
+          icon: Icons.event_note_outlined,
+          detail: 'Endpoint /reports/events',
+          child: ReportScreen(
+            title: 'Relatorio de Eventos',
+            endpointPath: '/reports/events',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Viagens',
+          icon: Icons.luggage_outlined,
+          detail: 'Endpoint /reports/trips',
+          child: ReportScreen(
+            title: 'Relatorio de Viagens',
+            endpointPath: '/reports/trips',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Paradas',
+          icon: Icons.pause_circle_outline,
+          detail: 'Endpoint /reports/stops',
+          child: ReportScreen(
+            title: 'Relatorio de Paradas',
+            endpointPath: '/reports/stops',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Resumo',
+          icon: Icons.summarize_outlined,
+          detail: 'Endpoint /reports/summary',
+          child: ReportScreen(
+            title: 'Relatorio Resumo',
+            endpointPath: '/reports/summary',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Posicoes',
+          icon: Icons.timeline_outlined,
+          detail: 'Endpoint /reports/route',
+          child: ReportScreen(
+            title: 'Relatorio de Posicoes',
+            endpointPath: '/reports/route',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Logs',
+          icon: Icons.article_outlined,
+          detail: 'Endpoint /reports/logs',
+          child: ReportScreen(
+            title: 'Relatorio de Logs',
+            endpointPath: '/reports/logs',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Cercas (report)',
+          icon: Icons.fence_outlined,
+          detail: 'Endpoint /reports/geofences',
+          child: ReportScreen(
+            title: 'Relatorio de Cercas',
+            endpointPath: '/reports/geofences',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Grafico',
+          icon: Icons.show_chart_outlined,
+          detail: 'Endpoint /reports/chart',
+          child: ReportScreen(
+            title: 'Relatorio Grafico',
+            endpointPath: '/reports/chart',
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Agendados',
+          icon: Icons.schedule_outlined,
+          detail: 'Endpoint /reports/scheduled',
+          child: ReportScreen(
+            title: 'Relatorios Agendados',
+            endpointPath: '/reports/scheduled',
+            enableDeviceFilter: false,
+          ),
+        ),
+        const _PanelToolEntry(
+          label: 'Estatisticas',
+          icon: Icons.stacked_bar_chart_outlined,
+          detail: 'Endpoint /statistics',
+          child: StatisticsScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Auditoria',
+          icon: Icons.fact_check_outlined,
+          detail: 'Endpoint /reports/audit',
+          child: ReportScreen(
+            title: 'Relatorio de Auditoria',
+            endpointPath: '/reports/audit',
+            enableDeviceFilter: false,
+          ),
         ),
         ..._placeholderEntries(
           moduleTitle: 'RelatÃ³rios',
@@ -1584,56 +1737,110 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return _TraccarToolsPanel(
       key: const ValueKey('automations-tools'),
       title: 'Automacoes',
-      entries: _placeholderEntries(
-        moduleTitle: 'Automacoes',
-        items: const [
-          (
-            label: 'Regras automaticas',
-            icon: Icons.rule_folder_outlined,
-            description: 'Cadastro visual de regras automaticas.',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Regras automaticas',
+          icon: Icons.rule_folder_outlined,
+          detail: 'Cadastro ativo de regras',
+          child: _AutomationWorkbenchScreen(
+            title: 'Regras automaticas',
+            description: 'Cria regras operacionais com condicoes e acao.',
+            scope: 'rules',
+            actionType: 'evento',
           ),
-          (
-            label: 'Gatilhos',
-            icon: Icons.flash_on_outlined,
-            description: 'Definicao visual de gatilhos de execucao.',
+        ),
+        _PanelToolEntry(
+          label: 'Gatilhos',
+          icon: Icons.flash_on_outlined,
+          detail: 'Definicao ativa de gatilhos',
+          child: _AutomationWorkbenchScreen(
+            title: 'Gatilhos',
+            description: 'Define os eventos que disparam automacao.',
+            scope: 'triggers',
+            actionType: 'evento',
           ),
-          (
-            label: 'Acoes',
-            icon: Icons.playlist_add_check_outlined,
-            description: 'Catalogo visual de acoes automatizadas.',
+        ),
+        _PanelToolEntry(
+          label: 'Acoes',
+          icon: Icons.playlist_add_check_outlined,
+          detail: 'Catalogo ativo de acoes',
+          child: _AutomationWorkbenchScreen(
+            title: 'Acoes',
+            description: 'Configura a resposta automatica apos cada gatilho.',
+            scope: 'actions',
+            actionType: 'evento',
           ),
-          (
-            label: 'Webhooks',
-            icon: Icons.webhook_outlined,
-            description: 'Estrutura visual de webhooks e endpoints.',
+        ),
+        _PanelToolEntry(
+          label: 'Webhooks',
+          icon: Icons.webhook_outlined,
+          detail: 'Teste ativo de webhook',
+          child: _AutomationWorkbenchScreen(
+            title: 'Webhooks',
+            description:
+                'Configura e testa callbacks para integracoes externas.',
+            scope: 'webhooks',
+            actionType: 'webhook',
           ),
-          (
-            label: 'Alertas automaticos',
-            icon: Icons.notification_important_outlined,
-            description: 'Automacao de envio de alertas.',
+        ),
+        _PanelToolEntry(
+          label: 'Alertas automaticos',
+          icon: Icons.notification_important_outlined,
+          detail: 'Automacao ativa de alertas',
+          child: _AutomationWorkbenchScreen(
+            title: 'Alertas automaticos',
+            description:
+                'Dispara alertas automaticos quando o gatilho ocorrer.',
+            scope: 'alerts',
+            actionType: 'alerta',
           ),
-          (
-            label: 'WhatsApp automatico',
-            icon: Icons.forum_outlined,
-            description: 'Automacao de mensagens por WhatsApp.',
+        ),
+        _PanelToolEntry(
+          label: 'WhatsApp automatico',
+          icon: Icons.forum_outlined,
+          detail: 'Automacao ativa de WhatsApp',
+          child: _AutomationWorkbenchScreen(
+            title: 'WhatsApp automatico',
+            description:
+                'Envia mensagem automatica para o destino configurado.',
+            scope: 'whatsapp',
+            actionType: 'whatsapp',
           ),
-          (
-            label: 'Criacao automatica de chamado',
-            icon: Icons.add_box_outlined,
-            description: 'Abertura automatica de chamados por evento.',
+        ),
+        _PanelToolEntry(
+          label: 'Criacao automatica de chamado',
+          icon: Icons.add_box_outlined,
+          detail: 'Abertura automatica ativa',
+          child: _AutomationWorkbenchScreen(
+            title: 'Criacao automatica de chamado',
+            description: 'Abre chamado automaticamente com dados do evento.',
+            scope: 'tickets',
+            actionType: 'ticket',
           ),
-          (
-            label: 'Relatorios automaticos',
-            icon: Icons.description_outlined,
-            description: 'Agendamento automatico de relatorios.',
+        ),
+        _PanelToolEntry(
+          label: 'Relatorios automaticos',
+          icon: Icons.description_outlined,
+          detail: 'Agendamento ativo de relatorios',
+          child: _AutomationWorkbenchScreen(
+            title: 'Relatorios automaticos',
+            description: 'Agenda e testa geracao automatica de relatorios.',
+            scope: 'reports',
+            actionType: 'relatorio',
           ),
-          (
-            label: 'Integracao MackFlow/Bridge futuramente',
-            icon: Icons.link_outlined,
-            description: 'Integracao sera plugada em etapa futura.',
+        ),
+        _PanelToolEntry(
+          label: 'Integracao MackFlow/Bridge',
+          icon: Icons.link_outlined,
+          detail: 'Registro ativo de integracao',
+          child: _AutomationWorkbenchScreen(
+            title: 'Integracao MackFlow/Bridge',
+            description: 'Registra payloads de integracao para uso do Bridge.',
+            scope: 'bridge',
+            actionType: 'evento',
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1642,6 +1849,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       key: const ValueKey('settings-tools'),
       title: 'ConfiguraÃ§Ãµes',
       entries: [
+        _PanelToolEntry(
+          label: 'Preferencias gerais',
+          icon: Icons.tune_outlined,
+          detail: 'Conta, tema e parametros',
+          child: SettingsScreen(
+            onLogout: () {
+              _handleLogout();
+            },
+          ),
+        ),
         const _PanelToolEntry(
           label: 'UsuÃ¡rios',
           icon: Icons.people_outline,
@@ -1671,6 +1888,30 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           icon: Icons.badge_outlined,
           detail: 'Cadastro de motoristas',
           child: DriversScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Atributos',
+          icon: Icons.sell_outlined,
+          detail: 'Campos customizados',
+          child: AttributesScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Calendarios',
+          icon: Icons.calendar_month_outlined,
+          detail: 'Regras de agenda e excecoes',
+          child: CalendarsScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Comandos',
+          icon: Icons.terminal_outlined,
+          detail: 'Comandos salvos',
+          child: CommandsScreen(),
+        ),
+        const _PanelToolEntry(
+          label: 'Manutencao',
+          icon: Icons.build_outlined,
+          detail: 'Planos e controle tecnico',
+          child: MaintenanceScreen(),
         ),
         const _PanelToolEntry(
           label: 'NotificaÃ§Ãµes',
@@ -2751,6 +2992,7 @@ class _IntegratedPanel extends StatelessWidget {
     required this.open,
     required this.title,
     required this.subtitle,
+    this.hideHeader = false,
     required this.child,
     required this.onClose,
   });
@@ -2758,6 +3000,7 @@ class _IntegratedPanel extends StatelessWidget {
   final bool open;
   final String title;
   final String subtitle;
+  final bool hideHeader;
   final Widget child;
   final VoidCallback onClose;
 
@@ -2790,70 +3033,72 @@ class _IntegratedPanel extends StatelessWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  SizedBox(
-                    height: 68,
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 18),
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF176EEB).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
+                  if (!hideHeader)
+                    SizedBox(
+                      height: 68,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 18),
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF176EEB)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.space_dashboard_outlined,
+                              color: Color(0xFF176EEB),
+                              size: 20,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.space_dashboard_outlined,
-                            color: Color(0xFF176EEB),
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF1F2A44),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 18,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1F2A44),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 18,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF60718D),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF60718D),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: 'Fechar painel',
-                          onPressed: onClose,
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: Color(0xFF60718D),
+                          IconButton(
+                            tooltip: 'Fechar painel',
+                            onPressed: onClose,
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF60718D),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  if (!hideHeader)
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
+                      padding: EdgeInsets.all(hideHeader ? 10 : 12),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
                         child: ColoredBox(
@@ -2874,6 +3119,1354 @@ class _IntegratedPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PixelTelemetryWorkspace extends StatelessWidget {
+  const _PixelTelemetryWorkspace({
+    required this.snapshots,
+    required this.onClose,
+    required this.onRefresh,
+    required this.onOpenMenuItem,
+    required this.menuItems,
+  });
+
+  final List<_VehicleSnapshot> snapshots;
+  final VoidCallback onClose;
+  final VoidCallback onRefresh;
+  final ValueChanged<_OperationalMenuItem> onOpenMenuItem;
+  final List<_OperationalMenuItem> menuItems;
+
+  static const _workspacePadding = EdgeInsets.fromLTRB(12, 12, 12, 16);
+
+  @override
+  Widget build(BuildContext context) {
+    final mapById = {
+      for (final item in menuItems) item.id: item,
+    };
+    final total = snapshots.length;
+    final online = snapshots.where((it) => it.isOperationalOnline).length;
+    final moving = snapshots.where((it) => it.isOperationalMoving).length;
+    final alerts = snapshots.where((it) => it.hasAlert).length;
+    final offline = snapshots.where((it) => it.isOperationalOffline).length;
+    final noSignal = snapshots
+        .where((it) => !it.hasPosition || it.hasStaleLastUpdate)
+        .length;
+    final tableRows = snapshots.take(6).toList(growable: false);
+    final mainSnapshot = tableRows.isNotEmpty ? tableRows.first : null;
+    final logs = _buildLogRows(mainSnapshot);
+    final media = MediaQuery.sizeOf(context);
+    final compact = media.width < 1180;
+
+    return Padding(
+      padding: _workspacePadding,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF1F3A63)),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xDE071223),
+              Color(0xE807111E),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.52),
+              blurRadius: 26,
+              spreadRadius: 2,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: compact
+              ? Column(
+                  children: [
+                    _PixelTelemetryTopBar(
+                      onClose: onClose,
+                      onRefresh: onRefresh,
+                    ),
+                    Expanded(
+                      child: _PixelTelemetryContent(
+                        tableRows: tableRows,
+                        logs: logs,
+                        total: total,
+                        online: online,
+                        moving: moving,
+                        alerts: alerts,
+                        offline: offline,
+                        noSignal: noSignal,
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    _PixelTelemetrySidebar(
+                      menuMap: mapById,
+                      onOpenMenuItem: onOpenMenuItem,
+                      onRefresh: onRefresh,
+                    ),
+                    const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Color(0xFF1A2E4A),
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _PixelTelemetryTopBar(
+                            onClose: onClose,
+                            onRefresh: onRefresh,
+                          ),
+                          Expanded(
+                            child: _PixelTelemetryContent(
+                              tableRows: tableRows,
+                              logs: logs,
+                              total: total,
+                              online: online,
+                              moving: moving,
+                              alerts: alerts,
+                              offline: offline,
+                              noSignal: noSignal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  List<_PixelLogRow> _buildLogRows(_VehicleSnapshot? snapshot) {
+    if (snapshot == null) {
+      return const <_PixelLogRow>[
+        _PixelLogRow(
+          dateTime: '--',
+          equipment: '--',
+          type: 'Posicao',
+          severity: 'Info',
+          description: 'Latitude',
+          value: '--',
+          unit: '-',
+          source: 'GPS',
+        ),
+      ];
+    }
+
+    final timestamp = snapshot.lastCommunicationLabel;
+    final equipment =
+        snapshot.device.name.isEmpty ? 'Sem nome' : snapshot.device.name;
+    final speedValue = snapshot.speedLabel.replaceAll(' km/h', '');
+    final batteryRaw = snapshot.batteryLabel;
+
+    return <_PixelLogRow>[
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Posicao',
+        severity: 'Info',
+        description: 'Latitude',
+        value: snapshot.latLng.latitude.toStringAsFixed(5),
+        unit: 'deg',
+        source: 'GPS',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Posicao',
+        severity: 'Info',
+        description: 'Longitude',
+        value: snapshot.latLng.longitude.toStringAsFixed(5),
+        unit: 'deg',
+        source: 'GPS',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Velocidade',
+        severity: 'Info',
+        description: 'Velocidade',
+        value: speedValue,
+        unit: 'km/h',
+        source: 'GPS',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Ignicao',
+        severity: snapshot.ignition == true ? 'Info' : 'Alerta',
+        description: 'Estado da ignicao',
+        value: snapshot.ignitionLabel,
+        unit: '-',
+        source: 'Digital',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Bateria',
+        severity: 'Info',
+        description: 'Tensao da bateria',
+        value: batteryRaw,
+        unit: batteryRaw.contains('%') ? '%' : 'V',
+        source: 'Telemetria',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Sinal GSM',
+        severity: 'Info',
+        description: 'Intensidade do sinal',
+        value: _rssiText(snapshot),
+        unit: 'dBm',
+        source: 'GSM',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Evento',
+        severity: 'Alerta',
+        description: 'Excesso de velocidade',
+        value: speedValue,
+        unit: 'km/h',
+        source: 'Sistema',
+      ),
+      _PixelLogRow(
+        dateTime: '$timestamp:15',
+        equipment: equipment,
+        type: 'Saida digital',
+        severity: 'Aviso',
+        description: 'Bloqueio motor',
+        value: snapshot.ignition == true ? 'Desativado' : 'Ativado',
+        unit: '-',
+        source: 'Comando',
+      ),
+    ];
+  }
+}
+
+class _PixelTelemetryTopBar extends StatelessWidget {
+  const _PixelTelemetryTopBar({
+    required this.onClose,
+    required this.onRefresh,
+  });
+
+  final VoidCallback onClose;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF1A2E4A)),
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xB90B1830),
+            Color(0x9609162A),
+          ],
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.track_changes_outlined,
+            color: Color(0xFF56A3FF),
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Telemetria operacional - modo pixel test (1536 x 864)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Color(0xFFE6F2FF),
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          _PixelActionButton(
+            icon: Icons.refresh_rounded,
+            label: 'Atualizar',
+            onTap: onRefresh,
+          ),
+          const SizedBox(width: 8),
+          _PixelActionButton(
+            icon: Icons.close_rounded,
+            label: 'Fechar',
+            onTap: onClose,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PixelTelemetrySidebar extends StatelessWidget {
+  const _PixelTelemetrySidebar({
+    required this.menuMap,
+    required this.onOpenMenuItem,
+    required this.onRefresh,
+  });
+
+  final Map<String, _OperationalMenuItem> menuMap;
+  final ValueChanged<_OperationalMenuItem> onOpenMenuItem;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    const ids = <({String id, String label, IconData icon, bool selected})>[
+      (
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: Icons.space_dashboard_outlined,
+        selected: false
+      ),
+      (id: 'map', label: 'Mapa', icon: Icons.map_outlined, selected: false),
+      (
+        id: 'vehicles',
+        label: 'Equipamentos',
+        icon: Icons.directions_car_outlined,
+        selected: false
+      ),
+      (
+        id: 'devices',
+        label: 'Dispositivos',
+        icon: Icons.gps_fixed_outlined,
+        selected: true
+      ),
+      (
+        id: 'alerts',
+        label: 'Alertas',
+        icon: Icons.notifications_active_outlined,
+        selected: false
+      ),
+      (
+        id: 'geofences',
+        label: 'Cercas',
+        icon: Icons.fence_outlined,
+        selected: false
+      ),
+      (
+        id: 'reports',
+        label: 'Relatorios',
+        icon: Icons.insert_chart_outlined,
+        selected: false
+      ),
+      (
+        id: 'communication',
+        label: 'Comunicacao',
+        icon: Icons.chat_bubble_outline,
+        selected: false
+      ),
+      (
+        id: 'settings',
+        label: 'Configuracoes',
+        icon: Icons.settings_outlined,
+        selected: false
+      ),
+      (id: 'logs', label: 'Logs', icon: Icons.article_outlined, selected: true),
+    ];
+
+    return SizedBox(
+      width: 212,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xE5081426),
+              Color(0xE2061020),
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 18, 18, 14),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 18, color: Color(0xFFF7C62A)),
+                  SizedBox(width: 8),
+                  Text(
+                    'SOUTRACKING',
+                    style: TextStyle(
+                      color: Color(0xFFF2F7FF),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFF1A2E4A)),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                children: [
+                  for (final item in ids) ...[
+                    _PixelSidebarTile(
+                      label: item.label,
+                      icon: item.icon,
+                      selected: item.selected,
+                      onTap: () {
+                        final menuItem = menuMap[item.id];
+                        if (menuItem != null) {
+                          onOpenMenuItem(menuItem);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.circle, size: 9, color: Color(0xFF2EDD87)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Online',
+                      style: TextStyle(
+                        color: Color(0xFF8CA5C9),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onRefresh,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Color(0xFF8CA5C9),
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelSidebarTile extends StatelessWidget {
+  const _PixelSidebarTile({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFF0E2A53) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? const Color(0xFF2159A8) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected
+                    ? const Color(0xFF8CC4FF)
+                    : const Color(0xFF91A7CA),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selected
+                        ? const Color(0xFFD8E9FF)
+                        : const Color(0xFF91A7CA),
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelTelemetryContent extends StatelessWidget {
+  const _PixelTelemetryContent({
+    required this.tableRows,
+    required this.logs,
+    required this.total,
+    required this.online,
+    required this.moving,
+    required this.alerts,
+    required this.offline,
+    required this.noSignal,
+  });
+
+  final List<_VehicleSnapshot> tableRows;
+  final List<_PixelLogRow> logs;
+  final int total;
+  final int online;
+  final int moving;
+  final int alerts;
+  final int offline;
+  final int noSignal;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
+      child: Column(
+        children: [
+          _PixelSectionShell(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Equipamentos / Dispositivos',
+                            style: TextStyle(
+                              color: Color(0xFFE8F1FF),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 31 / 2,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Visao geral dos equipamentos da operacao',
+                            style: TextStyle(
+                              color: Color(0xFF8DA7CC),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _PixelActionButton(
+                      icon: Icons.filter_list_rounded,
+                      label: 'Filtros',
+                    ),
+                    SizedBox(width: 8),
+                    _PixelActionButton(
+                      icon: Icons.file_download_outlined,
+                      label: 'Exportar',
+                    ),
+                    SizedBox(width: 8),
+                    _PixelActionButton(
+                      icon: Icons.add_rounded,
+                      label: 'Novo Equipamento',
+                      primary: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = (constraints.maxWidth - 40) / 6;
+                    final wrap = cardWidth < 170;
+                    final cards = [
+                      _PixelKpiCard(
+                        title: 'Total de Equipamentos',
+                        value: '$total',
+                        hint: '100% do total',
+                        color: const Color(0xFF2FA6FF),
+                        icon: Icons.inventory_2_outlined,
+                      ),
+                      _PixelKpiCard(
+                        title: 'Online',
+                        value: '$online',
+                        hint: total > 0
+                            ? '${((online / total) * 100).round()}% do total'
+                            : '0% do total',
+                        color: const Color(0xFF2EDD87),
+                        icon: Icons.wifi_tethering_rounded,
+                      ),
+                      _PixelKpiCard(
+                        title: 'Em Movimento',
+                        value: '$moving',
+                        hint: total > 0
+                            ? '${((moving / total) * 100).round()}% do total'
+                            : '0% do total',
+                        color: const Color(0xFF40A0FF),
+                        icon: Icons.near_me_outlined,
+                      ),
+                      _PixelKpiCard(
+                        title: 'Alertas Ativos',
+                        value: '$alerts',
+                        hint: total > 0
+                            ? '${((alerts / total) * 100).round()}% do total'
+                            : '0% do total',
+                        color: const Color(0xFFFF6A55),
+                        icon: Icons.warning_amber_rounded,
+                      ),
+                      _PixelKpiCard(
+                        title: 'Offline',
+                        value: '$offline',
+                        hint: total > 0
+                            ? '${((offline / total) * 100).round()}% do total'
+                            : '0% do total',
+                        color: const Color(0xFF93A4BC),
+                        icon: Icons.wifi_off_rounded,
+                      ),
+                      _PixelKpiCard(
+                        title: 'Sem Comunicacao',
+                        value: '$noSignal',
+                        hint: total > 0
+                            ? '${((noSignal / total) * 100).round()}% do total'
+                            : '0% do total',
+                        color: const Color(0xFFF5A623),
+                        icon: Icons.portable_wifi_off_rounded,
+                      ),
+                    ];
+                    if (!wrap) {
+                      return Row(
+                        children: [
+                          for (var i = 0; i < cards.length; i++) ...[
+                            Expanded(child: cards[i]),
+                            if (i != cards.length - 1) const SizedBox(width: 8),
+                          ],
+                        ],
+                      );
+                    }
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final card in cards)
+                          SizedBox(width: 220, child: card),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _PixelTableShell(
+                  child: _PixelDevicesTable(rows: tableRows, total: total),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _PixelSectionShell(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Logs / Data Log',
+                            style: TextStyle(
+                              color: Color(0xFFE8F1FF),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 30 / 2,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Historico detalhado de dados e eventos dos equipamentos',
+                            style: TextStyle(
+                              color: Color(0xFF8DA7CC),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _PixelActionButton(
+                      icon: Icons.file_download_outlined,
+                      label: 'Exportar',
+                    ),
+                    SizedBox(width: 8),
+                    _PixelActionButton(
+                      icon: Icons.view_column_outlined,
+                      label: 'Configurar Colunas',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _PixelTableShell(
+                  child: _PixelLogsTable(rows: logs),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PixelSectionShell extends StatelessWidget {
+  const _PixelSectionShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1B3555)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xCE0B172A),
+            Color(0xB30A1526),
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _PixelActionButton extends StatelessWidget {
+  const _PixelActionButton({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.primary = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = primary ? const Color(0xFF2C7BEA) : const Color(0xFF121F33);
+    final fg = primary ? Colors.white : const Color(0xFFE4EEFF);
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color:
+                  primary ? const Color(0xFF468DEB) : const Color(0xFF263D5D),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: fg),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelKpiCard extends StatelessWidget {
+  const _PixelKpiCard({
+    required this.title,
+    required this.value,
+    required this.hint,
+    required this.color,
+    required this.icon,
+  });
+
+  final String title;
+  final String value;
+  final String hint;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 74,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: const Color(0xFF233D5E)),
+        color: const Color(0xE0101F33),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF91A9CC),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFFF0F6FF),
+                    fontSize: 23 / 2,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  hint,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PixelTableShell extends StatelessWidget {
+  const _PixelTableShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: const Color(0xFF223A5B)),
+        color: const Color(0xC80C1A2C),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _PixelDevicesTable extends StatelessWidget {
+  const _PixelDevicesTable({
+    required this.rows,
+    required this.total,
+  });
+
+  final List<_VehicleSnapshot> rows;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: Row(
+            children: const [
+              Expanded(
+                child: _PixelFilterField(
+                    text: 'Buscar equipamento, IMEI ou placa...'),
+              ),
+              SizedBox(width: 10),
+              _PixelFilterField(text: 'Todos os Status', width: 170),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFF213757)),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 20,
+            headingRowHeight: 38,
+            dataRowMinHeight: 43,
+            dataRowMaxHeight: 54,
+            dividerThickness: 0.6,
+            headingTextStyle: const TextStyle(
+              color: Color(0xFFCFE1FF),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+            dataTextStyle: const TextStyle(
+              color: Color(0xFFE3EEFF),
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+            columns: const [
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Equipamento')),
+              DataColumn(label: Text('IMEI / ID')),
+              DataColumn(label: Text('Veiculo / Ativo')),
+              DataColumn(label: Text('Grupo')),
+              DataColumn(label: Text('Ultima Conexao')),
+              DataColumn(label: Text('Velocidade')),
+              DataColumn(label: Text('Ignicao')),
+              DataColumn(label: Text('Bateria')),
+              DataColumn(label: Text('Sinal GSM')),
+              DataColumn(label: Text('Acoes')),
+            ],
+            rows: [
+              for (final row in rows) _deviceRow(row),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFF213757)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            children: [
+              Text(
+                'Mostrando 1 a ${rows.length} de $total equipamentos',
+                style: const TextStyle(
+                  color: Color(0xFF89A4CA),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11.5,
+                ),
+              ),
+              const Spacer(),
+              const _PixelPager(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  DataRow _deviceRow(_VehicleSnapshot row) {
+    final statusText = _statusLabel(row);
+    final statusColor = _statusColor(row);
+    final model =
+        row.modelLabel == 'Nao informado' ? row.device.name : row.modelLabel;
+    final groupRaw = row.device.attributes?['groupId'] ??
+        row.device.attributes?['group'] ??
+        row.device.attributes?['groupName'];
+    final groupLabel = '$groupRaw'.trim().isEmpty || '$groupRaw' == 'null'
+        ? 'Sem grupo'
+        : 'Grupo $groupRaw';
+    final rowSignal = _rssiText(row);
+    return DataRow(
+      cells: [
+        DataCell(
+          Row(
+            children: [
+              Icon(Icons.circle, size: 8, color: statusColor),
+              const SizedBox(width: 6),
+              Text(
+                statusText,
+                style:
+                    TextStyle(color: statusColor, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+        DataCell(Text(row.device.name.isEmpty ? 'Sem nome' : row.device.name)),
+        DataCell(Text(row.identifierLabel)),
+        DataCell(Text(model)),
+        DataCell(Text(groupLabel)),
+        DataCell(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(row.lastCommunicationLabel),
+              Text(
+                row.relativeLastPoint,
+                style: const TextStyle(
+                  color: Color(0xFF6CB1FF),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        DataCell(Text(row.speedLabel)),
+        DataCell(_PixelBooleanPill(
+            text: row.ignitionLabel, active: row.ignition == true)),
+        DataCell(Text(row.batteryLabel)),
+        DataCell(Text(rowSignal)),
+        const DataCell(
+          Row(
+            children: [
+              Icon(Icons.remove_red_eye_outlined,
+                  size: 15, color: Color(0xFF9AB5DA)),
+              SizedBox(width: 8),
+              Icon(Icons.history_rounded, size: 15, color: Color(0xFF9AB5DA)),
+              SizedBox(width: 8),
+              Icon(Icons.more_horiz_rounded,
+                  size: 17, color: Color(0xFF9AB5DA)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PixelLogsTable extends StatelessWidget {
+  const _PixelLogsTable({required this.rows});
+
+  final List<_PixelLogRow> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: Row(
+            children: const [
+              _PixelFilterField(
+                  text: '14/05/2026 00:00 ate 14/05/2026 23:59', width: 250),
+              SizedBox(width: 8),
+              _PixelFilterField(text: 'Equipamento: PTI-0001', width: 230),
+              SizedBox(width: 8),
+              _PixelFilterField(text: 'Tipo de Log: Todos', width: 160),
+              SizedBox(width: 8),
+              _PixelFilterField(text: 'Severidade: Todos', width: 160),
+              SizedBox(width: 8),
+              _PixelActionButton(
+                  icon: Icons.search_rounded, label: 'Buscar', primary: true),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFF213757)),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 20,
+            headingRowHeight: 38,
+            dataRowMinHeight: 42,
+            dataRowMaxHeight: 50,
+            dividerThickness: 0.6,
+            headingTextStyle: const TextStyle(
+              color: Color(0xFFCFE1FF),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+            dataTextStyle: const TextStyle(
+              color: Color(0xFFE3EEFF),
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+            columns: const [
+              DataColumn(label: Text('Data/Hora')),
+              DataColumn(label: Text('Equipamento')),
+              DataColumn(label: Text('Tipo de Log')),
+              DataColumn(label: Text('Severidade')),
+              DataColumn(label: Text('Descricao')),
+              DataColumn(label: Text('Valor')),
+              DataColumn(label: Text('Unidade')),
+              DataColumn(label: Text('Origem')),
+            ],
+            rows: [
+              for (final row in rows)
+                DataRow(
+                  cells: [
+                    DataCell(Text(row.dateTime)),
+                    DataCell(Text(row.equipment)),
+                    DataCell(Text(row.type)),
+                    DataCell(_PixelSeverityPill(text: row.severity)),
+                    DataCell(Text(row.description)),
+                    DataCell(Text(row.value)),
+                    DataCell(Text(row.unit)),
+                    DataCell(Text(row.source)),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFF213757)),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            children: [
+              Text(
+                'Mostrando 1 a 10 de 15.842 registros',
+                style: TextStyle(
+                  color: Color(0xFF89A4CA),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11.5,
+                ),
+              ),
+              Spacer(),
+              _PixelPager(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PixelFilterField extends StatelessWidget {
+  const _PixelFilterField({
+    required this.text,
+    this.width,
+  });
+
+  final String text;
+  final double? width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 33,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF0E1A2C),
+        border: Border.all(color: const Color(0xFF223A5B)),
+      ),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFFA6BEDF),
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelPager extends StatelessWidget {
+  const _PixelPager();
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [1, 2, 3, 4, 5];
+    return Row(
+      children: [
+        const Icon(Icons.chevron_left_rounded, color: Color(0xFF7C95B9)),
+        const SizedBox(width: 3),
+        for (final page in pages) ...[
+          Container(
+            width: 30,
+            height: 28,
+            alignment: Alignment.center,
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              color: page == 1 ? const Color(0xFF123564) : Colors.transparent,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: page == 1
+                    ? const Color(0xFF2E79D8)
+                    : const Color(0xFF223A5B),
+              ),
+            ),
+            child: Text(
+              '$page',
+              style: TextStyle(
+                color: page == 1
+                    ? const Color(0xFFDCF0FF)
+                    : const Color(0xFF88A7CD),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+        const Icon(Icons.chevron_right_rounded, color: Color(0xFF7C95B9)),
+      ],
+    );
+  }
+}
+
+class _PixelBooleanPill extends StatelessWidget {
+  const _PixelBooleanPill({
+    required this.text,
+    required this.active,
+  });
+
+  final String text;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? const Color(0xFF2EDD87) : const Color(0xFFEB5962);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.52)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelSeverityPill extends StatelessWidget {
+  const _PixelSeverityPill({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final lower = text.toLowerCase();
+    final color = lower == 'alerta'
+        ? const Color(0xFFF5A623)
+        : lower == 'aviso'
+            ? const Color(0xFFF8D04C)
+            : const Color(0xFF3B97FF);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 10.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelLogRow {
+  const _PixelLogRow({
+    required this.dateTime,
+    required this.equipment,
+    required this.type,
+    required this.severity,
+    required this.description,
+    required this.value,
+    required this.unit,
+    required this.source,
+  });
+
+  final String dateTime;
+  final String equipment;
+  final String type;
+  final String severity;
+  final String description;
+  final String value;
+  final String unit;
+  final String source;
+}
+
+String _statusLabel(_VehicleSnapshot row) {
+  if (!row.hasPosition || row.hasStaleLastUpdate) {
+    return 'Sem comunicacao';
+  }
+  if (row.isOperationalMoving) return 'Em movimento';
+  if (row.isOperationalOnline) return 'Online';
+  if (row.isOperationalOffline) return 'Offline';
+  return 'Indefinido';
+}
+
+Color _statusColor(_VehicleSnapshot row) {
+  if (!row.hasPosition || row.hasStaleLastUpdate) {
+    return const Color(0xFFFF5D64);
+  }
+  if (row.isOperationalMoving) return const Color(0xFF3EA0FF);
+  if (row.isOperationalOnline) return const Color(0xFF2EDD87);
+  if (row.isOperationalOffline) return const Color(0xFFA0AFC3);
+  return const Color(0xFFF8D04C);
+}
+
+String _rssiText(_VehicleSnapshot row) {
+  final raw =
+      row.position?.attributes?['rssi'] ?? row.device.attributes?['rssi'];
+  if (raw is num) return raw.toStringAsFixed(0);
+  final parsed = double.tryParse('${raw ?? ''}'.replaceAll(',', '.'));
+  if (parsed == null) {
+    return '-67';
+  }
+  return parsed.toStringAsFixed(0);
 }
 
 class _HighlightsRail extends StatelessWidget {
@@ -3447,12 +5040,105 @@ class _VehicleInfoTab extends StatelessWidget {
               'Modelo   ${snapshot.modelLabel}\nMotorista ${snapshot.driverName}\nIgniÃƒÂ§ÃƒÂ£o  ${snapshot.ignitionLabel}\nBateria  ${snapshot.batteryLabel}',
         ),
         const SizedBox(height: 10),
-        _DetailCard(
-          title: 'Sensores',
-          icon: Icons.sensors_outlined,
-          body: snapshot.sensorSummary,
-        ),
+        _VehicleSensorsCard(snapshot: snapshot),
       ],
+    );
+  }
+}
+
+class _VehicleSensorsCard extends StatelessWidget {
+  const _VehicleSensorsCard({required this.snapshot});
+
+  final _VehicleSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = snapshot.sensorRows;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E7F1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.sensors_outlined,
+                color: Color(0xFF176EEB),
+                size: 20,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Sensores',
+                  style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (rows.isEmpty)
+            const Text(
+              'Nenhum sensor configurado no cadastro do equipamento.',
+              style: TextStyle(
+                color: Color(0xFF526684),
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                for (final row in rows)
+                  SizedBox(
+                    width: 230,
+                    child: Row(
+                      children: [
+                        Icon(
+                          row.icon,
+                          size: 16,
+                          color: const Color(0xFF60718D),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            row.label,
+                            style: const TextStyle(
+                              color: Color(0xFF1F2A44),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          row.value,
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
@@ -4435,6 +6121,545 @@ class _ModulePlaceholderScreen extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AiOperationAssistantScreen extends StatefulWidget {
+  const _AiOperationAssistantScreen({
+    required this.operationId,
+    required this.title,
+    required this.description,
+  });
+
+  final String operationId;
+  final String title;
+  final String description;
+
+  @override
+  State<_AiOperationAssistantScreen> createState() =>
+      _AiOperationAssistantScreenState();
+}
+
+class _AiOperationAssistantScreenState
+    extends State<_AiOperationAssistantScreen> {
+  static const JsonEncoder _encoder = JsonEncoder.withIndent('  ');
+
+  final BridgeClient _bridgeClient = const BridgeClient();
+  final TextEditingController _targetController = TextEditingController();
+  final TextEditingController _promptController = TextEditingController();
+  final TextEditingController _contextController = TextEditingController();
+
+  bool _isSubmitting = false;
+  String? _error;
+  Map<String, dynamic>? _response;
+
+  @override
+  void initState() {
+    super.initState();
+    _contextController.text = 'Operacao monitorada pelo painel SouTracking';
+  }
+
+  @override
+  void dispose() {
+    _targetController.dispose();
+    _promptController.dispose();
+    _contextController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _execute() async {
+    final prompt = _promptController.text.trim();
+    if (prompt.isEmpty) {
+      setState(() {
+        _error = 'Descreva o objetivo para executar a assistencia de IA.';
+      });
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'origem': 'SouTracking',
+      'modulo': 'ia_operacional',
+      'operacao': widget.operationId,
+      'alvo': _targetController.text.trim(),
+      'prompt': prompt,
+      'contexto': _contextController.text.trim(),
+      'executadoEm': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _isSubmitting = true;
+      _error = null;
+    });
+
+    try {
+      late final Map<String, dynamic> result;
+      switch (widget.operationId) {
+        case 'alerta':
+          result = await _bridgeClient.criarAlerta(payload);
+          break;
+        case 'cerca':
+          result = await _bridgeClient.criarCerca(payload);
+          break;
+        case 'relatorio':
+          result = await _bridgeClient.gerarRelatorio(payload);
+          break;
+        case 'acao':
+          result = await _bridgeClient.registrarEvento({
+            ...payload,
+            'tipo': 'ia_recomendacao',
+          });
+          break;
+        default:
+          result = await _bridgeClient.registrarEvento(payload);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _response = result;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Falha ao executar a assistencia de IA em modo controlado.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        _GlassSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.title,
+                style: const TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.description,
+                style: const TextStyle(
+                  color: Color(0xFF526684),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _targetController,
+                decoration: const InputDecoration(
+                  labelText: 'Alvo (veiculo, grupo ou regra)',
+                  hintText: 'Ex.: AB12, Frota Escolar, Regra de risco',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _promptController,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: 'Prompt operacional',
+                  hintText: 'Descreva o que a IA deve gerar para a operacao.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _contextController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Contexto',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _isSubmitting ? null : _execute,
+                icon: _isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome_outlined),
+                label: Text(
+                  _isSubmitting ? 'Executando...' : 'Executar assistencia',
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (_response != null) ...[
+          const SizedBox(height: 10),
+          _GlassSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _PlaceholderInfoLine(
+                  icon: Icons.check_circle_outline,
+                  title: 'Status',
+                  value: 'acao executada com sucesso no modo controlado',
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  _encoder.convert(_response),
+                  style: const TextStyle(
+                    color: Color(0xFF25344A),
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AutomationWorkbenchScreen extends StatefulWidget {
+  const _AutomationWorkbenchScreen({
+    required this.title,
+    required this.description,
+    required this.scope,
+    required this.actionType,
+  });
+
+  final String title;
+  final String description;
+  final String scope;
+  final String actionType;
+
+  @override
+  State<_AutomationWorkbenchScreen> createState() =>
+      _AutomationWorkbenchScreenState();
+}
+
+class _AutomationWorkbenchScreenState
+    extends State<_AutomationWorkbenchScreen> {
+  static const JsonEncoder _encoder = JsonEncoder.withIndent('  ');
+
+  final BridgeClient _bridgeClient = const BridgeClient();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _triggerController = TextEditingController();
+  final TextEditingController _targetController = TextEditingController();
+  final TextEditingController _messageController = TextEditingController();
+
+  bool _isSaving = false;
+  bool _isTesting = false;
+  String? _error;
+  Map<String, dynamic>? _lastSaved;
+  Map<String, dynamic>? _lastTest;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = '${widget.title} - Regra 01';
+    _triggerController.text = 'evento_critico';
+    _messageController.text =
+        'Acao automatica disparada pelo modulo ${widget.scope}.';
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _triggerController.dispose();
+    _targetController.dispose();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveRule() async {
+    final ruleName = _nameController.text.trim();
+    final trigger = _triggerController.text.trim();
+    if (ruleName.isEmpty || trigger.isEmpty) {
+      setState(() {
+        _error = 'Preencha nome da regra e gatilho para salvar.';
+      });
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'origem': 'SouTracking',
+      'tipo': 'automation_rule',
+      'scope': widget.scope,
+      'ruleName': ruleName,
+      'trigger': trigger,
+      'actionType': widget.actionType,
+      'target': _targetController.text.trim(),
+      'message': _messageController.text.trim(),
+      'savedAt': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+
+    try {
+      final result = await _bridgeClient.registrarEvento(payload);
+      if (!mounted) return;
+      setState(() {
+        _lastSaved = result;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Falha ao salvar automacao em modo controlado.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _testRule() async {
+    final payload = <String, dynamic>{
+      'origem': 'SouTracking',
+      'scope': widget.scope,
+      'ruleName': _nameController.text.trim(),
+      'trigger': _triggerController.text.trim(),
+      'target': _targetController.text.trim(),
+      'message': _messageController.text.trim(),
+      'testedAt': DateTime.now().toIso8601String(),
+    };
+
+    setState(() {
+      _isTesting = true;
+      _error = null;
+    });
+
+    try {
+      late final Map<String, dynamic> result;
+      switch (widget.actionType) {
+        case 'alerta':
+          result = await _bridgeClient.criarAlerta(payload);
+          break;
+        case 'whatsapp':
+          result = await _bridgeClient.enviarWhatsapp(payload);
+          break;
+        case 'ticket':
+          result = await _bridgeClient.criarChamado(payload);
+          break;
+        case 'relatorio':
+          result = await _bridgeClient.gerarRelatorio(payload);
+          break;
+        case 'webhook':
+          result = await _bridgeClient.registrarEvento({
+            ...payload,
+            'tipo': 'webhook_test',
+          });
+          break;
+        default:
+          result = await _bridgeClient.registrarEvento(payload);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _lastTest = result;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Falha ao executar teste de automacao.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        _GlassSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.title,
+                style: const TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.description,
+                style: const TextStyle(
+                  color: Color(0xFF526684),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const _PlaceholderInfoLine(
+                icon: Icons.settings_backup_restore_outlined,
+                title: 'Modo',
+                value: 'controle operacional ativo',
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nome da regra',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _triggerController,
+                decoration: const InputDecoration(
+                  labelText: 'Gatilho',
+                  hintText: 'Ex.: ignicao_on, excesso_velocidade, cerca_saida',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _targetController,
+                decoration: const InputDecoration(
+                  labelText: 'Destino/Alvo',
+                  hintText: 'Ex.: grupo_frota, operador_plantao, webhook_url',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _messageController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Mensagem/Acao',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _isSaving ? null : _saveRule,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: Text(_isSaving ? 'Salvando...' : 'Salvar automacao'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _isTesting ? null : _testRule,
+                    icon: _isTesting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.play_arrow_outlined),
+                    label: Text(_isTesting ? 'Testando...' : 'Executar teste'),
+                  ),
+                ],
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (_lastSaved != null) ...[
+          const SizedBox(height: 10),
+          _GlassSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _PlaceholderInfoLine(
+                  icon: Icons.check_circle_outline,
+                  title: 'Regra',
+                  value: 'salva no modo controlado',
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  _encoder.convert(_lastSaved),
+                  style: const TextStyle(
+                    color: Color(0xFF25344A),
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_lastTest != null) ...[
+          const SizedBox(height: 10),
+          _GlassSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _PlaceholderInfoLine(
+                  icon: Icons.bolt_outlined,
+                  title: 'Teste',
+                  value: 'executado no modo controlado',
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  _encoder.convert(_lastTest),
+                  style: const TextStyle(
+                    color: Color(0xFF25344A),
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ],
@@ -10028,6 +12253,14 @@ class _FleetKpis {
 
 class _VehicleSnapshot {
   static const Duration _offlineStaleThreshold = Duration(minutes: 30);
+  static const List<String> _defaultSensorKeys = [
+    'speed',
+    'distance',
+    'ignition',
+    'odometer',
+    'battery',
+    'rssi',
+  ];
 
   const _VehicleSnapshot({
     required this.device,
@@ -10286,13 +12519,200 @@ class _VehicleSnapshot {
   }
 
   String get sensorSummary {
+    final rows = sensorRows;
+    if (rows.isEmpty) return 'Nao informado';
+    return rows.map((row) => '${row.label}: ${row.value}').join('\n');
+  }
+
+  List<_VehicleSensorRow> get sensorRows {
     final attrs = {
       ...?device.attributes,
       ...?position?.attributes,
     };
-    if (attrs.isEmpty) return 'Nao informado';
-    final keys = attrs.keys.take(4).join(', ');
-    return keys.isEmpty ? 'Nao informado' : keys;
+    if (attrs.isEmpty) return const [];
+
+    final rows = <_VehicleSensorRow>[];
+    for (final key in _configuredSensorKeys) {
+      final value = _sensorValueForKey(key, attrs);
+      if (value == 'Nao informado') {
+        continue;
+      }
+      rows.add(
+        _VehicleSensorRow(
+          key: key,
+          label: _sensorLabelForKey(key),
+          value: value,
+          icon: _sensorIconForKey(key),
+        ),
+      );
+    }
+    return rows;
+  }
+
+  List<String> get _configuredSensorKeys {
+    final raw = device.attributes?['souSensors'];
+    final configured = <String>{};
+
+    if (raw is List) {
+      for (final item in raw) {
+        final key = '${item ?? ''}'.trim().toLowerCase();
+        if (key.isNotEmpty) {
+          configured.add(key);
+        }
+      }
+    } else if (raw is String) {
+      for (final part in raw.split(',')) {
+        final key = part.trim().toLowerCase();
+        if (key.isNotEmpty) {
+          configured.add(key);
+        }
+      }
+    }
+
+    if (configured.isEmpty) {
+      return _defaultSensorKeys;
+    }
+    return configured.toList(growable: false);
+  }
+
+  String _sensorValueForKey(String key, Map<String, dynamic> attrs) {
+    final lower = key.toLowerCase();
+    switch (lower) {
+      case 'speed':
+        return speedLabel;
+      case 'distance':
+        return _distanceValueLabel(
+          attrs['distance'] ?? attrs['totaldistance'] ?? attrs['totalDistance'],
+        );
+      case 'odometer':
+        return _distanceValueLabel(
+          attrs['odometer'] ?? attrs['totaldistance'] ?? attrs['totalDistance'],
+        );
+      case 'ignition':
+        return ignitionLabel;
+      case 'battery':
+        return batteryLabel;
+      case 'rssi':
+        final rssi = _asNumber(attrs['rssi']);
+        if (rssi == null) return _genericSensorValue(attrs['rssi']);
+        return '${rssi.toStringAsFixed(0)} dBm';
+      case 'power':
+        final power = _asNumber(attrs['power'] ?? attrs['battery']);
+        if (power == null) return _genericSensorValue(attrs['power']);
+        return '${power.toStringAsFixed(1)} V';
+      case 'fuel':
+        final fuel = _asNumber(attrs['fuel']);
+        if (fuel == null) return _genericSensorValue(attrs['fuel']);
+        return '${fuel.toStringAsFixed(0)} %';
+      case 'hours':
+        final hours = _asNumber(attrs['hours']);
+        if (hours == null) return _genericSensorValue(attrs['hours']);
+        return '${hours.toStringAsFixed(1)} h';
+      case 'sat':
+        final sat = _asNumber(attrs['sat']);
+        if (sat == null) return _genericSensorValue(attrs['sat']);
+        return sat.toStringAsFixed(0);
+      default:
+        return _genericSensorValue(attrs[lower] ?? attrs[key]);
+    }
+  }
+
+  double? _asNumber(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.replaceAll(',', '.'));
+    }
+    return null;
+  }
+
+  String _distanceValueLabel(dynamic value) {
+    final number = _asNumber(value);
+    if (number == null) return 'Nao informado';
+    if (number >= 1000) {
+      return '${(number / 1000).toStringAsFixed(1)} km';
+    }
+    return '${number.toStringAsFixed(0)} m';
+  }
+
+  String _genericSensorValue(dynamic value) {
+    if (value == null) return 'Nao informado';
+    if (value is bool) return value ? 'Ligado' : 'Desligado';
+    if (value is num) {
+      if (value % 1 == 0) {
+        return value.toInt().toString();
+      }
+      return value.toStringAsFixed(1);
+    }
+    final text = '$value'.trim();
+    return text.isEmpty ? 'Nao informado' : text;
+  }
+}
+
+class _VehicleSensorRow {
+  const _VehicleSensorRow({
+    required this.key,
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String key;
+  final String label;
+  final String value;
+  final IconData icon;
+}
+
+String _sensorLabelForKey(String key) {
+  switch (key.toLowerCase()) {
+    case 'speed':
+      return 'Velocidade';
+    case 'distance':
+      return 'Distancia';
+    case 'ignition':
+      return 'Ignition';
+    case 'odometer':
+      return 'Odometer';
+    case 'battery':
+      return 'Battery level';
+    case 'rssi':
+      return 'GSM level';
+    case 'power':
+      return 'Power';
+    case 'fuel':
+      return 'Combustivel';
+    case 'hours':
+      return 'Engine hour';
+    case 'sat':
+      return 'GPS signal';
+    default:
+      return key;
+  }
+}
+
+IconData _sensorIconForKey(String key) {
+  switch (key.toLowerCase()) {
+    case 'speed':
+      return Icons.speed_rounded;
+    case 'distance':
+      return Icons.near_me_outlined;
+    case 'ignition':
+      return Icons.vpn_key_outlined;
+    case 'odometer':
+      return Icons.av_timer_outlined;
+    case 'battery':
+      return Icons.battery_5_bar_outlined;
+    case 'rssi':
+      return Icons.network_cell_outlined;
+    case 'power':
+      return Icons.bolt_outlined;
+    case 'fuel':
+      return Icons.local_gas_station_outlined;
+    case 'hours':
+      return Icons.schedule_outlined;
+    case 'sat':
+      return Icons.satellite_alt_outlined;
+    default:
+      return Icons.sensors_outlined;
   }
 }
 
