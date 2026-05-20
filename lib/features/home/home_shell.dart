@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,9 +41,11 @@ import '../reports/reports_screen.dart';
 import '../routes/routes_screen.dart';
 import '../settings/settings_screen.dart';
 import '../statistics/statistics_screen.dart';
+import '../telemetry/sensor_presentation.dart';
 import '../telemetry/telemetry_sensors_screen.dart';
 import '../users/users_screen.dart';
 import '../vehicles/vehicles_screen.dart';
+import 'visual_settings_controller.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -56,7 +59,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   final bool _showHighlightsRail = false;
 
-  bool _menuOpen = true;
+  bool _menuOpen = false;
   bool _kpiListOpen = false;
   _KpiFilter _activeKpiFilter = _KpiFilter.online;
   _VehicleBottomTab _activeBottomTab = _VehicleBottomTab.overview;
@@ -64,8 +67,53 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   TraccarDevice? _selectedVehicle;
   String? _activePanelId;
   String? _activePanelTitle;
+  bool _copilotPanelOpen = false;
+  _VisualDiagnosis? _lastVisualDiagnosis;
   double _currentZoom = 13.0;
   DateTime _blockSurfaceClearUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _toggleCopilotPanel() {
+    setState(() => _copilotPanelOpen = !_copilotPanelOpen);
+  }
+
+  void _runVisualDiagnosis(VisualSettings settings) {
+    final screenName = _activePanelTitle?.trim().isNotEmpty == true
+        ? _activePanelTitle!.trim()
+        : 'Mapa';
+    final hasCompact = settings.cardDensity == VisualCardDensity.compact;
+    final highTransparency = settings.transparency == VisualTransparency.high;
+
+    final problem = hasCompact
+        ? 'Hierarquia comprimida: blocos importantes podem ficar densos demais.'
+        : highTransparency
+            ? 'Contraste pode oscilar em mapas claros e reduzir legibilidade.'
+            : 'Distribuicao geral boa, com pequenos ganhos em destaque de status.';
+    final suggestion = highTransparency
+        ? 'Subir transparencia para media e manter cards confortaveis.'
+        : settings.fontSize == VisualFontSize.large
+            ? 'Manter fonte grande e reduzir densidade somente em tabelas.'
+            : 'Aumentar contraste dos blocos criticos e reforcar a leitura dos KPIs.';
+
+    final prompt = 'Tela: $screenName. '
+        'Aplicar ajustes visuais sem alterar backend: '
+        'mapa=${settings.mapMode.name}, '
+        'cards=${settings.cardDensity.name}, '
+        'transparencia=${settings.transparency.name}, '
+        'fonte=${settings.fontSize.name}, '
+        'baloes=${settings.balloonSize.name}. '
+        'Priorizar legibilidade de status operacionais, reduzir ruido visual e '
+        'preservar navegação existente.';
+
+    setState(() {
+      _lastVisualDiagnosis = _VisualDiagnosis(
+        screenName: screenName,
+        probableIssue: problem,
+        adjustmentSuggestion: suggestion,
+        technicalPrompt: prompt,
+      );
+      _copilotPanelOpen = true;
+    });
+  }
 
   void _clearOperationalSurface({bool force = false}) {
     if (!force && DateTime.now().isBefore(_blockSurfaceClearUntil)) {
@@ -274,6 +322,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final latestEventsAsync = ref.watch(latestEventsProvider);
     final brand =
         ref.watch(whiteLabelProvider).value ?? WhiteLabelConfig.fallback;
+    final visualSettings = ref.watch(visualSettingsProvider);
+    final visualController = ref.read(visualSettingsProvider.notifier);
 
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
     final positions = positionsAsync.valueOrNull ?? const <TraccarPosition>[];
@@ -313,156 +363,182 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final kpis = snapshotKpis.copyWith(alerts: realAlertCount);
     final filteredSnapshots = _filterSnapshots(snapshots, _activeKpiFilter);
     final currentSession = ref.watch(sessionProvider);
+    final sessionUsers =
+        ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
+    final isPixeltiSession = _isPixeltiUser(currentSession);
+    final profileName = _resolveProfileName(currentSession, sessionUsers);
+    final profileDetail = _resolveProfileDetail(currentSession, sessionUsers);
     final menuItems = _menuWithRealtimeBadges(
       session: currentSession,
       alertCount: realAlertCount,
       orderCount: ref.watch(ordersProvider).valueOrNull?.length ?? 0,
-      usePilotMenu: _isPilotView(currentSession),
       showDataLog: _shouldShowDataLogMenu(currentSession),
     );
     final pixelTelemetryMode = _activePanelId == 'telemetry-demo';
+    final fullMapVisible = _activePanelId == null &&
+        !_kpiListOpen &&
+        _previewVehicle == null &&
+        _selectedVehicle == null;
+    final textScaler = TextScaler.linear(visualSettings.textScale);
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: _OperationalMap(
-              snapshots: snapshots,
-              selectedDeviceId: selectedMapDeviceId,
-              onMapCreated: (controller) => _googleMapController = controller,
-              onCameraMove: (position) => _currentZoom = position.zoom,
-              onMapTap: _clearOperationalSurface,
-              onVehicleTap: _previewVehicleOnMap,
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withValues(alpha: 0.16),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.26),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+      backgroundColor: const Color(0xFFF3F6FA),
+      body: VisualSettingsScope(
+        settings: visualSettings,
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: _OperationalMap(
+                  snapshots: snapshots,
+                  selectedDeviceId: selectedMapDeviceId,
+                  mapMode: visualSettings.mapMode,
+                  onMapCreated: (controller) =>
+                      _googleMapController = controller,
+                  onCameraMove: (position) => _currentZoom = position.zoom,
+                  onMapTap: _clearOperationalSurface,
+                  onVehicleTap: _previewVehicleOnMap,
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(
+                        alpha: visualSettings.backdropOverlayAlpha,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          if (snapshots.isEmpty && !_activePanelVisible)
-            const Positioned.fill(
-              child: _NoVehiclesMapHint(),
-            ),
-          if (!pixelTelemetryMode)
-            _TopSearchBar(
-              brand: brand,
-              onMenuTap: _toggleMenu,
-              menuOpen: _menuOpen,
-              alertCount: realAlertCount,
-              panelOpen: _activePanelVisible,
-              activeTitle: _activePanelTitle,
-              activeSubtitle: _panelSubtitle(_activePanelId),
-              onRefresh: _refreshOperationalData,
-              onClosePanel: _closePanel,
-              onLogout: () {
-                _handleLogout();
-              },
-            ),
-          if (!_activePanelVisible)
-            Positioned(
-              left: _menuOpen ? 226 : 80,
-              right: 266,
-              top: 74,
-              child: _SurfaceGuard(
-                child: _KpiStrip(
+              if (snapshots.isEmpty && !_activePanelVisible)
+                const Positioned.fill(
+                  child: _NoVehiclesMapHint(),
+                ),
+              if (!pixelTelemetryMode)
+                _TopSearchBar(
+                  brand: brand,
+                  logoMode: visualSettings.logoMode,
+                  hideLogoOnFullMap: fullMapVisible,
                   kpis: kpis,
                   activeFilter: _kpiListOpen ? _activeKpiFilter : null,
-                  onTap: _openKpi,
-                ),
-              ),
-            ),
-          if (!_activePanelVisible)
-            _MapControls(
-              top: 126,
-              left: _menuOpen ? 226 : 24,
-              onRecenter: () => _recenter(snapshots),
-              onZoomIn: () => _zoomBy(1),
-              onZoomOut: () => _zoomBy(-1),
-            ),
-          if (!pixelTelemetryMode)
-            _SideMenu(
-              open: _menuOpen,
-              items: menuItems,
-              activeId: _activePanelId,
-              onSelect: _openPanel,
-              onLogout: () {
-                _handleLogout();
-              },
-            ),
-          if (_showHighlightsRail) _HighlightsRail(open: !_activePanelVisible),
-          if (!pixelTelemetryMode)
-            _KpiVehicleList(
-              open: _kpiListOpen,
-              title: _activeKpiFilter.title,
-              snapshots: filteredSnapshots,
-              onVehicleTap: _previewVehicleOnMap,
-            ),
-          if (!pixelTelemetryMode)
-            _IntegratedPanel(
-              open: _activePanelVisible,
-              title: _activePanelTitle ?? '',
-              subtitle: _panelSubtitle(_activePanelId),
-              hideHeader: _activePanelId == 'logs',
-              onClose: _closePanel,
-              child: _panelFor(_activePanelId),
-            ),
-          if (pixelTelemetryMode)
-            Positioned.fill(
-              child: _SurfaceGuard(
-                child: _PixelTelemetryWorkspace(
-                  snapshots: snapshots,
-                  onClose: _closePanel,
+                  onKpiTap: _openKpi,
+                  onMenuTap: _toggleMenu,
+                  menuOpen: _menuOpen,
+                  alertCount: realAlertCount,
+                  panelOpen: _activePanelVisible,
+                  activeTitle: _activePanelTitle,
+                  activeSubtitle: _panelSubtitle(_activePanelId),
                   onRefresh: _refreshOperationalData,
-                  onOpenMenuItem: _openPanel,
-                  menuItems: menuItems,
+                  onClosePanel: _closePanel,
+                  onLogout: () {
+                    _handleLogout();
+                  },
+                  profileName: profileName,
+                  profileDetail: profileDetail,
+                  compactProfileMenu: isPixeltiSession,
                 ),
-              ),
-            ),
-          if (!pixelTelemetryMode && previewSnapshot != null)
-            _VehicleCompactPopup(
-              snapshot: previewSnapshot,
-              onDetails: () => _openVehicleDetails(previewSnapshot),
-              onAlerts: () => _openVehicleAlerts(previewSnapshot),
-              onShare: () {
-                _shareVehicle(previewSnapshot);
-              },
-              onMore: () => _openVehicleDetails(
-                previewSnapshot,
-                initialTab: _VehicleBottomTab.commands,
-              ),
-              onClose: () => setState(() => _previewVehicle = null),
-            ),
-          if (!pixelTelemetryMode)
-            _VehicleBottomBar(
-              snapshot: selectedSnapshot,
-              activeTab: _activeBottomTab,
-              onTabChanged: (tab) => setState(() => _activeBottomTab = tab),
-              onClose: () => setState(() => _selectedVehicle = null),
-            ),
-          if (!pixelTelemetryMode &&
-              (devicesAsync.isLoading ||
-                  positionsAsync.isLoading ||
-                  latestEventsAsync.isLoading))
-            const Positioned(
-              right: 24,
-              top: 86,
-              child: _SyncBadge(),
-            ),
-        ],
+              if (!pixelTelemetryMode) const _RoadSpeedLegend(),
+              if (!pixelTelemetryMode)
+                _SideMenu(
+                  open: _menuOpen,
+                  cardDensity: visualSettings.cardDensity,
+                  items: menuItems,
+                  activeId: _activePanelId,
+                  onSelect: _openPanel,
+                  onLogout: () {
+                    _handleLogout();
+                  },
+                ),
+              if (_showHighlightsRail)
+                _HighlightsRail(open: !_activePanelVisible),
+              if (!pixelTelemetryMode)
+                _KpiVehicleList(
+                  open: _kpiListOpen,
+                  cardDensity: visualSettings.cardDensity,
+                  title: _activeKpiFilter.title,
+                  snapshots: filteredSnapshots,
+                  onVehicleTap: _previewVehicleOnMap,
+                ),
+              if (!pixelTelemetryMode)
+                _IntegratedPanel(
+                  open: _activePanelVisible,
+                  cardDensity: visualSettings.cardDensity,
+                  title: _activePanelTitle ?? '',
+                  subtitle: _panelSubtitle(_activePanelId),
+                  hideHeader: _activePanelId == 'logs',
+                  onClose: _closePanel,
+                  child: _panelFor(_activePanelId),
+                ),
+              if (pixelTelemetryMode)
+                Positioned.fill(
+                  child: _SurfaceGuard(
+                    child: _PixelTelemetryWorkspace(
+                      snapshots: snapshots,
+                      onClose: _closePanel,
+                      onRefresh: _refreshOperationalData,
+                      onOpenMenuItem: _openPanel,
+                      menuItems: menuItems,
+                    ),
+                  ),
+                ),
+              if (!pixelTelemetryMode && previewSnapshot != null)
+                _VehicleCompactPopup(
+                  snapshot: previewSnapshot,
+                  balloonScale: visualSettings.balloonScale,
+                  cardDensity: visualSettings.cardDensity,
+                  onDetails: () => _openVehicleDetails(previewSnapshot),
+                  onAlerts: () => _openVehicleAlerts(previewSnapshot),
+                  onShare: () {
+                    _shareVehicle(previewSnapshot);
+                  },
+                  onMore: () => _openVehicleDetails(
+                    previewSnapshot,
+                    initialTab: _VehicleBottomTab.commands,
+                  ),
+                  onClose: () => setState(() => _previewVehicle = null),
+                ),
+              if (!pixelTelemetryMode)
+                _VehicleBottomBar(
+                  snapshot: selectedSnapshot,
+                  cardDensity: visualSettings.cardDensity,
+                  activeTab: _activeBottomTab,
+                  onTabChanged: (tab) => setState(() => _activeBottomTab = tab),
+                  onClose: () => setState(() => _selectedVehicle = null),
+                ),
+              if (!pixelTelemetryMode &&
+                  (devicesAsync.isLoading ||
+                      positionsAsync.isLoading ||
+                      latestEventsAsync.isLoading))
+                const Positioned(
+                  right: 24,
+                  top: 86,
+                  child: _SyncBadge(),
+                ),
+              if (!pixelTelemetryMode && !isPixeltiSession)
+                _CopilotFloatingButton(
+                  open: _copilotPanelOpen,
+                  onTap: _toggleCopilotPanel,
+                ),
+              if (!pixelTelemetryMode && !isPixeltiSession)
+                _CopilotOperationalPanel(
+                  open: _copilotPanelOpen,
+                  settings: visualSettings,
+                  diagnosis: _lastVisualDiagnosis,
+                  onClose: _toggleCopilotPanel,
+                  onDiagnose: () => _runVisualDiagnosis(visualSettings),
+                  onReset: visualController.reset,
+                  onBalloonSize: visualController.setBalloonSize,
+                  onLogoMode: visualController.setLogoMode,
+                  onCardDensity: visualController.setCardDensity,
+                  onTransparency: visualController.setTransparency,
+                  onFontSize: visualController.setFontSize,
+                  onMapMode: visualController.setMapMode,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -483,6 +559,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return 'Historico, replay e quilometragem';
       case 'alerts':
         return 'Eventos, regras e notificacoes';
+      case 'maintenance':
+        return 'Planos e historico de manutencao';
       case 'geofences':
         return 'Cercas e zonas inteligentes';
       case 'tickets':
@@ -502,11 +580,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'logs':
         return 'Data log por comunicacao do dispositivo';
       case 'reports':
-        return 'RelatÃ³rios operacionais e executivos';
+        return 'Relatorios operacionais e executivos';
       case 'automations':
         return 'Regras e gatilhos automaticos';
       case 'settings':
-        return 'GovernanÃ§a e parÃ¢metros do ambiente';
+        return 'Governanca e parametros do ambiente';
       default:
         return 'Painel integrado';
     }
@@ -585,14 +663,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     required SessionState session,
     required int alertCount,
     required int orderCount,
-    required bool usePilotMenu,
     required bool showDataLog,
   }) {
-    final rawMenu = usePilotMenu ? _pixeltiPilotMenu : _operationalMenu;
+    final rawMenu = _operationalMenu;
     final baseMenu = showDataLog
         ? rawMenu
         : rawMenu.where((item) => item.id != 'logs').toList(growable: false);
-    final filteredMenu = _filterMenuForSession(baseMenu, session);
+    final menuWithoutAi = _isPixeltiUser(session)
+        ? baseMenu
+            .where((item) => item.id != 'ai-operations')
+            .toList(growable: false)
+        : baseMenu;
+    final filteredMenu = _filterMenuForSession(menuWithoutAi, session);
+
     return [
       for (final item in filteredMenu)
         if (item.id == 'alerts')
@@ -623,6 +706,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       'devices',
       'routes',
       'alerts',
+      'maintenance',
       'geofences',
       'reports',
     };
@@ -634,8 +718,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         case 'vehicles':
         case 'routes':
         case 'alerts':
+        case 'maintenance':
           return enabled('tracking') ||
               enabled('fleet') ||
+              enabled('maintenance') ||
               enabled('monitoring');
         case 'devices':
           return enabled('tracking') || enabled('devices');
@@ -681,6 +767,52 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String? _badgeText(int value) {
     if (value <= 0) return null;
     return value > 99 ? '99+' : '$value';
+  }
+
+  String _resolveProfileName(
+    SessionState session,
+    List<TraccarUser> users,
+  ) {
+    final email = (session.email ?? '').trim().toLowerCase();
+    if (email.isNotEmpty) {
+      for (final user in users) {
+        if (user.email.trim().toLowerCase() == email) {
+          final name = user.name.trim();
+          if (name.isNotEmpty) {
+            return name;
+          }
+          break;
+        }
+      }
+      return session.email!.trim();
+    }
+
+    return 'Usuario';
+  }
+
+  String _resolveProfileDetail(
+    SessionState session,
+    List<TraccarUser> users,
+  ) {
+    final email = (session.email ?? '').trim();
+    if (email.isNotEmpty) {
+      return email;
+    }
+
+    for (final user in users) {
+      final name = user.name.trim();
+      final mail = user.email.trim();
+      if (name.isNotEmpty && mail.isNotEmpty) {
+        return mail;
+      }
+    }
+
+    final company = session.tenantConfig.companyName.trim();
+    if (company.isNotEmpty) {
+      return company;
+    }
+
+    return 'Conta SouTracking';
   }
 
   bool _isPixeltiUser(SessionState session) {
@@ -731,6 +863,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return _buildRoutesPanel();
       case 'alerts':
         return _buildAlertsPanel();
+      case 'maintenance':
+        return _buildMaintenancePanel();
       case 'geofences':
         return _buildGeofencesPanel();
       case 'tickets':
@@ -953,7 +1087,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: FinanceScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Veiculos',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Detalhe do veiculo',
@@ -1025,7 +1159,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: RoutesScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Rotas',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Paradas',
@@ -1085,7 +1219,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: AlertsScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Alertas',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Excesso de velocidade',
@@ -1093,35 +1227,42 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Monitoramento visual de limites de velocidade.',
             ),
             (
-              label: 'IgniÃ§Ã£o',
+              label:
+                  'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
               icon: Icons.power_settings_new_outlined,
-              description: 'Eventos de igniÃ§Ã£o ligada e desligada.',
+              description:
+                  'Eventos de igniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o ligada e desligada.',
             ),
             (
-              label: 'Entrada/saÃ­da de cerca',
+              label:
+                  'Entrada/saÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­da de cerca',
               icon: Icons.fence_outlined,
               description: 'Alertas de cruzamento de geofence.',
             ),
             (
-              label: 'Sem comunicaÃ§Ã£o',
+              label:
+                  'Sem comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
               icon: Icons.portable_wifi_off_outlined,
               description:
-                  'DetecÃ§Ã£o de perda de comunicaÃ§Ã£o com rastreador.',
+                  'DetecÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de perda de comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o com rastreador.',
             ),
             (
               label: 'Bateria baixa',
               icon: Icons.battery_alert_outlined,
-              description: 'Fila de dispositivos com bateria crÃ­tica.',
+              description:
+                  'Fila de dispositivos com bateria crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­tica.',
             ),
             (
-              label: 'BotÃ£o de pÃ¢nico',
+              label:
+                  'BotÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢nico',
               icon: Icons.sos_outlined,
-              description: 'Canal de emergÃªncia com prioridade alta.',
+              description:
+                  'Canal de emergÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia com prioridade alta.',
             ),
             (
               label: 'Jammer/suspeita',
               icon: Icons.gps_not_fixed_outlined,
-              description: 'Indicadores visuais de interferÃªncia ou jammer.',
+              description: 'Indicadores visuais de interferencia ou jammer.',
             ),
             (
               label: 'Alertas por WhatsApp',
@@ -1131,9 +1272,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             (
               label: 'Regras de alerta',
               icon: Icons.rule_folder_outlined,
-              description: 'ConfiguraÃ§Ã£o visual de regras operacionais.',
+              description: 'Configuracao visual de regras operacionais.',
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMaintenancePanel() {
+    return _TraccarToolsPanel(
+      key: const ValueKey('maintenance-tools'),
+      title: 'Manutencao',
+      entries: const [
+        _PanelToolEntry(
+          label: 'Planos de manutencao',
+          icon: Icons.build_outlined,
+          detail: 'Itens preventivos por km, dias e horas',
+          child: MaintenanceScreen(),
         ),
       ],
     );
@@ -1151,7 +1307,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: GeofencesScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Cercas',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Criar cerca no mapa',
@@ -1163,37 +1319,43 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               label: 'Criar cerca por endereco',
               icon: Icons.location_on_outlined,
               description:
-                  'CriaÃ§Ã£o guiada usando endereÃ§o como referÃªncia.',
+                  'CriaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o guiada usando endereÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§o como referÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia.',
             ),
             (
               label: 'Criar cerca por raio',
               icon: Icons.radio_button_checked_outlined,
-              description: 'DefiniÃ§Ã£o de cerca circular por raio.',
+              description:
+                  'DefiniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de cerca circular por raio.',
             ),
             (
               label: 'Cerca residencial',
               icon: Icons.home_work_outlined,
-              description: 'Modelo rÃ¡pido para cercas residenciais.',
+              description:
+                  'Modelo rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pido para cercas residenciais.',
             ),
             (
               label: 'Cerca comercial',
               icon: Icons.storefront_outlined,
-              description: 'Modelo rÃ¡pido para cercas comerciais.',
+              description:
+                  'Modelo rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pido para cercas comerciais.',
             ),
             (
               label: 'Area de risco',
               icon: Icons.report_problem_outlined,
-              description: 'ClassificaÃ§Ã£o visual de zonas de risco.',
+              description:
+                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o visual de zonas de risco.',
             ),
             (
               label: 'Area permitida',
               icon: Icons.check_circle_outline,
-              description: 'ClassificaÃ§Ã£o visual de zonas permitidas.',
+              description:
+                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o visual de zonas permitidas.',
             ),
             (
               label: 'Cerca inteligente via IA',
               icon: Icons.psychology_outlined,
-              description: 'Estrutura para sugestÃ£o automÃ¡tica de cercas.',
+              description:
+                  'Estrutura para sugestÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡tica de cercas.',
             ),
           ],
         ),
@@ -1225,7 +1387,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: CallsScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Chamados',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Guincho',
@@ -1285,7 +1447,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: ZproCommunicationScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Comunicacao',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'WhatsApp cliente',
@@ -1444,7 +1606,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: FinanceScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'Financeiro',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Pix',
@@ -1589,12 +1751,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     return _TraccarToolsPanel(
       key: const ValueKey('reports-tools'),
-      title: 'RelatÃ³rios',
+      title: 'Relatorios',
       entries: [
         const _PanelToolEntry(
           label: 'Rotas',
           icon: Icons.route_outlined,
-          detail: 'RelatÃ³rios atuais',
+          detail: 'Relatorios atuais',
           child: ReportsScreen(),
         ),
         const _PanelToolEntry(
@@ -1705,27 +1867,27 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'RelatÃ³rios',
+          moduleTitle: 'Relatorios',
           items: const [
             (
               label: 'Viagens',
               icon: Icons.luggage_outlined,
-              description: 'RelatÃ³rio de viagens por perÃ­odo.',
+              description: 'Relatorio de viagens por periodo.',
             ),
             (
               label: 'Paradas',
               icon: Icons.pause_circle_outline,
-              description: 'RelatÃ³rio de paradas e tempos de espera.',
+              description: 'Relatorio de paradas e tempos de espera.',
             ),
             (
               label: 'Eventos',
               icon: Icons.event_note_outlined,
-              description: 'RelatÃ³rio consolidado de eventos.',
+              description: 'Relatorio consolidado de eventos.',
             ),
             (
               label: 'Resumo',
               icon: Icons.summarize_outlined,
-              description: 'Resumo executivo para gestÃ£o.',
+              description: 'Resumo executivo para gestao.',
             ),
           ],
         ),
@@ -1847,7 +2009,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget _buildSettingsPanel() {
     return _TraccarToolsPanel(
       key: const ValueKey('settings-tools'),
-      title: 'ConfiguraÃ§Ãµes',
+      title: 'Configuracoes',
       entries: [
         _PanelToolEntry(
           label: 'Preferencias gerais',
@@ -1860,9 +2022,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ),
         const _PanelToolEntry(
-          label: 'UsuÃ¡rios',
+          label: 'Usuarios',
           icon: Icons.people_outline,
-          detail: 'GestÃ£o de contas',
+          detail: 'Gestao de contas',
           child: UsersScreen(),
         ),
         const _PanelToolEntry(
@@ -1872,7 +2034,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: DevicesScreen(),
         ),
         const _PanelToolEntry(
-          label: 'PermissÃµes',
+          label: 'Permissoes',
           icon: Icons.vpn_key_outlined,
           detail: 'Controle de acesso',
           child: PermissionsScreen(),
@@ -1880,7 +2042,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Grupos',
           icon: Icons.folder_shared_outlined,
-          detail: 'OrganizaÃ§Ã£o operacional',
+          detail: 'Organizacao operacional',
           child: GroupsScreen(),
         ),
         const _PanelToolEntry(
@@ -1914,9 +2076,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: MaintenanceScreen(),
         ),
         const _PanelToolEntry(
-          label: 'NotificaÃ§Ãµes',
+          label: 'Notificacoes',
           icon: Icons.notifications_outlined,
-          detail: 'PreferÃªncias de alerta',
+          detail: 'Preferencias de alerta',
           child: NotificationsScreen(),
         ),
         const _PanelToolEntry(
@@ -1934,6 +2096,7 @@ class _OperationalMap extends StatelessWidget {
   const _OperationalMap({
     required this.snapshots,
     required this.selectedDeviceId,
+    required this.mapMode,
     required this.onMapCreated,
     required this.onCameraMove,
     required this.onMapTap,
@@ -1942,19 +2105,38 @@ class _OperationalMap extends StatelessWidget {
 
   final List<_VehicleSnapshot> snapshots;
   final int? selectedDeviceId;
+  final VisualMapMode mapMode;
   final ValueChanged<gmaps.GoogleMapController> onMapCreated;
   final ValueChanged<gmaps.CameraPosition> onCameraMove;
   final VoidCallback onMapTap;
   final ValueChanged<_VehicleSnapshot> onVehicleTap;
 
-  static const String _darkOperationalMapStyle = '''
+  static const String _cleanMapStyle = '''
 [
   {"featureType":"poi","stylers":[{"visibility":"off"}]},
-  {"featureType":"transit.station","stylers":[{"visibility":"off"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#d6e2f2"}]},
-  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#1b2430"},{"weight":3}]},
-  {"featureType":"water","stylers":[{"color":"#172a3d"}]},
-  {"featureType":"landscape","stylers":[{"saturation":-25},{"lightness":-20}]}
+  {"featureType":"poi.business","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.government","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.medical","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.park","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.place_of_worship","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.school","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.sports_complex","stylers":[{"visibility":"off"}]},
+  {"featureType":"transit","stylers":[{"visibility":"off"}]}
+]
+''';
+
+  static const String _darkMapStyle = '''
+[
+  {"elementType":"geometry","stylers":[{"color":"#1f2835"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#a8bedb"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#111827"}]},
+  {"featureType":"poi","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.park","stylers":[{"visibility":"off"}]},
+  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#233247"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#c8d4e4"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#34506d"}]},
+  {"featureType":"transit","stylers":[{"visibility":"off"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#17202b"}]}
 ]
 ''';
 
@@ -1972,25 +2154,35 @@ class _OperationalMap extends StatelessWidget {
         .where((snapshot) => snapshot.device.id == selectedDeviceId)
         .cast<_VehicleSnapshot?>()
         .firstOrNull;
+    final mapType = switch (mapMode) {
+      VisualMapMode.normal => gmaps.MapType.normal,
+      VisualMapMode.premium => gmaps.MapType.hybrid,
+      VisualMapMode.dark => gmaps.MapType.normal,
+    };
+    final mapStyle = switch (mapMode) {
+      VisualMapMode.dark => _darkMapStyle,
+      VisualMapMode.normal || VisualMapMode.premium => _cleanMapStyle,
+    };
+    const trafficEnabled = true;
 
     return gmaps.GoogleMap(
-      style: _darkOperationalMapStyle,
+      style: mapStyle,
       initialCameraPosition: gmaps.CameraPosition(
         target: initialTarget,
         zoom: 13,
-        tilt: 35,
+        tilt: 0,
       ),
-      mapType: gmaps.MapType.hybrid,
-      trafficEnabled: true,
+      mapType: mapType,
+      trafficEnabled: trafficEnabled,
       buildingsEnabled: true,
       mapToolbarEnabled: false,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
       compassEnabled: false,
-      rotateGesturesEnabled: false,
+      rotateGesturesEnabled: true,
       tiltGesturesEnabled: false,
-      scrollGesturesEnabled: false,
-      zoomGesturesEnabled: false,
+      scrollGesturesEnabled: true,
+      zoomGesturesEnabled: true,
       onMapCreated: onMapCreated,
       onCameraMove: onCameraMove,
       onTap: (_) => onMapTap(),
@@ -2000,7 +2192,9 @@ class _OperationalMap extends StatelessWidget {
             markerId: gmaps.MarkerId('vehicle-${snapshot.device.id}'),
             position: snapshot.latLng,
             icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
-              snapshot.markerHue,
+              snapshot.device.id == selectedDeviceId
+                  ? gmaps.BitmapDescriptor.hueYellow
+                  : snapshot.markerHue,
             ),
             onTap: () => onVehicleTap(snapshot),
           ),
@@ -2019,12 +2213,85 @@ class _OperationalMap extends StatelessWidget {
           gmaps.Circle(
             circleId: gmaps.CircleId('selected-${selected.device.id}'),
             center: selected.latLng,
-            radius: 90,
-            fillColor: selected.statusColor.withValues(alpha: 0.22),
-            strokeColor: selected.statusColor.withValues(alpha: 0.75),
-            strokeWidth: 3,
+            radius: 110,
+            fillColor: const Color(0xFFF8C530).withValues(alpha: 0.18),
+            strokeColor: const Color(0xFFF8C530).withValues(alpha: 0.38),
+            strokeWidth: 2,
           ),
       },
+    );
+  }
+}
+
+class _RoadSpeedLegend extends StatelessWidget {
+  const _RoadSpeedLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 18,
+      top: 94,
+      child: _SurfaceGuard(
+        child: _GlassSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text(
+                'Velocidade das vias',
+                style: TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11.5,
+                ),
+              ),
+              SizedBox(height: 6),
+              _SpeedLegendItem(color: Color(0xFF16A34A), label: 'Livre'),
+              SizedBox(height: 4),
+              _SpeedLegendItem(color: Color(0xFFF59E0B), label: 'Moderado'),
+              SizedBox(height: 4),
+              _SpeedLegendItem(color: Color(0xFFDC2626), label: 'Lento'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedLegendItem extends StatelessWidget {
+  const _SpeedLegendItem({
+    required this.color,
+    required this.label,
+  });
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 14,
+          height: 4,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF52627C),
+            fontWeight: FontWeight.w700,
+            fontSize: 10.8,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2118,6 +2385,14 @@ ThemeData _panelLightTheme(BuildContext context) {
 class _TopSearchBar extends StatelessWidget {
   const _TopSearchBar({
     required this.brand,
+    required this.logoMode,
+    required this.hideLogoOnFullMap,
+    required this.profileName,
+    required this.profileDetail,
+    required this.compactProfileMenu,
+    required this.kpis,
+    required this.activeFilter,
+    required this.onKpiTap,
     required this.onMenuTap,
     required this.menuOpen,
     required this.alertCount,
@@ -2130,6 +2405,14 @@ class _TopSearchBar extends StatelessWidget {
   });
 
   final WhiteLabelConfig brand;
+  final VisualLogoMode logoMode;
+  final bool hideLogoOnFullMap;
+  final String profileName;
+  final String profileDetail;
+  final bool compactProfileMenu;
+  final _FleetKpis kpis;
+  final _KpiFilter? activeFilter;
+  final ValueChanged<_KpiFilter> onKpiTap;
   final VoidCallback onMenuTap;
   final bool menuOpen;
   final int alertCount;
@@ -2144,11 +2427,16 @@ class _TopSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = activeTitle?.trim().isNotEmpty == true
         ? activeTitle!.trim()
-        : 'OperaÃƒÂ§ÃƒÂ£o';
+        : 'Operacao';
     final brandName =
         brand.appName.trim().isEmpty ? 'SouTracking' : brand.appName.trim();
     final brandLogoAsset = brand.logoAsset?.trim() ?? '';
     final hasBrandLogo = brandLogoAsset.isNotEmpty;
+    final hideBrand =
+        logoMode == VisualLogoMode.hideOnFullMap && hideLogoOnFullMap;
+    final compactLogo = logoMode == VisualLogoMode.compact;
+    final logoHeight = compactLogo ? 18.0 : 24.0;
+    final brandWidth = compactLogo ? 178.0 : (hasBrandLogo ? 236.0 : 186.0);
 
     return Positioned(
       left: 16,
@@ -2158,83 +2446,72 @@ class _TopSearchBar extends StatelessWidget {
         child: Row(
           children: [
             _GlassButton(
-              tooltip: menuOpen ? 'Fechar menu' : 'Abrir menu',
-              icon: menuOpen ? Icons.close_rounded : Icons.apps_rounded,
+              tooltip: menuOpen ? 'Recolher menu' : 'Expandir menu',
+              icon: menuOpen ? Icons.menu_open_rounded : Icons.menu_rounded,
               onTap: onMenuTap,
             ),
-            const SizedBox(width: 10),
-            _GlassSurface(
-              width: hasBrandLogo ? 228 : 172,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF37C1A3),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: Image.asset(
-                        'assets/branding/soutracking_icon_lamp.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.navigation_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: hasBrandLogo
-                        ? Image.asset(
-                            brandLogoAsset,
-                            height: 22,
-                            fit: BoxFit.contain,
-                            alignment: Alignment.centerLeft,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Text(
-                                brandName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF1F2A44),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                ),
-                              );
-                            },
-                          )
-                        : Text(
-                            brandName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF1F2A44),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
+            if (!hideBrand) ...[
+              const SizedBox(width: 10),
+              _GlassSurface(
+                width: brandWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: hasBrandLogo
+                          ? Image.asset(
+                              brandLogoAsset,
+                              height: logoHeight,
+                              fit: BoxFit.contain,
+                              alignment: Alignment.centerLeft,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Text(
+                                  brandName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF1F2A44),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: compactLogo ? 13 : 16,
+                                  ),
+                                );
+                              },
+                            )
+                          : Text(
+                              brandName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF1F2A44),
+                                fontWeight: FontWeight.w900,
+                                fontSize: compactLogo ? 13 : 16,
+                              ),
                             ),
-                          ),
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
+            ],
+            const SizedBox(width: 10),
+            _GlassButton(
+              tooltip: 'Buscar',
+              icon: Icons.search_rounded,
+              onTap: () {},
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
-              child: _GlassSurface(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: panelOpen
-                      ? Row(
-                          key: ValueKey('panel-context-$title'),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: panelOpen
+                    ? _GlassSurface(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        child: Row(
                           children: [
                             Container(
                               width: 30,
@@ -2257,9 +2534,7 @@ class _TopSearchBar extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    title == 'Ordens de ServiÃƒÂ§o'
-                                        ? 'Ordens de Servico - Operacao integrada'
-                                        : '$title - Dados de Rastreamento',
+                                    '$title - Dados de rastreamento',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -2292,12 +2567,6 @@ class _TopSearchBar extends StatelessWidget {
                                 size: 20,
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            _TopIcon(
-                              icon: Icons.notifications_none_outlined,
-                              count: alertCount > 0 ? alertCount : null,
-                            ),
-                            const SizedBox(width: 8),
                             IconButton(
                               tooltip: 'Fechar painel',
                               visualDensity: VisualDensity.compact,
@@ -2309,43 +2578,29 @@ class _TopSearchBar extends StatelessWidget {
                               ),
                             ),
                           ],
-                        )
-                      : Row(
-                          key: const ValueKey('global-search'),
-                          children: [
-                            const Icon(
-                              Icons.search_rounded,
-                              color: Color(0xFF71819B),
-                              size: 18,
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                'Buscar veiculo, placa, motorista...',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Color(0xFF60718D),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            _TopIcon(icon: Icons.layers_outlined, count: null),
-                            const SizedBox(width: 8),
-                            _TopIcon(
-                              icon: Icons.notifications_none_outlined,
-                              count: alertCount > 0 ? alertCount : null,
-                            ),
-                            const SizedBox(width: 8),
-                            _TopIcon(
-                                icon: Icons.grid_view_rounded, count: null),
-                          ],
                         ),
-                ),
+                      )
+                    : _KpiStrip(
+                        kpis: kpis,
+                        activeFilter: activeFilter,
+                        onTap: onKpiTap,
+                      ),
               ),
             ),
             const SizedBox(width: 12),
-            _ProfileMenuButton(onLogout: onLogout),
+            _TopIcon(
+              icon: Icons.notifications_none_outlined,
+              count: alertCount > 0 ? alertCount : null,
+            ),
+            const SizedBox(width: 10),
+            const _TopIcon(icon: Icons.grid_view_rounded, count: null),
+            const SizedBox(width: 10),
+            _ProfileMenuButton(
+              onLogout: onLogout,
+              profileName: profileName,
+              profileDetail: profileDetail,
+              compactMenu: compactProfileMenu,
+            ),
           ],
         ),
       ),
@@ -2354,77 +2609,68 @@ class _TopSearchBar extends StatelessWidget {
 }
 
 class _ProfileMenuButton extends StatelessWidget {
-  const _ProfileMenuButton({required this.onLogout});
+  const _ProfileMenuButton({
+    required this.onLogout,
+    required this.profileName,
+    required this.profileDetail,
+    required this.compactMenu,
+  });
 
   final VoidCallback onLogout;
+  final String profileName;
+  final String profileDetail;
+  final bool compactMenu;
 
-  static const List<({String id, String label, IconData icon})> _profileItems =
-      [
-    (id: 'my-profile', label: 'Meu perfil', icon: Icons.person_outline),
-    (id: 'account-data', label: 'Dados da conta', icon: Icons.badge),
-    (id: 'change-password', label: 'Trocar senha', icon: Icons.lock_reset),
-    (id: 'preferences', label: 'Preferencias', icon: Icons.tune_outlined),
-    (
-      id: 'notifications',
-      label: 'Notificacoes',
-      icon: Icons.notifications_outlined,
-    ),
-    (
-      id: 'theme',
-      label: 'Tema / Aparencia',
-      icon: Icons.palette_outlined,
-    ),
-    (
-      id: 'company-unit',
-      label: 'Empresa / Unidade',
-      icon: Icons.apartment_outlined,
-    ),
-    (
-      id: 'account-integrations',
-      label: 'Integracoes da conta',
-      icon: Icons.extension_outlined,
-    ),
-    (id: 'help', label: 'Ajuda', icon: Icons.help_outline),
-    (id: 'logout', label: 'Sair', icon: Icons.logout_outlined),
-  ];
+  static const String _profileMenuKey = 'my-profile';
+  static const String _logoutMenuKey = 'logout';
 
   @override
   Widget build(BuildContext context) {
-    final labelById = {
-      for (final item in _profileItems) item.id: item.label,
-    };
+    final displayName =
+        profileName.trim().isEmpty ? 'Usuario' : profileName.trim();
+    final displayDetail =
+        profileDetail.trim().isEmpty ? 'Conta SouTracking' : profileDetail;
+    final width = compactMenu ? 186.0 : 218.0;
 
     return PopupMenuButton<String>(
       tooltip: 'Menu do perfil',
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 8),
+      color: const Color(0xFFFDFEFF),
+      elevation: 14,
+      constraints: const BoxConstraints(minWidth: 180, maxWidth: 220),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFD8E3F2)),
+      ),
       onSelected: (value) {
-        if (value == 'logout') {
+        if (value == _logoutMenuKey) {
           onLogout();
           return;
         }
-        final label = labelById[value] ?? value;
-        final message =
-            '$label: estrutura criada. Integracao sera plugada em etapa futura.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Perfil ativo nesta sessao.'),
+        ));
       },
       itemBuilder: (context) {
-        final regularItems = _profileItems.where((item) => item.id != 'logout');
-        return [
-          for (final item in regularItems)
-            PopupMenuItem<String>(
-              value: item.id,
-              child: Row(
-                children: [
-                  Icon(item.icon, size: 18, color: const Color(0xFF52627C)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(item.label)),
-                ],
-              ),
+        return const [
+          PopupMenuItem<String>(
+            value: _profileMenuKey,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.person_outline_rounded,
+                  size: 18,
+                  color: Color(0xFF52627C),
+                ),
+                SizedBox(width: 10),
+                Expanded(child: Text('Meu perfil')),
+              ],
             ),
-          const PopupMenuDivider(),
-          const PopupMenuItem<String>(
-            value: 'logout',
+          ),
+          PopupMenuDivider(),
+          PopupMenuItem<String>(
+            value: _logoutMenuKey,
             child: Row(
               children: [
                 Icon(
@@ -2445,36 +2691,55 @@ class _ProfileMenuButton extends StatelessWidget {
         ];
       },
       child: _GlassSurface(
-        width: 186,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        width: width,
+        padding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: compactMenu ? 6 : 7,
+        ),
         child: Row(
-          children: const [
-            CircleAvatar(
+          children: [
+            const CircleAvatar(
               radius: 15,
-              backgroundColor: Color(0xFFD7E0ED),
+              backgroundColor: Color(0xFFF7F9FD),
               child: Icon(
-                Icons.person,
+                Icons.person_outline_rounded,
                 color: Color(0xFF52627C),
                 size: 17,
               ),
             ),
-            SizedBox(width: 9),
+            const SizedBox(width: 9),
             Expanded(
-              child: Text(
-                'Administrador',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Color(0xFF1F2A44),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    displayDetail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF60718D),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.keyboard_arrow_down_rounded,
               color: Color(0xFF52627C),
-              size: 20,
+              size: 18,
             ),
           ],
         ),
@@ -2486,6 +2751,7 @@ class _ProfileMenuButton extends StatelessWidget {
 class _SideMenu extends StatelessWidget {
   const _SideMenu({
     required this.open,
+    required this.cardDensity,
     required this.items,
     required this.activeId,
     required this.onSelect,
@@ -2493,6 +2759,7 @@ class _SideMenu extends StatelessWidget {
   });
 
   final bool open;
+  final VisualCardDensity cardDensity;
   final List<_OperationalMenuItem> items;
   final String? activeId;
   final ValueChanged<_OperationalMenuItem> onSelect;
@@ -2500,21 +2767,29 @@ class _SideMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final expanded = open;
+    final compactDensity = cardDensity == VisualCardDensity.compact;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
-      left: open ? 16 : -230,
-      top: 74,
+      left: compactDensity ? 12 : 16,
+      top: 86,
       bottom: 18,
-      width: 206,
+      width:
+          expanded ? (compactDensity ? 190 : 206) : (compactDensity ? 52 : 56),
       child: IgnorePointer(
-        ignoring: !open,
+        ignoring: false,
         child: _SurfaceGuard(
           child: AnimatedOpacity(
-            opacity: open ? 1 : 0,
+            opacity: 1,
             duration: const Duration(milliseconds: 160),
             child: _GlassSurface(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              padding: EdgeInsets.fromLTRB(
+                compactDensity ? 6 : 8,
+                compactDensity ? 8 : 10,
+                compactDensity ? 6 : 8,
+                compactDensity ? 8 : 10,
+              ),
               child: Column(
                 children: [
                   Expanded(
@@ -2526,43 +2801,57 @@ class _SideMenu extends StatelessWidget {
                         final item = items[index];
                         return _MenuTile(
                           item: item,
+                          expanded: expanded,
                           selected: activeId == item.id,
                           onTap: () => onSelect(item),
                         );
                       },
                     ),
                   ),
-                  const Divider(color: Color(0xFFE2E8F0)),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.circle,
-                        color: Color(0xFF10B981),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Online\nConectado ao servidor',
-                          style: TextStyle(
-                            color: Color(0xFF52627C),
-                            height: 1.25,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                  if (expanded) ...[
+                    const Divider(color: Color(0xFFE2E8F0)),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.circle,
+                          color: Color(0xFF10B981),
+                          size: 12,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Online\nConectado ao servidor',
+                            style: TextStyle(
+                              color: Color(0xFF52627C),
+                              height: 1.25,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'Sair',
-                        onPressed: onLogout,
-                        icon: const Icon(
-                          Icons.logout_rounded,
-                          color: Color(0xFF71819B),
-                          size: 18,
+                        IconButton(
+                          tooltip: 'Sair',
+                          onPressed: onLogout,
+                          icon: const Icon(
+                            Icons.logout_rounded,
+                            color: Color(0xFF71819B),
+                            size: 18,
+                          ),
                         ),
+                      ],
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    IconButton(
+                      tooltip: 'Sair',
+                      onPressed: onLogout,
+                      icon: const Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFF71819B),
+                        size: 18,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2576,11 +2865,13 @@ class _SideMenu extends StatelessWidget {
 class _MenuTile extends StatelessWidget {
   const _MenuTile({
     required this.item,
+    required this.expanded,
     required this.selected,
     required this.onTap,
   });
 
   final _OperationalMenuItem item;
+  final bool expanded;
   final bool selected;
   final VoidCallback onTap;
 
@@ -2596,8 +2887,8 @@ class _MenuTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          height: 38,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 10 : 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: selected
@@ -2605,38 +2896,42 @@ class _MenuTile extends StatelessWidget {
                 : Border.all(color: Colors.transparent),
           ),
           child: Row(
+            mainAxisAlignment:
+                expanded ? MainAxisAlignment.start : MainAxisAlignment.center,
             children: [
               Icon(item.icon, color: color, size: 18),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ),
-              if (item.badge != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF4D61),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+              if (expanded) ...[
+                const SizedBox(width: 9),
+                Expanded(
                   child: Text(
-                    item.badge!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+                      fontSize: 12.5,
                     ),
                   ),
                 ),
+                if (item.badge != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF4D61),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      item.badge!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -2659,11 +2954,11 @@ class _KpiStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 46,
+      height: 52,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _KpiFilter.values.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
           final filter = _KpiFilter.values[index];
           return _KpiChip(
@@ -2695,52 +2990,74 @@ class _KpiChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
-        child: _GlassSurface(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          borderColor: selected
-              ? const Color(0xFF2D8CFF)
-              : Colors.white.withValues(alpha: 0.64),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFEAF3FF)
+                : Colors.white.withValues(alpha: 0.84),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFFB7D5FF) : const Color(0xFFE3EAF3),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF183153).withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 26,
-                height: 26,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: selected
-                      ? const Color(0xFF2D8CFF)
-                      : const Color(0xFFE7EEF8),
-                  borderRadius: BorderRadius.circular(8),
+                      ? const Color(0xFF176EEB).withValues(alpha: 0.18)
+                      : const Color(0xFFF1F5FB),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   filter.icon,
-                  size: 16,
-                  color: selected ? Colors.white : const Color(0xFF526B8D),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                filter.title,
-                style: const TextStyle(
-                  color: Color(0xFF25344A),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$value',
-                style: TextStyle(
+                  size: 17,
                   color: selected
-                      ? const Color(0xFF0B63D8)
-                      : const Color(0xFF1F2A44),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
+                      ? const Color(0xFF176EEB)
+                      : const Color(0xFF526B8D),
                 ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    filter.title,
+                    style: const TextStyle(
+                      color: Color(0xFF4B5C77),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '$value',
+                    style: TextStyle(
+                      color: selected
+                          ? const Color(0xFF0B63D8)
+                          : const Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      height: 1.05,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2839,25 +3156,30 @@ class _NoVehiclesMapHint extends StatelessWidget {
 class _KpiVehicleList extends StatelessWidget {
   const _KpiVehicleList({
     required this.open,
+    required this.cardDensity,
     required this.title,
     required this.snapshots,
     required this.onVehicleTap,
   });
 
   final bool open;
+  final VisualCardDensity cardDensity;
   final String title;
   final List<_VehicleSnapshot> snapshots;
   final ValueChanged<_VehicleSnapshot> onVehicleTap;
 
   @override
   Widget build(BuildContext context) {
+    final compactDensity = cardDensity == VisualCardDensity.compact;
+    final panelWidth = compactDensity ? 320.0 : 348.0;
+    final openedLeft = compactDensity ? 210.0 : 226.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
-      left: open ? 226 : -376,
+      left: open ? openedLeft : -panelWidth - 28,
       top: 126,
       bottom: 18,
-      width: 348,
+      width: panelWidth,
       child: IgnorePointer(
         ignoring: !open,
         child: _SurfaceGuard(
@@ -2965,7 +3287,7 @@ class _VehicleListTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${snapshot.speedLabel} Ã¢â‚¬Â¢ ${snapshot.ignitionLabel}',
+                      '${snapshot.speedLabel} | ${snapshot.ignitionLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -2990,6 +3312,7 @@ class _VehicleListTile extends StatelessWidget {
 class _IntegratedPanel extends StatelessWidget {
   const _IntegratedPanel({
     required this.open,
+    required this.cardDensity,
     required this.title,
     required this.subtitle,
     this.hideHeader = false,
@@ -2998,6 +3321,7 @@ class _IntegratedPanel extends StatelessWidget {
   });
 
   final bool open;
+  final VisualCardDensity cardDensity;
   final String title;
   final String subtitle;
   final bool hideHeader;
@@ -3008,10 +3332,13 @@ class _IntegratedPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final compact = screenWidth < 760;
-    final leftInset = compact ? 16.0 : 238.0;
+    final compactDensity = cardDensity == VisualCardDensity.compact;
+    final leftInset = compact ? 16.0 : (compactDensity ? 216.0 : 238.0);
     final rightInset = compact ? 16.0 : 32.0;
     final availableWidth = screenWidth - leftInset - rightInset;
-    final width = availableWidth.clamp(320.0, 1240.0).toDouble();
+    final width = availableWidth
+        .clamp(320.0, compactDensity ? 1280.0 : 1240.0)
+        .toDouble();
     final centeredOffset =
         ((availableWidth - width) / 2).clamp(0.0, 1000.0).toDouble();
     final centeredLeft = leftInset + centeredOffset;
@@ -4119,7 +4446,9 @@ class _PixelDevicesTable extends StatelessWidget {
     final groupLabel = '$groupRaw'.trim().isEmpty || '$groupRaw' == 'null'
         ? 'Sem grupo'
         : 'Grupo $groupRaw';
-    final rowSignal = _rssiText(row);
+    final signalLevel = _pixelSignalLevelForRow(row);
+    final signalColor = _pixelSignalColor(signalLevel);
+    final signalLabel = _pixelSignalLabelForRow(row);
     return DataRow(
       cells: [
         DataCell(
@@ -4157,10 +4486,63 @@ class _PixelDevicesTable extends StatelessWidget {
           ),
         ),
         DataCell(Text(row.speedLabel)),
-        DataCell(_PixelBooleanPill(
-            text: row.ignitionLabel, active: row.ignition == true)),
-        DataCell(Text(row.batteryLabel)),
-        DataCell(Text(rowSignal)),
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.power_settings_new_rounded,
+                size: 16,
+                color: _pixelIgnitionColor(row.ignition),
+              ),
+              const SizedBox(width: 6),
+              _PixelBooleanPill(text: row.ignitionLabel, active: row.ignition),
+            ],
+          ),
+        ),
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.battery_6_bar_rounded,
+                size: 16,
+                color: _pixelBatteryColorForRow(row),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                row.batteryLabel,
+                style: TextStyle(
+                  color: _pixelBatteryColorForRow(row),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PixelBlinkingIcon(
+                enabled: signalLevel == _PixelSignalLevel.critical,
+                child: Icon(
+                  _pixelSignalIcon(signalLevel),
+                  size: 16,
+                  color: signalColor,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                signalLabel,
+                style: TextStyle(
+                  color: signalColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
         const DataCell(
           Row(
             children: [
@@ -4360,11 +4742,15 @@ class _PixelBooleanPill extends StatelessWidget {
   });
 
   final String text;
-  final bool active;
+  final bool? active;
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? const Color(0xFF2EDD87) : const Color(0xFFEB5962);
+    final color = active == null
+        ? const Color(0xFF9FB2CC)
+        : active == true
+            ? const Color(0xFF2EDD87)
+            : const Color(0xFFEB5962);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -4381,6 +4767,67 @@ class _PixelBooleanPill extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _PixelBlinkingIcon extends StatefulWidget {
+  const _PixelBlinkingIcon({
+    required this.enabled,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_PixelBlinkingIcon> createState() => _PixelBlinkingIconState();
+}
+
+class _PixelBlinkingIconState extends State<_PixelBlinkingIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+    );
+    _opacity = Tween<double>(begin: 1, end: 0.25).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PixelBlinkingIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) {
+      _sync();
+    }
+  }
+
+  void _sync() {
+    if (widget.enabled) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    return FadeTransition(opacity: _opacity, child: widget.child);
   }
 }
 
@@ -4459,14 +4906,132 @@ Color _statusColor(_VehicleSnapshot row) {
 }
 
 String _rssiText(_VehicleSnapshot row) {
+  final rssi = _pixelRssiFromRow(row);
+  if (rssi != null) {
+    return rssi.toStringAsFixed(0);
+  }
+  final gsm = _pixelGsmFromRow(row);
+  if (gsm != null) {
+    return '${gsm.toStringAsFixed(0)}%';
+  }
+  return '--';
+}
+
+enum _PixelSignalLevel { unknown, good, medium, low, critical }
+
+Color _pixelIgnitionColor(bool? value) {
+  if (value == null) return const Color(0xFF9FB2CC);
+  return value ? const Color(0xFF2EDD87) : const Color(0xFFEB5962);
+}
+
+Color _pixelBatteryColorForRow(_VehicleSnapshot row) {
+  final label = row.batteryLabel.trim().toLowerCase();
+  final number = _pixelNumberFromText(label);
+  if (number == null) return const Color(0xFF9FB2CC);
+
+  final isPercent = label.contains('%') || number > 30;
+  if (isPercent) {
+    if (number < 20) return const Color(0xFFEB5962);
+    if (number < 35) return const Color(0xFFF5A623);
+    return const Color(0xFF2EDD87);
+  }
+
+  if (number < 11.8) return const Color(0xFFEB5962);
+  if (number < 12.2) return const Color(0xFFF5A623);
+  return const Color(0xFF2EDD87);
+}
+
+_PixelSignalLevel _pixelSignalLevelForRow(_VehicleSnapshot row) {
+  final rssi = _pixelRssiFromRow(row);
+  if (rssi != null) {
+    if (rssi <= -100) return _PixelSignalLevel.critical;
+    if (rssi <= -92) return _PixelSignalLevel.low;
+    if (rssi <= -80) return _PixelSignalLevel.medium;
+    return _PixelSignalLevel.good;
+  }
+
+  final gsm = _pixelGsmFromRow(row);
+  if (gsm == null) return _PixelSignalLevel.unknown;
+  if (gsm < 8) return _PixelSignalLevel.critical;
+  if (gsm < 16) return _PixelSignalLevel.low;
+  if (gsm < 26) return _PixelSignalLevel.medium;
+  return _PixelSignalLevel.good;
+}
+
+Color _pixelSignalColor(_PixelSignalLevel level) {
+  switch (level) {
+    case _PixelSignalLevel.good:
+      return const Color(0xFF2EDD87);
+    case _PixelSignalLevel.medium:
+      return const Color(0xFFF5A623);
+    case _PixelSignalLevel.low:
+      return const Color(0xFFFF8C42);
+    case _PixelSignalLevel.critical:
+      return const Color(0xFFEB5962);
+    case _PixelSignalLevel.unknown:
+      return const Color(0xFF9FB2CC);
+  }
+}
+
+IconData _pixelSignalIcon(_PixelSignalLevel level) {
+  switch (level) {
+    case _PixelSignalLevel.good:
+      return Icons.signal_cellular_4_bar_rounded;
+    case _PixelSignalLevel.medium:
+      return Icons.signal_cellular_alt_2_bar_rounded;
+    case _PixelSignalLevel.low:
+      return Icons.signal_cellular_alt_1_bar_rounded;
+    case _PixelSignalLevel.critical:
+      return Icons.signal_cellular_0_bar_rounded;
+    case _PixelSignalLevel.unknown:
+      return Icons.signal_cellular_alt_rounded;
+  }
+}
+
+String _pixelSignalLabelForRow(_VehicleSnapshot row) {
+  final rssi = _pixelRssiFromRow(row);
+  if (rssi != null) return '${rssi.toStringAsFixed(0)} dBm';
+  final gsm = _pixelGsmFromRow(row);
+  if (gsm != null) return '${gsm.toStringAsFixed(0)}%';
+  return '--';
+}
+
+double? _pixelRssiFromRow(_VehicleSnapshot row) {
   final raw =
       row.position?.attributes?['rssi'] ?? row.device.attributes?['rssi'];
-  if (raw is num) return raw.toStringAsFixed(0);
-  final parsed = double.tryParse('${raw ?? ''}'.replaceAll(',', '.'));
-  if (parsed == null) {
-    return '-67';
+  return _pixelToDouble(raw);
+}
+
+double? _pixelGsmFromRow(_VehicleSnapshot row) {
+  final raw = row.position?.attributes?['gsm'] ??
+      row.position?.attributes?['signal'] ??
+      row.position?.attributes?['gsmSignal'] ??
+      row.device.attributes?['gsm'] ??
+      row.device.attributes?['signal'] ??
+      row.device.attributes?['gsmSignal'];
+  final value = _pixelToDouble(raw);
+  if (value == null) return null;
+  return value <= 1 ? value * 100 : value;
+}
+
+double? _pixelToDouble(dynamic raw) {
+  if (raw is num) {
+    final value = raw.toDouble();
+    return value.isFinite ? value : null;
   }
-  return parsed.toStringAsFixed(0);
+  if (raw is String) {
+    final parsed = double.tryParse(raw.trim().replaceAll(',', '.'));
+    if (parsed != null && parsed.isFinite) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+double? _pixelNumberFromText(String text) {
+  final match = RegExp(r'-?\d+(?:[\.,]\d+)?').firstMatch(text);
+  if (match == null) return null;
+  return double.tryParse(match.group(0)!.replaceAll(',', '.'));
 }
 
 class _HighlightsRail extends StatelessWidget {
@@ -4505,17 +5070,22 @@ class _HighlightsRail extends StatelessWidget {
                   _HighlightItem(
                     icon: Icons.map_outlined,
                     title: 'Mapa como plano de fundo',
-                    text: 'Google Maps hÃƒÂ­brido sempre visÃƒÂ­vel.',
+                    text:
+                        'Google Maps hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­brido sempre visÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel.',
                   ),
                   _HighlightItem(
                     icon: Icons.layers_outlined,
-                    title: 'Menus translÃƒÂºcidos',
-                    text: 'PainÃƒÂ©is claros sobre o mapa.',
+                    title:
+                        'Menus translÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºcidos',
+                    text:
+                        'PainÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©is claros sobre o mapa.',
                   ),
                   _HighlightItem(
                     icon: Icons.speed_rounded,
-                    title: 'TrÃƒÂ¡fego e velocidade',
-                    text: 'TrÃƒÂ¡fego Google + telemetria do veÃƒÂ­culo.',
+                    title:
+                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego e velocidade',
+                    text:
+                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego Google + telemetria do veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culo.',
                   ),
                 ],
               ),
@@ -4588,6 +5158,8 @@ class _HighlightItem extends StatelessWidget {
 class _VehicleCompactPopup extends StatelessWidget {
   const _VehicleCompactPopup({
     required this.snapshot,
+    required this.balloonScale,
+    required this.cardDensity,
     required this.onDetails,
     required this.onAlerts,
     required this.onShare,
@@ -4596,6 +5168,8 @@ class _VehicleCompactPopup extends StatelessWidget {
   });
 
   final _VehicleSnapshot snapshot;
+  final double balloonScale;
+  final VisualCardDensity cardDensity;
   final VoidCallback onDetails;
   final VoidCallback onAlerts;
   final VoidCallback onShare;
@@ -4604,125 +5178,132 @@ class _VehicleCompactPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compactDensity = cardDensity == VisualCardDensity.compact;
     return Positioned(
-      left: 270,
+      left: compactDensity ? 242 : 270,
       top: 142,
       child: _SurfaceGuard(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 410),
-          child: _LightVehiclePanel(
-            borderRadius: 18,
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _VehicleAvatar(snapshot: snapshot, size: 112, iconSize: 48),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.76),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFDDE5F0)),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                snapshot.device.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF1F2A44),
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
+        child: Transform.scale(
+          scale: balloonScale,
+          alignment: Alignment.topLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: compactDensity ? 380 : 410,
+            ),
+            child: _LightVehiclePanel(
+              borderRadius: 18,
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _VehicleAvatar(snapshot: snapshot, size: 112, iconSize: 48),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.76),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFDDE5F0)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  snapshot.device.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1F2A44),
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
-                            ),
-                            InkWell(
-                              borderRadius: BorderRadius.circular(999),
-                              onTap: onClose,
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  color: Color(0xFF71819B),
-                                  size: 18,
+                              InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: onClose,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    color: Color(0xFF71819B),
+                                    size: 18,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _StatusLine(snapshot: snapshot),
-                        const SizedBox(height: 7),
-                        _PopupTextLine(
-                          label: 'Identificador:',
-                          value: snapshot.identifierLabel,
-                        ),
-                        const SizedBox(height: 5),
-                        _PopupTextLine(
-                          label: 'Status:',
-                          value: snapshot.connectionStatusLabel,
-                        ),
-                        const SizedBox(height: 5),
-                        _PopupTextLine(
-                          label: 'Velocidade:',
-                          value: snapshot.speedLabel,
-                        ),
-                        const SizedBox(height: 5),
-                        _PopupTextLine(
-                          label: 'Ignicao:',
-                          value: snapshot.ignitionLabel,
-                        ),
-                        const SizedBox(height: 5),
-                        _PopupTextLine(
-                          label: 'Ultima comunicacao:',
-                          value: snapshot.lastCommunicationLabel,
-                        ),
-                        const SizedBox(height: 5),
-                        _PopupTextLine(
-                          label: 'Lat/Lng:',
-                          value: snapshot.latLngLabel,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            _PopupAction(
-                              icon: Icons.remove_red_eye_outlined,
-                              tooltip: 'Ver detalhes',
-                              onTap: onDetails,
-                            ),
-                            const SizedBox(width: 8),
-                            _PopupAction(
-                              icon: Icons.notifications_none_outlined,
-                              tooltip: 'Alertas',
-                              onTap: onAlerts,
-                            ),
-                            const SizedBox(width: 8),
-                            _PopupAction(
-                              icon: Icons.share_outlined,
-                              tooltip: 'Compartilhar',
-                              onTap: onShare,
-                            ),
-                            const SizedBox(width: 8),
-                            _PopupAction(
-                              icon: Icons.more_horiz_rounded,
-                              tooltip: 'Mais opÃƒÂ§ÃƒÂµes',
-                              onTap: onMore,
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          _StatusLine(snapshot: snapshot),
+                          const SizedBox(height: 7),
+                          _PopupTextLine(
+                            label: 'Identificador:',
+                            value: snapshot.identifierLabel,
+                          ),
+                          const SizedBox(height: 5),
+                          _PopupTextLine(
+                            label: 'Status:',
+                            value: snapshot.connectionStatusLabel,
+                          ),
+                          const SizedBox(height: 5),
+                          _PopupTextLine(
+                            label: 'Velocidade:',
+                            value: snapshot.speedLabel,
+                          ),
+                          const SizedBox(height: 5),
+                          _PopupTextLine(
+                            label: 'Ignicao:',
+                            value: snapshot.ignitionLabel,
+                          ),
+                          const SizedBox(height: 5),
+                          _PopupTextLine(
+                            label: 'Ultima comunicacao:',
+                            value: snapshot.lastCommunicationLabel,
+                          ),
+                          const SizedBox(height: 5),
+                          _PopupTextLine(
+                            label: 'Lat/Lng:',
+                            value: snapshot.latLngLabel,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              _PopupAction(
+                                icon: Icons.remove_red_eye_outlined,
+                                tooltip: 'Ver detalhes',
+                                onTap: onDetails,
+                              ),
+                              const SizedBox(width: 8),
+                              _PopupAction(
+                                icon: Icons.notifications_none_outlined,
+                                tooltip: 'Alertas',
+                                onTap: onAlerts,
+                              ),
+                              const SizedBox(width: 8),
+                              _PopupAction(
+                                icon: Icons.share_outlined,
+                                tooltip: 'Compartilhar',
+                                onTap: onShare,
+                              ),
+                              const SizedBox(width: 8),
+                              _PopupAction(
+                                icon: Icons.more_horiz_rounded,
+                                tooltip: 'Mais op\u00E7\u00F5es',
+                                onTap: onMore,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -4734,12 +5315,14 @@ class _VehicleCompactPopup extends StatelessWidget {
 class _VehicleBottomBar extends StatelessWidget {
   const _VehicleBottomBar({
     required this.snapshot,
+    required this.cardDensity,
     required this.activeTab,
     required this.onTabChanged,
     required this.onClose,
   });
 
   final _VehicleSnapshot? snapshot;
+  final VisualCardDensity cardDensity;
   final _VehicleBottomTab activeTab;
   final ValueChanged<_VehicleBottomTab> onTabChanged;
   final VoidCallback onClose;
@@ -4748,14 +5331,17 @@ class _VehicleBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final visible = snapshot != null;
     final width = MediaQuery.sizeOf(context).width;
-    final height = width >= 860 ? 336.0 : 460.0;
+    final compactDensity = cardDensity == VisualCardDensity.compact;
+    final height = width >= 980
+        ? (compactDensity ? 214.0 : 232.0)
+        : (compactDensity ? 392.0 : 420.0);
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
-      left: 48,
-      right: 48,
-      bottom: visible ? 24 : -height - 28,
+      left: width >= 980 ? (compactDensity ? 148 : 166) : 16,
+      right: compactDensity ? 12 : 16,
+      bottom: visible ? 14 : -height - 28,
       height: height,
       child: IgnorePointer(
         ignoring: !visible,
@@ -4800,43 +5386,80 @@ class _VehicleBottomContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 960;
+        final showTabs = activeTab != _VehicleBottomTab.overview;
         final header = SizedBox(
-          height: 68,
+          height: 76,
           child: Row(
             children: [
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               IconButton(
                 tooltip: 'Voltar',
                 onPressed: onClose,
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFFF4F7FC),
+                  side: const BorderSide(color: Color(0xFFDDE5F0)),
+                ),
                 icon: const Icon(
                   Icons.arrow_back_ios_new_rounded,
-                  color: Color(0xFF176EEB),
-                  size: 18,
+                  color: Color(0xFF5A6D89),
+                  size: 16,
                 ),
               ),
-              _VehicleAvatar(snapshot: snapshot, size: 62, iconSize: 28),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  snapshot.device.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF1F2A44),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onClose,
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF60718D),
-                ),
-                icon: const Icon(Icons.close_rounded),
-                label: const Text('Fechar'),
-              ),
+              const SizedBox(width: 8),
+              _VehicleAvatar(snapshot: snapshot, size: 52, iconSize: 24),
               const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      snapshot.device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 33,
+                        height: 0.95,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _StatusLine(snapshot: snapshot),
+                  ],
+                ),
+              ),
+              _PopupAction(
+                icon: Icons.remove_red_eye_outlined,
+                tooltip: 'Visualizar',
+                onTap: () => onTabChanged(_VehicleBottomTab.overview),
+              ),
+              const SizedBox(width: 8),
+              _PopupAction(
+                icon: Icons.notifications_none_outlined,
+                tooltip: 'Alertas',
+                onTap: () => onTabChanged(_VehicleBottomTab.info),
+              ),
+              const SizedBox(width: 8),
+              _PopupAction(
+                icon: Icons.more_vert_rounded,
+                tooltip: 'Mais opcoes',
+                onTap: () => onTabChanged(_VehicleBottomTab.commands),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Fechar',
+                onPressed: onClose,
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFFF4F7FC),
+                  side: const BorderSide(color: Color(0xFFDDE5F0)),
+                ),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Color(0xFF5A6D89),
+                ),
+              ),
+              const SizedBox(width: 10),
             ],
           ),
         );
@@ -4848,8 +5471,9 @@ class _VehicleBottomContent extends StatelessWidget {
           children: [
             _VehicleMetricPair(label: 'Velocidade', value: snapshot.speedLabel),
             _VehicleMetricPair(
-                label: 'IgniÃƒÂ§ÃƒÂ£o', value: snapshot.ignitionLabel),
-            _VehicleMetricPair(label: 'Bateria', value: snapshot.batteryLabel),
+                label: 'Igni\u00E7\u00E3o', value: snapshot.ignitionLabel),
+            _VehicleMetricPair(
+                label: 'Bateria interna', value: snapshot.batteryLabel),
             _VehicleMetricPair(label: 'Motorista', value: snapshot.driverName),
           ],
         );
@@ -4879,9 +5503,12 @@ class _VehicleBottomContent extends StatelessWidget {
                   summary,
                   const SizedBox(height: 12),
                   metrics,
-                  const SizedBox(height: 14),
-                  tabBar,
-                  const SizedBox(height: 12),
+                  if (showTabs) ...[
+                    const SizedBox(height: 14),
+                    tabBar,
+                    const SizedBox(height: 12),
+                  ] else
+                    const SizedBox(height: 12),
                   _BottomTabContent(
                     snapshot: snapshot,
                     tab: activeTab,
@@ -4892,24 +5519,25 @@ class _VehicleBottomContent extends StatelessWidget {
             : Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(width: 260, child: summary),
-                        const SizedBox(width: 30),
+                        SizedBox(width: 168, child: summary),
+                        const SizedBox(width: 24),
                         Expanded(child: metrics),
                       ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: tabBar,
-                  ),
-                  const SizedBox(height: 10),
+                  if (showTabs)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: tabBar,
+                    ),
+                  if (showTabs) const SizedBox(height: 10),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                       child: _BottomTabContent(
                         snapshot: snapshot,
                         tab: activeTab,
@@ -4953,7 +5581,7 @@ class _BottomTabContent extends StatelessWidget {
           icon: Icons.image_outlined,
           title: 'Fotos',
           detail:
-              'EspaÃƒÂ§o pronto para fotos, MDVR e evidÃƒÂªncias do dispositivo.',
+              'Espa\u00E7o pronto para fotos, MDVR e evid\u00EAncias do dispositivo.',
         );
       case _VehicleBottomTab.commands:
         return _VehicleCommandsTab(snapshot: snapshot);
@@ -4978,19 +5606,19 @@ class _BottomOverviewDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = [
       _DetailCard(
-        title: 'LocalizaÃƒÂ§ÃƒÂ£o Atual',
+        title: 'Localiza\u00E7\u00E3o atual',
         icon: Icons.place_outlined,
         body: snapshot.address,
         action: 'Ver no mapa',
       ),
       _DetailCard(
-        title: 'ÃƒÅ¡ltimos Eventos',
+        title: '\u00DAltimos eventos',
         icon: Icons.timeline_outlined,
         body: snapshot.eventsSummary,
       ),
       _SpeedChartCard(snapshot: snapshot),
       _DetailCard(
-        title: 'InformaÃƒÂ§ÃƒÂµes',
+        title: 'Informa\u00E7\u00F5es',
         icon: Icons.badge_outlined,
         body:
             'Modelo   ${snapshot.modelLabel}\nAno      2022\nGrupo    Frota SP - Vans',
@@ -5034,10 +5662,10 @@ class _VehicleInfoTab extends StatelessWidget {
       padding: EdgeInsets.zero,
       children: [
         _DetailCard(
-          title: 'InformaÃƒÂ§ÃƒÂµes do veÃƒÂ­culo',
+          title: 'Informa\u00E7\u00F5es do ve\u00EDculo',
           icon: Icons.badge_outlined,
           body:
-              'Modelo   ${snapshot.modelLabel}\nMotorista ${snapshot.driverName}\nIgniÃƒÂ§ÃƒÂ£o  ${snapshot.ignitionLabel}\nBateria  ${snapshot.batteryLabel}',
+              'Modelo   ${snapshot.modelLabel}\nMotorista ${snapshot.driverName}\nIgni\u00E7\u00E3o  ${snapshot.ignitionLabel}\nBateria interna  ${snapshot.batteryLabel}',
         ),
         const SizedBox(height: 10),
         _VehicleSensorsCard(snapshot: snapshot),
@@ -5046,14 +5674,17 @@ class _VehicleInfoTab extends StatelessWidget {
   }
 }
 
-class _VehicleSensorsCard extends StatelessWidget {
+class _VehicleSensorsCard extends ConsumerWidget {
   const _VehicleSensorsCard({required this.snapshot});
 
   final _VehicleSnapshot snapshot;
 
   @override
-  Widget build(BuildContext context) {
-    final rows = snapshot.sensorRows;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(sessionProvider);
+    final includeTechnical = session.isAdministrator || kDebugMode;
+    final sections =
+        snapshot.sensorSections(includeTechnical: includeTechnical);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -5085,56 +5716,73 @@ class _VehicleSensorsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          if (rows.isEmpty)
+          if (sections.isEmpty)
             const Text(
-              'Nenhum sensor configurado no cadastro do equipamento.',
+              'Sensores n\u00E3o recebidos',
               style: TextStyle(
                 color: Color(0xFF526684),
                 fontWeight: FontWeight.w600,
               ),
             )
           else
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final row in rows)
-                  SizedBox(
-                    width: 230,
-                    child: Row(
-                      children: [
-                        Icon(
-                          row.icon,
-                          size: 16,
-                          color: const Color(0xFF60718D),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            row.label,
-                            style: const TextStyle(
-                              color: Color(0xFF1F2A44),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          row.value,
-                          style: const TextStyle(
-                            color: Color(0xFF334155),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                for (final section in sections) ...[
+                  Text(
+                    section.title,
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      for (final item in section.items)
+                        SizedBox(
+                          width: 250,
+                          child: Row(
+                            children: [
+                              Icon(
+                                item.icon,
+                                size: 16,
+                                color: const Color(0xFF60718D),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  item.label,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1F2A44),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                item.value,
+                                style: const TextStyle(
+                                  color: Color(0xFF334155),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ],
             ),
         ],
@@ -5236,7 +5884,11 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
   @override
   Widget build(BuildContext context) {
     final commands = [
-      ('positionSingle', Icons.my_location_outlined, 'PosiÃƒÂ§ÃƒÂ£o'),
+      (
+        'positionSingle',
+        Icons.my_location_outlined,
+        'PosiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+      ),
       ('engineStop', Icons.lock_outline_rounded, 'Bloquear'),
       ('engineResume', Icons.lock_open_rounded, 'Desbloquear'),
       ('alarm', Icons.notifications_active_outlined, 'Alarme'),
@@ -5272,9 +5924,9 @@ String _humanizeEventType(String type) {
     case 'deviceUnknown':
       return 'Status desconhecido';
     case 'ignitionOn':
-      return 'IgniÃƒÂ§ÃƒÂ£o ligada';
+      return 'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o ligada';
     case 'ignitionOff':
-      return 'IgniÃƒÂ§ÃƒÂ£o desligada';
+      return 'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o desligada';
     case 'deviceMoving':
       return 'Em movimento';
     case 'deviceStopped':
@@ -5320,7 +5972,7 @@ class _BottomStatusCard extends StatelessWidget {
           _StatusLine(snapshot: snapshot),
           const SizedBox(height: 10),
           Text(
-            'ÃƒÅ¡ltimo Ponto: ${snapshot.relativeLastPoint}',
+            'Ultimo ponto: ${snapshot.relativeLastPoint}',
             style: const TextStyle(
               color: Color(0xFF526684),
               fontWeight: FontWeight.w700,
@@ -5433,11 +6085,11 @@ class _VehicleTabChip extends StatelessWidget {
 }
 
 enum _VehicleBottomTab {
-  overview('VisÃƒÂ£o Geral', Icons.dashboard_customize_outlined),
+  overview('Visao geral', Icons.dashboard_customize_outlined),
   photos('Fotos', Icons.image_outlined),
   commands('Comandos', Icons.terminal_rounded),
-  chart('GrÃƒÂ¡fico', Icons.show_chart_outlined),
-  info('InformaÃƒÂ§ÃƒÂµes', Icons.info_outline_rounded);
+  chart('Grafico', Icons.show_chart_outlined),
+  info('Informacoes', Icons.info_outline_rounded);
 
   const _VehicleBottomTab(this.label, this.icon);
 
@@ -5539,7 +6191,7 @@ class _SpeedChartCard extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  'Velocidade (ÃƒÂºltimas 2 horas)',
+                  'Velocidade (ultimas 2 horas)',
                   style: TextStyle(
                     color: Color(0xFF1F2A44),
                     fontWeight: FontWeight.w900,
@@ -5854,14 +6506,19 @@ class _LightVehiclePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visual = VisualSettingsScope.of(context);
+    final baseAlpha = (visual.glassOpacity + 0.04).clamp(0.0, 1.0);
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(
+          sigmaX: visual.glassBlur + 10,
+          sigmaY: visual.glassBlur + 10,
+        ),
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: const Color(0xEEF7F9FD),
+            color: const Color(0xFFF7F9FD).withValues(alpha: baseAlpha),
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(color: Colors.white.withValues(alpha: 0.82)),
             boxShadow: [
@@ -5894,24 +6551,28 @@ class _GlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visual = VisualSettingsScope.of(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(
+          sigmaX: visual.glassBlur,
+          sigmaY: visual.glassBlur,
+        ),
         child: Container(
           width: width,
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.74),
-            borderRadius: BorderRadius.circular(14),
+            color: Colors.white.withValues(alpha: visual.glassOpacity),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: borderColor ?? Colors.white.withValues(alpha: 0.68),
+              color: borderColor ?? const Color(0xFFE2E8F3),
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF183153).withValues(alpha: 0.10),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
+                color: const Color(0xFF183153).withValues(alpha: 0.07),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -5947,9 +6608,11 @@ class _GlassButton extends StatelessWidget {
           onTap: onTap,
           child: _GlassSurface(
             padding: EdgeInsets.zero,
+            borderColor:
+                selected ? const Color(0xFFBFD8FF) : const Color(0xFFE2E8F3),
             child: SizedBox(
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               child: Icon(
                 icon,
                 color: selected
@@ -5975,28 +6638,832 @@ class _TopIcon extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(icon, color: const Color(0xFF71819B), size: 20),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE1E8F2)),
+          ),
+          child: Icon(icon, color: const Color(0xFF526684), size: 20),
+        ),
         if (count != null)
           Positioned(
-            right: -5,
-            top: -7,
+            right: -8,
+            top: -6,
             child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFF4D61),
-                shape: BoxShape.circle,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8C530),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white),
               ),
               child: Text(
-                '$count',
+                count! > 99 ? '99+' : '$count',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 8,
+                  color: Color(0xFF1F2A44),
+                  fontSize: 9,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
           ),
       ],
+    );
+  }
+}
+
+class _VisualDiagnosis {
+  const _VisualDiagnosis({
+    required this.screenName,
+    required this.probableIssue,
+    required this.adjustmentSuggestion,
+    required this.technicalPrompt,
+  });
+
+  final String screenName;
+  final String probableIssue;
+  final String adjustmentSuggestion;
+  final String technicalPrompt;
+}
+
+class _CopilotFloatingButton extends StatelessWidget {
+  const _CopilotFloatingButton({
+    required this.open,
+    required this.onTap,
+  });
+
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 20,
+      bottom: 20,
+      child: _SurfaceGuard(
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Container(
+              height: 54,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xE8172235),
+                    Color(0xD2121D2D),
+                  ],
+                ),
+                border: Border.all(color: const Color(0xFF35537D)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0B1220).withValues(alpha: 0.44),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A4D82).withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    open ? 'Fechar IA' : 'IA',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CopilotOption<T> {
+  const _CopilotOption({
+    required this.value,
+    required this.label,
+  });
+
+  final T value;
+  final String label;
+}
+
+class _CopilotOperationalPanel extends StatelessWidget {
+  const _CopilotOperationalPanel({
+    required this.open,
+    required this.settings,
+    required this.diagnosis,
+    required this.onClose,
+    required this.onDiagnose,
+    required this.onReset,
+    required this.onBalloonSize,
+    required this.onLogoMode,
+    required this.onCardDensity,
+    required this.onTransparency,
+    required this.onFontSize,
+    required this.onMapMode,
+  });
+
+  final bool open;
+  final VisualSettings settings;
+  final _VisualDiagnosis? diagnosis;
+  final VoidCallback onClose;
+  final VoidCallback onDiagnose;
+  final VoidCallback onReset;
+  final ValueChanged<VisualBalloonSize> onBalloonSize;
+  final ValueChanged<VisualLogoMode> onLogoMode;
+  final ValueChanged<VisualCardDensity> onCardDensity;
+  final ValueChanged<VisualTransparency> onTransparency;
+  final ValueChanged<VisualFontSize> onFontSize;
+  final ValueChanged<VisualMapMode> onMapMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      top: 92,
+      bottom: 20,
+      right: open ? 16 : -410,
+      width: 390,
+      child: IgnorePointer(
+        ignoring: !open,
+        child: _SurfaceGuard(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: open ? 1 : 0,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFF35537D)),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xED101B2B),
+                        Color(0xDD0D1623),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.36),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.tune_rounded,
+                              color: Color(0xFF9FC3FF),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Copiloto Operacional',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Resetar visual',
+                              onPressed: onReset,
+                              icon: const Icon(
+                                Icons.restart_alt_rounded,
+                                color: Color(0xFFB7C9E8),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Fechar',
+                              onPressed: onClose,
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Color(0xFFB7C9E8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0x27486688)),
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                          children: [
+                            _CopilotInlineChat(
+                              settings: settings,
+                              diagnosis: diagnosis,
+                              onDiagnose: onDiagnose,
+                            ),
+                            const SizedBox(height: 12),
+                            _CopilotChoiceGroup<VisualBalloonSize>(
+                              title: 'Tamanho dos baloes',
+                              selected: settings.balloonSize,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualBalloonSize.small,
+                                  label: 'Pequeno',
+                                ),
+                                _CopilotOption(
+                                  value: VisualBalloonSize.medium,
+                                  label: 'Medio',
+                                ),
+                                _CopilotOption(
+                                  value: VisualBalloonSize.large,
+                                  label: 'Grande',
+                                ),
+                              ],
+                              onChanged: onBalloonSize,
+                            ),
+                            _CopilotChoiceGroup<VisualLogoMode>(
+                              title: 'Logo',
+                              selected: settings.logoMode,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualLogoMode.normal,
+                                  label: 'Normal',
+                                ),
+                                _CopilotOption(
+                                  value: VisualLogoMode.compact,
+                                  label: 'Compacto',
+                                ),
+                                _CopilotOption(
+                                  value: VisualLogoMode.hideOnFullMap,
+                                  label: 'Ocultar mapa cheio',
+                                ),
+                              ],
+                              onChanged: onLogoMode,
+                            ),
+                            _CopilotChoiceGroup<VisualCardDensity>(
+                              title: 'Cards',
+                              selected: settings.cardDensity,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualCardDensity.compact,
+                                  label: 'Compacto',
+                                ),
+                                _CopilotOption(
+                                  value: VisualCardDensity.comfortable,
+                                  label: 'Confortavel',
+                                ),
+                              ],
+                              onChanged: onCardDensity,
+                            ),
+                            _CopilotChoiceGroup<VisualTransparency>(
+                              title: 'Transparencia',
+                              selected: settings.transparency,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualTransparency.low,
+                                  label: 'Baixa',
+                                ),
+                                _CopilotOption(
+                                  value: VisualTransparency.medium,
+                                  label: 'Media',
+                                ),
+                                _CopilotOption(
+                                  value: VisualTransparency.high,
+                                  label: 'Alta',
+                                ),
+                              ],
+                              onChanged: onTransparency,
+                            ),
+                            _CopilotChoiceGroup<VisualFontSize>(
+                              title: 'Fonte',
+                              selected: settings.fontSize,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualFontSize.normal,
+                                  label: 'Normal',
+                                ),
+                                _CopilotOption(
+                                  value: VisualFontSize.large,
+                                  label: 'Grande',
+                                ),
+                              ],
+                              onChanged: onFontSize,
+                            ),
+                            _CopilotChoiceGroup<VisualMapMode>(
+                              title: 'Mapa',
+                              selected: settings.mapMode,
+                              options: const [
+                                _CopilotOption(
+                                  value: VisualMapMode.normal,
+                                  label: 'Normal',
+                                ),
+                                _CopilotOption(
+                                  value: VisualMapMode.premium,
+                                  label: 'Premium',
+                                ),
+                                _CopilotOption(
+                                  value: VisualMapMode.dark,
+                                  label: 'Escuro',
+                                ),
+                              ],
+                              onChanged: onMapMode,
+                            ),
+                            const SizedBox(height: 10),
+                            FilledButton.icon(
+                              onPressed: onDiagnose,
+                              icon: const Icon(Icons.auto_fix_high_rounded),
+                              label:
+                                  const Text('Diagnosticar visual desta tela'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF176EEB),
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            if (diagnosis != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F2238),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFF264970),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _CopilotDiagnosisRow(
+                                      label: 'Tela atual',
+                                      value: diagnosis!.screenName,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _CopilotDiagnosisRow(
+                                      label: 'Problema visual provavel',
+                                      value: diagnosis!.probableIssue,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _CopilotDiagnosisRow(
+                                      label: 'Sugestao de ajuste',
+                                      value: diagnosis!.adjustmentSuggestion,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _CopilotDiagnosisRow(
+                                      label: 'Prompt tecnico',
+                                      value: diagnosis!.technicalPrompt,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CopilotChoiceGroup<T> extends StatelessWidget {
+  const _CopilotChoiceGroup({
+    required this.title,
+    required this.selected,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String title;
+  final T selected;
+  final List<_CopilotOption<T>> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFFB7C9E8),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in options)
+                ChoiceChip(
+                  label: Text(option.label),
+                  selected: option.value == selected,
+                  showCheckmark: false,
+                  onSelected: (_) => onChanged(option.value),
+                  labelStyle: TextStyle(
+                    color: option.value == selected
+                        ? Colors.white
+                        : const Color(0xFFCED9EA),
+                    fontWeight: option.value == selected
+                        ? FontWeight.w700
+                        : FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                  backgroundColor: const Color(0xFF13253B),
+                  selectedColor: const Color(0xFF176EEB),
+                  side: BorderSide(
+                    color: option.value == selected
+                        ? const Color(0xFF5F9BFF)
+                        : const Color(0xFF2D4562),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopilotDiagnosisRow extends StatelessWidget {
+  const _CopilotDiagnosisRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF7FA5D2),
+            fontWeight: FontWeight.w700,
+            fontSize: 11.5,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 12.5,
+            height: 1.32,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CopilotChatMessage {
+  const _CopilotChatMessage({
+    required this.fromAssistant,
+    required this.text,
+  });
+
+  final bool fromAssistant;
+  final String text;
+}
+
+class _CopilotInlineChat extends StatefulWidget {
+  const _CopilotInlineChat({
+    required this.settings,
+    required this.diagnosis,
+    required this.onDiagnose,
+  });
+
+  final VisualSettings settings;
+  final _VisualDiagnosis? diagnosis;
+  final VoidCallback onDiagnose;
+
+  @override
+  State<_CopilotInlineChat> createState() => _CopilotInlineChatState();
+}
+
+class _CopilotInlineChatState extends State<_CopilotInlineChat> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<_CopilotChatMessage> _messages = <_CopilotChatMessage>[
+    const _CopilotChatMessage(
+      fromAssistant: true,
+      text:
+          'Copiloto pronto. Me diga o ajuste visual desejado e eu te respondo com acao objetiva.',
+    ),
+  ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _sendCurrent() {
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) return;
+    _controller.clear();
+    _appendConversation(raw);
+  }
+
+  void _sendQuick(String text) {
+    _appendConversation(text);
+  }
+
+  void _appendConversation(String userText) {
+    final reply = _buildAssistantReply(userText);
+    setState(() {
+      _messages.add(_CopilotChatMessage(fromAssistant: false, text: userText));
+      _messages.add(_CopilotChatMessage(fromAssistant: true, text: reply));
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent + 120,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  String _buildAssistantReply(String input) {
+    final text = input.toLowerCase();
+    final settings = widget.settings;
+
+    String summary() {
+      return 'Resumo atual: baloes ${settings.balloonSize.name}, '
+          'logo ${settings.logoMode.name}, cards ${settings.cardDensity.name}, '
+          'transparencia ${settings.transparency.name}, '
+          'fonte ${settings.fontSize.name}, mapa ${settings.mapMode.name}.';
+    }
+
+    if (text.contains('diagnost')) {
+      widget.onDiagnose();
+      return widget.diagnosis == null
+          ? 'Diagnostico acionado. Veja o bloco acima com problema provavel e prompt tecnico.'
+          : 'Diagnostico atualizado para a tela ${widget.diagnosis!.screenName}.';
+    }
+    if (text.contains('mapa')) {
+      return 'Use o seletor de mapa para alternar entre normal, premium e escuro. '
+          'Se precisar de contraste maior, combine mapa escuro com transparencia baixa.';
+    }
+    if (text.contains('logo')) {
+      return 'Você pode manter o logo normal, compacto ou ocultar no mapa cheio. '
+          'Para foco operacional, recomendo ocultar no mapa cheio.';
+    }
+    if (text.contains('fonte') || text.contains('texto')) {
+      return 'Ative fonte grande para leitura em operação. '
+          'Se a tela ficar densa, combine com cards confortavel.';
+    }
+    if (text.contains('transparen') || text.contains('vidro')) {
+      return 'Transparencia baixa melhora leitura; alta destaca mapa. '
+          'Para uso diário, media costuma equilibrar visual e legibilidade.';
+    }
+    if (text.contains('card') || text.contains('compact')) {
+      return 'Cards compactos aumentam área útil; confortavel melhora leitura. '
+          'Você pode alternar instantaneamente para comparar.';
+    }
+    if (text.contains('resumo') || text.contains('status')) {
+      return summary();
+    }
+    if (text.contains('balao') || text.contains('popup')) {
+      return 'Tamanho dos baloes ajusta o popup rápido do veículo no mapa. '
+          'Grande favorece toque, pequeno reduz obstrução.';
+    }
+
+    return 'Entendi. Posso te guiar em ajustes de mapa, cards, transparência, fonte e logo. ${summary()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C1C2F),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF244566)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.forum_outlined,
+                color: Color(0xFF9FC3FF),
+                size: 18,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Chat do Copiloto',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 168,
+            child: ListView.separated(
+              controller: _scrollController,
+              itemCount: _messages.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
+              itemBuilder: (context, index) {
+                final msg = _messages[index];
+                return Align(
+                  alignment: msg.fromAssistant
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 290),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: msg.fromAssistant
+                          ? const Color(0xFF122A43)
+                          : const Color(0xFF176EEB),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: msg.fromAssistant
+                            ? const Color(0xFF315C85)
+                            : const Color(0xFF7CB2FF),
+                      ),
+                    ),
+                    child: Text(
+                      msg.text,
+                      style: TextStyle(
+                        color: msg.fromAssistant
+                            ? const Color(0xFFE5F0FF)
+                            : Colors.white,
+                        fontSize: 12.3,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _CopilotQuickActionChip(
+                label: 'Resumo visual',
+                onTap: () => _sendQuick('resumo visual'),
+              ),
+              _CopilotQuickActionChip(
+                label: 'Diagnosticar',
+                onTap: () => _sendQuick('diagnosticar'),
+              ),
+              _CopilotQuickActionChip(
+                label: 'Melhorar legibilidade',
+                onTap: () => _sendQuick('melhorar legibilidade'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  onSubmitted: (_) => _sendCurrent(),
+                  style: const TextStyle(color: Colors.white, fontSize: 12.8),
+                  decoration: InputDecoration(
+                    hintText: 'Escreva um ajuste visual...',
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF9EB4CF),
+                      fontSize: 12.5,
+                    ),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFF102338),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF2B4C6D)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF2B4C6D)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF5D9DFF)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 40,
+                child: FilledButton(
+                  onPressed: _sendCurrent,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF176EEB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Icon(Icons.send_rounded, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopilotQuickActionChip extends StatelessWidget {
+  const _CopilotQuickActionChip({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      label: Text(label),
+      onPressed: onTap,
+      labelStyle: const TextStyle(
+        color: Color(0xFFE5F0FF),
+        fontWeight: FontWeight.w700,
+        fontSize: 11.5,
+      ),
+      backgroundColor: const Color(0xFF163250),
+      side: const BorderSide(color: Color(0xFF2F567D)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(9),
+      ),
     );
   }
 }
@@ -8173,8 +9640,17 @@ class _TelemetryRaceShowcaseScreen extends StatefulWidget {
 class _TelemetryRaceShowcaseScreenState
     extends State<_TelemetryRaceShowcaseScreen> {
   static const _seasonOptions = ['Temporada atual demo'];
-  static const _raceOptions = ['AustrÃ¡lia', 'China', 'JapÃ£o', 'Bahrein'];
-  static const _sessionOptions = ['Treino', 'ClassificaÃ§Ã£o', 'Corrida'];
+  static const _raceOptions = [
+    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+    'China',
+    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Bahrein'
+  ];
+  static const _sessionOptions = [
+    'Treino',
+    'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Corrida'
+  ];
   static const _driverOptions = [
     'Bortoleto',
     'Verstappen',
@@ -8190,9 +9666,12 @@ class _TelemetryRaceShowcaseScreenState
   ];
 
   final Map<String, _RaceTelemetryCircuit> _circuits = {
-    'AustrÃ¡lia': _RaceTelemetryCircuit(
-      raceName: 'AustrÃ¡lia',
-      trackSubtitle: 'Albert Park â€¢ Setores 1/2/3',
+    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
+        _RaceTelemetryCircuit(
+      raceName:
+          'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+      trackSubtitle:
+          'Albert Park ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.13, 0.62),
         Offset(0.22, 0.79),
@@ -8221,21 +9700,24 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'aus-3',
-          label: 'AceleraÃ§Ã£o mÃ¡xima',
+          label:
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.76, 0.43),
           accent: Color(0xFF22C55E),
         ),
         _RaceTelemetryEvent(
           id: 'aus-4',
-          label: 'Perda de aderÃªncia',
+          label:
+              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
           sector: 'Setor 1',
           position: Offset(0.34, 0.24),
           accent: Color(0xFFA855F7),
         ),
         _RaceTelemetryEvent(
           id: 'aus-5',
-          label: 'Volta rÃ¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.63, 0.30),
           accent: Color(0xFF3B82F6),
@@ -8244,7 +9726,8 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'China': _RaceTelemetryCircuit(
       raceName: 'China',
-      trackSubtitle: 'Shanghai â€¢ Setores 1/2/3',
+      trackSubtitle:
+          'Shanghai ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.15, 0.70),
         Offset(0.25, 0.82),
@@ -8280,16 +9763,20 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'chi-4',
-          label: 'AceleraÃ§Ã£o mÃ¡xima',
+          label:
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.69, 0.27),
           accent: Color(0xFF3B82F6),
         ),
       ],
     ),
-    'JapÃ£o': _RaceTelemetryCircuit(
-      raceName: 'JapÃ£o',
-      trackSubtitle: 'Suzuka â€¢ Setores 1/2/3',
+    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+        _RaceTelemetryCircuit(
+      raceName:
+          'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+      trackSubtitle:
+          'Suzuka ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.16, 0.67),
         Offset(0.23, 0.82),
@@ -8304,7 +9791,8 @@ class _TelemetryRaceShowcaseScreenState
       events: const [
         _RaceTelemetryEvent(
           id: 'jpn-1',
-          label: 'Perda de aderÃªncia',
+          label:
+              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
           sector: 'Setor 1',
           position: Offset(0.25, 0.81),
           accent: Color(0xFFEF4444),
@@ -8325,7 +9813,8 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'jpn-4',
-          label: 'Volta rÃ¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.46, 0.22),
           accent: Color(0xFF3B82F6),
@@ -8334,7 +9823,8 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'Bahrein': _RaceTelemetryCircuit(
       raceName: 'Bahrein',
-      trackSubtitle: 'Sakhir â€¢ Setores 1/2/3',
+      trackSubtitle:
+          'Sakhir ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.14, 0.72),
         Offset(0.29, 0.83),
@@ -8370,14 +9860,16 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'bah-4',
-          label: 'AceleraÃ§Ã£o mÃ¡xima',
+          label:
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.63, 0.24),
           accent: Color(0xFF3B82F6),
         ),
         _RaceTelemetryEvent(
           id: 'bah-5',
-          label: 'Volta rÃ¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.36, 0.25),
           accent: Color(0xFFA855F7),
@@ -8401,7 +9893,8 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 92,
       gsmSignal: 88,
-      lastCommunication: 'hÃ¡ 9 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 9 s',
       fuelOrLoad: 54,
       trackerTemperature: 39,
       behavior: 'normal',
@@ -8420,13 +9913,16 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 94,
       gsmSignal: 86,
-      lastCommunication: 'hÃ¡ 7 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 7 s',
       fuelOrLoad: 49,
       trackerTemperature: 40,
-      behavior: 'atenÃ§Ã£o',
+      behavior:
+          'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     ),
     'Norris': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'MÃ©dio',
+      tireCompound:
+          'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dio',
       tireLife: 66,
       speedKmh: 301,
       rpm: 11910,
@@ -8439,13 +9935,15 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 89,
       gsmSignal: 85,
-      lastCommunication: 'hÃ¡ 11 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 11 s',
       fuelOrLoad: 56,
       trackerTemperature: 38,
       behavior: 'normal',
     ),
     'Leclerc': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'IntermediÃ¡rio',
+      tireCompound:
+          'IntermediÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rio',
       tireLife: 60,
       speedKmh: 300,
       rpm: 11760,
@@ -8458,7 +9956,8 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 87,
       gsmSignal: 82,
-      lastCommunication: 'hÃ¡ 13 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 13 s',
       fuelOrLoad: 52,
       trackerTemperature: 41,
       behavior: 'risco',
@@ -8478,7 +9977,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -9;
-      case 'ClassificaÃ§Ã£o':
+      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 6;
       case 'Corrida':
         return 0;
@@ -8490,7 +9989,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -300;
-      case 'ClassificaÃ§Ã£o':
+      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 210;
       case 'Corrida':
         return 0;
@@ -8500,11 +9999,11 @@ class _TelemetryRaceShowcaseScreenState
 
   int _raceAdjust(String race) {
     switch (race) {
-      case 'AustrÃ¡lia':
+      case 'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
         return 2;
       case 'China':
         return -1;
-      case 'JapÃ£o':
+      case 'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 4;
       case 'Bahrein':
         return 1;
@@ -8520,7 +10019,10 @@ class _TelemetryRaceShowcaseScreenState
 
     final tireLifeShift = _selectedSession == 'Corrida'
         ? -5
-        : (_selectedSession == 'ClassificaÃ§Ã£o' ? -2 : 4);
+        : (_selectedSession ==
+                'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+            ? -2
+            : 4);
 
     return base.copyWith(
       speedKmh: (base.speedKmh + speedAdjust).clamp(120, 360),
@@ -8533,7 +10035,10 @@ class _TelemetryRaceShowcaseScreenState
               .clamp(15, 100),
       behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
           ? 'risco'
-          : (_selectedSession == 'ClassificaÃ§Ã£o' ? 'atenÃ§Ã£o' : 'normal'),
+          : (_selectedSession ==
+                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+              ? 'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+              : 'normal'),
     );
   }
 
@@ -8631,7 +10136,7 @@ class _TelemetryRaceShowcaseScreenState
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'DemonstraÃ§Ã£o tÃ©cnica com dados pÃºblicos/simulados. Sem uso de marca oficial.',
+                    'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/simulados. Sem uso de marca oficial.',
                     style: TextStyle(
                       color: Color(0xFF9DB6D8),
                       fontWeight: FontWeight.w600,
@@ -8675,7 +10180,8 @@ class _TelemetryRaceShowcaseScreenState
                     },
                   ),
                   _RaceTelemetryFilterDropdown(
-                    label: 'SessÃ£o',
+                    label:
+                        'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
                     value: _selectedSession,
                     options: _sessionOptions,
                     onChanged: (value) {
@@ -8988,7 +10494,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'MÃ©tricas de corrida',
+            'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tricas de corrida',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -8998,7 +10504,10 @@ class _TelemetryRaceShowcaseScreenState
           const SizedBox(height: 8),
           _RaceTelemetryInfoLine(label: 'Piloto', value: _selectedDriver),
           _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
-          _RaceTelemetryInfoLine(label: 'SessÃ£o', value: _selectedSession),
+          _RaceTelemetryInfoLine(
+              label:
+                  'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+              value: _selectedSession),
           _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
           _RaceTelemetryInfoLine(
             label: 'Vida do pneu',
@@ -9017,14 +10526,17 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(label: 'Freio', value: '${snapshot.brake}%'),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do pneu',
-            value: '${snapshot.tireTempC}Â°C',
+            value:
+                '${snapshot.tireTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do motor',
-            value: '${snapshot.engineTempC}Â°C',
+            value:
+                '${snapshot.engineTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Gap para comparaÃ§Ã£o',
+            label:
+                'Gap para comparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: comparison == null
                 ? 'n/a'
                 : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
@@ -9059,7 +10571,8 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.trackerBattery}%',
           ),
           _RaceTelemetryInfoLine(
-            label: 'IgniÃ§Ã£o',
+            label:
+                'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
           ),
           _RaceTelemetryInfoLine(
@@ -9071,15 +10584,19 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.gsmSignal}%',
           ),
           _RaceTelemetryInfoLine(
-            label: 'Ãšltima comunicaÃ§Ã£o',
+            label:
+                'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ltima comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: snapshot.lastCommunication,
           ),
           _RaceTelemetryInfoLine(
-            label: 'Temperatura do baÃº/motor',
-            value: '${snapshot.trackerTemperature}Â°C',
+            label:
+                'Temperatura do baÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº/motor',
+            value:
+                '${snapshot.trackerTemperature}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label: 'NÃ­vel de combustÃ­vel/carga',
+            label:
+                'NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel de combustÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel/carga',
             value: '${snapshot.fuelOrLoad}%',
           ),
           _RaceTelemetryInfoLine(
@@ -9111,17 +10628,22 @@ class _TelemetryRaceShowcaseScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'A mesma lÃ³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃ­culos de frota, guinchos, caminhÃµes, mÃ¡quinas e operaÃ§Ãµes crÃ­ticas.',
+            'A mesma lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culos de frota, guinchos, caminhÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes, mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡quinas e operaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ticas.',
             style: TextStyle(
               color: Color(0xFFBCD3F3),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const _RaceTelemetryBullet(text: 'detectar conduÃ§Ã£o agressiva;'),
-          const _RaceTelemetryBullet(text: 'prever manutenÃ§Ã£o;'),
           const _RaceTelemetryBullet(
-              text: 'monitorar bateria e comunicaÃ§Ã£o;'),
+              text:
+                  'detectar conduÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o agressiva;'),
+          const _RaceTelemetryBullet(
+              text:
+                  'prever manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
+          const _RaceTelemetryBullet(
+              text:
+                  'monitorar bateria e comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
           const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
           const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
           const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
@@ -9149,7 +10671,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'ComparaÃ§Ã£o',
+            'ComparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -9166,19 +10688,23 @@ class _TelemetryRaceShowcaseScreenState
             value: comparison.comparedDriver,
           ),
           _RaceTelemetryInfoLine(
-            label: 'DiferenÃ§a de velocidade',
+            label:
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de velocidade',
             value: formatDelta(comparison.speedDelta, ' km/h'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'DiferenÃ§a de frenagem',
+            label:
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de frenagem',
             value: formatDelta(comparison.brakingDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'DiferenÃ§a de aceleraÃ§Ã£o',
+            label:
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de aceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: formatDelta(comparison.throttleDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label: 'DiferenÃ§a de desgaste de pneu',
+            label:
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de desgaste de pneu',
             value: formatDelta(comparison.tireWearDelta, '%'),
           ),
         ],
@@ -9989,7 +11515,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       selected: i == safeIndex,
                       onSelected: (_) => setState(() => _selectedIndex = i),
                       label: Text(
-                        '${safeEvents[i].cornerLabel} â€¢ ${safeEvents[i].eventLabel}',
+                        '${safeEvents[i].cornerLabel} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ${safeEvents[i].eventLabel}',
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -10007,7 +11533,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${selectedEvent.cornerLabel} â€¢ ${selectedEvent.eventTime}',
+                      '${selectedEvent.cornerLabel} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ${selectedEvent.eventTime}',
                       style: const TextStyle(
                         color: Color(0xFFEAF1FF),
                         fontWeight: FontWeight.w900,
@@ -10025,7 +11551,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Velocidade ${selectedEvent.speedKmh} km/h â€¢ RPM ${selectedEvent.rpm} â€¢ Marcha ${selectedEvent.gear}',
+                      'Velocidade ${selectedEvent.speedKmh} km/h ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ RPM ${selectedEvent.rpm} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Marcha ${selectedEvent.gear}',
                       style: const TextStyle(
                         color: Color(0xFFDCEAFE),
                         fontWeight: FontWeight.w700,
@@ -10033,7 +11559,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       ),
                     ),
                     Text(
-                      'Acelerador ${selectedEvent.throttle}% â€¢ Freio ${selectedEvent.brake}% â€¢ Temp ${selectedEvent.temperatureC}C',
+                      'Acelerador ${selectedEvent.throttle}% ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Freio ${selectedEvent.brake}% ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Temp ${selectedEvent.temperatureC}C',
                       style: const TextStyle(
                         color: Color(0xFFDCEAFE),
                         fontWeight: FontWeight.w700,
@@ -10085,7 +11611,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${event.time} â€¢ ${event.section} â€¢ ${event.event}',
+                          '${event.time} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ${event.section} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ${event.event}',
                           style: const TextStyle(
                             color: Color(0xFFDCEAFE),
                             fontWeight: FontWeight.w700,
@@ -10147,7 +11673,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'DemonstraÃ§Ã£o tÃ©cnica com dados pÃºblicos/snapshot. Sem uso de marca oficial.',
+                'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/snapshot. Sem uso de marca oficial.',
                 style: TextStyle(
                   color: Color(0xFF8FAED6),
                   fontWeight: FontWeight.w600,
@@ -10981,7 +12507,7 @@ class _TelemetryLivePanel extends StatelessWidget {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'GPS 23Â°42\'45.8"S   46Â°41\'19.6"W',
+                  'GPS 23ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°42\'45.8"S   46ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°41\'19.6"W',
                   style: TextStyle(
                     color: Color(0xFFD3E4FF),
                     fontWeight: FontWeight.w700,
@@ -11467,8 +12993,10 @@ class _TraccarToolsPanelState extends State<_TraccarToolsPanel> {
     if (widget.entries.isEmpty) {
       return const _EmptyToolState(
         icon: Icons.dashboard_customize_outlined,
-        title: 'Nenhuma opÃƒÂ§ÃƒÂ£o disponÃƒÂ­vel',
-        detail: 'Este painel ainda nÃƒÂ£o possui ferramentas configuradas.',
+        title:
+            'Nenhuma opÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o disponÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel',
+        detail:
+            'Este painel ainda nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o possui ferramentas configuradas.',
       );
     }
     final selected = widget.entries[_selectedIndex];
@@ -12216,7 +13744,7 @@ class _FleetKpis {
       if (snapshot.isOperationalOnline) {
         online++;
       } else {
-        // Status offline/unknown ou atualizaÃ§Ã£o antiga entram no offline operacional.
+        // Status offline/unknown ou atualizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o antiga entram no offline operacional.
         offline++;
       }
 
@@ -12254,12 +13782,24 @@ class _FleetKpis {
 class _VehicleSnapshot {
   static const Duration _offlineStaleThreshold = Duration(minutes: 30);
   static const List<String> _defaultSensorKeys = [
-    'speed',
-    'distance',
     'ignition',
-    'odometer',
+    'motion',
+    'door',
+    'blocked',
+    'gpsTracking',
+    'power',
+    'batteryLevel',
     'battery',
+    'charge',
+    'gsm',
     'rssi',
+    'sat',
+    'mcc',
+    'mnc',
+    'lac',
+    'cid',
+    'odometer',
+    'totalHours',
   ];
 
   const _VehicleSnapshot({
@@ -12292,6 +13832,7 @@ class _VehicleSnapshot {
   gmaps.LatLng? get latLngOrNull {
     final current = position;
     if (current == null) return null;
+    if (!hasValidGps) return null;
     return gmaps.LatLng(current.latitude, current.longitude);
   }
 
@@ -12302,12 +13843,23 @@ class _VehicleSnapshot {
   String get normalizedStatus => device.status.toLowerCase().trim();
 
   bool get hasPosition => position != null;
+  Map<String, dynamic> get _mergedAttributes => {
+        ...?device.attributes,
+        ...?position?.attributes,
+      };
+
+  bool get hasValidGps => hasValidGpsPosition(
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        attributes: _mergedAttributes,
+      );
 
   bool get isStatusUnknownOrUninformed {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
         normalizedStatus == 'nao informado' ||
-        normalizedStatus == 'nÃ£o informado' ||
+        normalizedStatus ==
+            'nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o informado' ||
         normalizedStatus == 'n/a';
   }
 
@@ -12426,10 +13978,11 @@ class _VehicleSnapshot {
   }
 
   String get latLngLabel {
-    final current = position;
-    if (current == null) return 'Nao informado';
-    return '${current.latitude.toStringAsFixed(6)}, '
-        '${current.longitude.toStringAsFixed(6)}';
+    return formatGpsCoordinateLabel(
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+      attributes: _mergedAttributes,
+    );
   }
 
   String get lastCommunicationLabel {
@@ -12480,6 +14033,8 @@ class _VehicleSnapshot {
   }
 
   String get address {
+    if (!hasValidGps) return 'Sem GPS v\u00E1lido';
+
     final value = resolvedAddress ??
         position?.address ??
         position?.attributes?['address'] ??
@@ -12493,7 +14048,7 @@ class _VehicleSnapshot {
   String get eventsSummary {
     if (recentEvents.isEmpty) {
       return 'Sem eventos recentes\n'
-          'Ultima comunicacao: ${relativeLastPoint == 'Nao informado' ? 'Nao informado' : relativeLastPoint}';
+          '\u00DAltima comunica\u00E7\u00E3o: ${relativeLastPoint == 'Nao informado' ? 'Nao informado' : relativeLastPoint}';
     }
 
     return recentEvents.take(3).map((event) {
@@ -12513,38 +14068,40 @@ class _VehicleSnapshot {
     if (parsed == null) return 'Nao informado';
     final diff = DateTime.now().difference(parsed);
     if (diff.inMinutes < 1) return 'agora';
-    if (diff.inMinutes < 60) return 'hÃƒÂ¡ ${diff.inMinutes} min';
-    if (diff.inHours < 24) return 'hÃƒÂ¡ ${diff.inHours} h';
-    return 'hÃƒÂ¡ ${diff.inDays} dias';
+    if (diff.inMinutes < 60) return 'h\u00E1 ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'h\u00E1 ${diff.inHours} h';
+    return 'h\u00E1 ${diff.inDays} dias';
   }
 
   String get sensorSummary {
     final rows = sensorRows;
-    if (rows.isEmpty) return 'Nao informado';
+    if (rows.isEmpty) return 'Sensores n\u00E3o recebidos';
     return rows.map((row) => '${row.label}: ${row.value}').join('\n');
   }
 
-  List<_VehicleSensorRow> get sensorRows {
-    final attrs = {
-      ...?device.attributes,
-      ...?position?.attributes,
-    };
-    if (attrs.isEmpty) return const [];
+  List<SensorDisplaySection> sensorSections({required bool includeTechnical}) {
+    return buildSensorDisplaySections(
+      deviceAttributes: device.attributes,
+      positionAttributes: position?.attributes,
+      includeTechnical: includeTechnical,
+      preferredKeys: _configuredSensorKeys,
+    );
+  }
 
+  List<_VehicleSensorRow> get sensorRows {
     final rows = <_VehicleSensorRow>[];
-    for (final key in _configuredSensorKeys) {
-      final value = _sensorValueForKey(key, attrs);
-      if (value == 'Nao informado') {
-        continue;
+    final sections = sensorSections(includeTechnical: false);
+    for (final section in sections) {
+      for (final item in section.items) {
+        rows.add(
+          _VehicleSensorRow(
+            key: item.key,
+            label: item.label,
+            value: item.value,
+            icon: item.icon,
+          ),
+        );
       }
-      rows.add(
-        _VehicleSensorRow(
-          key: key,
-          label: _sensorLabelForKey(key),
-          value: value,
-          icon: _sensorIconForKey(key),
-        ),
-      );
     }
     return rows;
   }
@@ -12574,78 +14131,6 @@ class _VehicleSnapshot {
     }
     return configured.toList(growable: false);
   }
-
-  String _sensorValueForKey(String key, Map<String, dynamic> attrs) {
-    final lower = key.toLowerCase();
-    switch (lower) {
-      case 'speed':
-        return speedLabel;
-      case 'distance':
-        return _distanceValueLabel(
-          attrs['distance'] ?? attrs['totaldistance'] ?? attrs['totalDistance'],
-        );
-      case 'odometer':
-        return _distanceValueLabel(
-          attrs['odometer'] ?? attrs['totaldistance'] ?? attrs['totalDistance'],
-        );
-      case 'ignition':
-        return ignitionLabel;
-      case 'battery':
-        return batteryLabel;
-      case 'rssi':
-        final rssi = _asNumber(attrs['rssi']);
-        if (rssi == null) return _genericSensorValue(attrs['rssi']);
-        return '${rssi.toStringAsFixed(0)} dBm';
-      case 'power':
-        final power = _asNumber(attrs['power'] ?? attrs['battery']);
-        if (power == null) return _genericSensorValue(attrs['power']);
-        return '${power.toStringAsFixed(1)} V';
-      case 'fuel':
-        final fuel = _asNumber(attrs['fuel']);
-        if (fuel == null) return _genericSensorValue(attrs['fuel']);
-        return '${fuel.toStringAsFixed(0)} %';
-      case 'hours':
-        final hours = _asNumber(attrs['hours']);
-        if (hours == null) return _genericSensorValue(attrs['hours']);
-        return '${hours.toStringAsFixed(1)} h';
-      case 'sat':
-        final sat = _asNumber(attrs['sat']);
-        if (sat == null) return _genericSensorValue(attrs['sat']);
-        return sat.toStringAsFixed(0);
-      default:
-        return _genericSensorValue(attrs[lower] ?? attrs[key]);
-    }
-  }
-
-  double? _asNumber(dynamic value) {
-    if (value is num) return value.toDouble();
-    if (value is String) {
-      return double.tryParse(value.replaceAll(',', '.'));
-    }
-    return null;
-  }
-
-  String _distanceValueLabel(dynamic value) {
-    final number = _asNumber(value);
-    if (number == null) return 'Nao informado';
-    if (number >= 1000) {
-      return '${(number / 1000).toStringAsFixed(1)} km';
-    }
-    return '${number.toStringAsFixed(0)} m';
-  }
-
-  String _genericSensorValue(dynamic value) {
-    if (value == null) return 'Nao informado';
-    if (value is bool) return value ? 'Ligado' : 'Desligado';
-    if (value is num) {
-      if (value % 1 == 0) {
-        return value.toInt().toString();
-      }
-      return value.toStringAsFixed(1);
-    }
-    final text = '$value'.trim();
-    return text.isEmpty ? 'Nao informado' : text;
-  }
 }
 
 class _VehicleSensorRow {
@@ -12660,60 +14145,6 @@ class _VehicleSensorRow {
   final String label;
   final String value;
   final IconData icon;
-}
-
-String _sensorLabelForKey(String key) {
-  switch (key.toLowerCase()) {
-    case 'speed':
-      return 'Velocidade';
-    case 'distance':
-      return 'Distancia';
-    case 'ignition':
-      return 'Ignition';
-    case 'odometer':
-      return 'Odometer';
-    case 'battery':
-      return 'Battery level';
-    case 'rssi':
-      return 'GSM level';
-    case 'power':
-      return 'Power';
-    case 'fuel':
-      return 'Combustivel';
-    case 'hours':
-      return 'Engine hour';
-    case 'sat':
-      return 'GPS signal';
-    default:
-      return key;
-  }
-}
-
-IconData _sensorIconForKey(String key) {
-  switch (key.toLowerCase()) {
-    case 'speed':
-      return Icons.speed_rounded;
-    case 'distance':
-      return Icons.near_me_outlined;
-    case 'ignition':
-      return Icons.vpn_key_outlined;
-    case 'odometer':
-      return Icons.av_timer_outlined;
-    case 'battery':
-      return Icons.battery_5_bar_outlined;
-    case 'rssi':
-      return Icons.network_cell_outlined;
-    case 'power':
-      return Icons.bolt_outlined;
-    case 'fuel':
-      return Icons.local_gas_station_outlined;
-    case 'hours':
-      return Icons.schedule_outlined;
-    case 'sat':
-      return Icons.satellite_alt_outlined;
-    default:
-      return Icons.sensors_outlined;
-  }
 }
 
 IconData _vehicleIconForSnapshot(_VehicleSnapshot snapshot) {
@@ -12794,6 +14225,11 @@ const List<_OperationalMenuItem> _operationalMenu = [
     badge: '12',
   ),
   _OperationalMenuItem(
+    id: 'maintenance',
+    label: 'Manutencao',
+    icon: Icons.build_outlined,
+  ),
+  _OperationalMenuItem(
     id: 'geofences',
     label: 'Cercas',
     icon: Icons.fence_outlined,
@@ -12840,7 +14276,7 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ),
   _OperationalMenuItem(
     id: 'reports',
-    label: 'RelatÃ³rios',
+    label: 'Relatorios',
     icon: Icons.insert_chart_outlined,
   ),
   _OperationalMenuItem(
@@ -12850,7 +14286,7 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ),
   _OperationalMenuItem(
     id: 'settings',
-    label: 'ConfiguraÃ§Ãµes',
+    label: 'Configuracoes',
     icon: Icons.settings_outlined,
   ),
 ];
@@ -12881,6 +14317,11 @@ const List<_OperationalMenuItem> _pixeltiPilotMenu = [
     id: 'alerts',
     label: 'Alertas',
     icon: Icons.warning_amber_outlined,
+  ),
+  _OperationalMenuItem(
+    id: 'maintenance',
+    label: 'Manutencao',
+    icon: Icons.build_outlined,
   ),
   _OperationalMenuItem(
     id: 'reports',

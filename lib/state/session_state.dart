@@ -1,4 +1,9 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_constants.dart';
 import '../core/tenant_config.dart';
@@ -68,13 +73,21 @@ final traccarClientProvider = Provider<TraccarClient>((ref) {
 });
 
 class SessionController extends StateNotifier<SessionState> {
+  static const _sessionPrefsKey = 'soutracking.session.v1';
+  static const _idleTimeout = Duration(minutes: 45);
+  static const _idleCheckInterval = Duration(minutes: 1);
+
   SessionController(this._client, this._ref)
-      : super(const SessionState(status: SessionStatus.idle)) {
+      : super(const SessionState(status: SessionStatus.loading)) {
     logTraccarBaseUrl();
+    _restoreSession();
   }
 
   final TraccarClient _client;
   final Ref _ref;
+  Timer? _idleTimer;
+  DateTime? _lastActivityAt;
+  DateTime? _lastPersistedActivityAt;
 
   bool? _asBool(dynamic value) {
     if (value is bool) return value;
@@ -333,6 +346,8 @@ class SessionController extends StateNotifier<SessionState> {
         profileCode: 'MA',
         isAdministrator: true,
       );
+      await _persistSession(state);
+      _touchActivity();
       return;
     }
     try {
@@ -397,6 +412,8 @@ class SessionController extends StateNotifier<SessionState> {
         profileCode: profileCode,
         isAdministrator: session.user['administrator'] == true,
       );
+      await _persistSession(state);
+      _touchActivity();
     } catch (e) {
       state = state.copyWith(
         status: SessionStatus.error,
@@ -420,8 +437,170 @@ class SessionController extends StateNotifier<SessionState> {
       // Mantem logout local mesmo com falha de rede.
     }
 
+    _stopIdleTimer();
+    await _clearPersistedSession();
     state = const SessionState(status: SessionStatus.idle);
     _ref.read(whiteLabelProvider.notifier).reset();
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_sessionPrefsKey);
+      if (stored == null || stored.trim().isEmpty) {
+        state = const SessionState(status: SessionStatus.idle);
+        return;
+      }
+
+      final json = jsonDecode(stored);
+      if (json is! Map) {
+        await _clearPersistedSession();
+        state = const SessionState(status: SessionStatus.idle);
+        return;
+      }
+
+      final data = json.cast<String, dynamic>();
+      final cookie = (data['cookie'] ?? '').toString().trim();
+      final authHeader = (data['authHeader'] ?? '').toString().trim();
+      final email = (data['email'] ?? '').toString().trim();
+      final profileCode =
+          _normalizeProfileCode(data['profileCode']?.toString());
+      final isAdministrator = data['isAdministrator'] == true;
+      final lastActivityMs = data['lastActivityMs'];
+      final lastActivity = (lastActivityMs is int)
+          ? DateTime.fromMillisecondsSinceEpoch(lastActivityMs)
+          : null;
+
+      final hasCredentials = cookie.isNotEmpty || authHeader.isNotEmpty;
+      if (!hasCredentials) {
+        await _clearPersistedSession();
+        state = const SessionState(status: SessionStatus.idle);
+        return;
+      }
+
+      if (lastActivity != null &&
+          DateTime.now().difference(lastActivity) > _idleTimeout) {
+        await _clearPersistedSession();
+        state = const SessionState(status: SessionStatus.idle);
+        return;
+      }
+
+      TenantConfig tenantConfig = TenantConfig.fallback;
+      final rawTenant = data['tenantConfig'];
+      if (rawTenant is Map) {
+        try {
+          tenantConfig =
+              TenantConfig.fromJson(rawTenant.cast<String, dynamic>());
+        } catch (_) {}
+      }
+
+      await _ref
+          .read(whiteLabelProvider.notifier)
+          .applyBranding(tenantConfig.branding);
+
+      state = SessionState(
+        status: SessionStatus.authenticated,
+        email: email.isEmpty ? null : email,
+        cookie: cookie,
+        authHeader: authHeader,
+        tenantConfig: tenantConfig,
+        profileCode: profileCode,
+        isAdministrator: isAdministrator,
+      );
+
+      _touchActivity(instantPersist: false);
+    } catch (_) {
+      await _clearPersistedSession();
+      state = const SessionState(status: SessionStatus.idle);
+    }
+  }
+
+  Future<void> _persistSession(SessionState currentState) async {
+    if (!currentState.isAuthenticated) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      _lastActivityAt ??= now;
+      final payload = {
+        'email': currentState.email ?? '',
+        'cookie': currentState.cookie ?? '',
+        'authHeader': currentState.authHeader ?? '',
+        'profileCode': currentState.profileCode,
+        'isAdministrator': currentState.isAdministrator,
+        'lastActivityMs': _lastActivityAt!.millisecondsSinceEpoch,
+        'tenantConfig': {
+          'tenantId': currentState.tenantConfig.tenantId,
+          'companyName': currentState.tenantConfig.companyName,
+          'slug': currentState.tenantConfig.slug,
+          'modules': currentState.tenantConfig.modules,
+          'isMasterAdmin': currentState.tenantConfig.isMasterAdmin,
+          'isCompanyAdmin': currentState.tenantConfig.isCompanyAdmin,
+          'branding': currentState.tenantConfig.branding,
+        },
+      };
+      await prefs.setString(_sessionPrefsKey, jsonEncode(payload));
+    } catch (_) {}
+  }
+
+  Future<void> _clearPersistedSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionPrefsKey);
+    } catch (_) {}
+  }
+
+  void markActivity() {
+    if (!state.isAuthenticated) return;
+    _touchActivity();
+  }
+
+  void _touchActivity({bool instantPersist = true}) {
+    final now = DateTime.now();
+    _lastActivityAt = now;
+    _startIdleTimer();
+    if (instantPersist) {
+      final canPersist = _lastPersistedActivityAt == null ||
+          now.difference(_lastPersistedActivityAt!) >=
+              const Duration(seconds: 20);
+      if (canPersist) {
+        _lastPersistedActivityAt = now;
+        unawaited(_persistSession(state));
+      }
+    }
+  }
+
+  void _startIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer.periodic(_idleCheckInterval, (_) {
+      final last = _lastActivityAt;
+      if (!state.isAuthenticated || last == null) return;
+      if (DateTime.now().difference(last) > _idleTimeout) {
+        unawaited(_forceLocalLogoutByInactivity());
+      }
+    });
+  }
+
+  void _stopIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _lastActivityAt = null;
+    _lastPersistedActivityAt = null;
+  }
+
+  Future<void> _forceLocalLogoutByInactivity() async {
+    _stopIdleTimer();
+    await _clearPersistedSession();
+    state = const SessionState(
+      status: SessionStatus.idle,
+      error: 'Sessao expirada por inatividade (45 min).',
+    );
+    _ref.read(whiteLabelProvider.notifier).reset();
+  }
+
+  @override
+  void dispose() {
+    _stopIdleTimer();
+    super.dispose();
   }
 }
 
