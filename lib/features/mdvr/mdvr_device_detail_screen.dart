@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -80,7 +80,7 @@ class MdvrDeviceDetailScreen extends ConsumerWidget {
                         Text('uniqueId: ${device.uniqueId ?? '-'}'),
                         Text('Status: ${device.status}'),
                         Text('Categoria: ${device.category ?? '-'}'),
-                        Text('Ultima atualizacao: ${device.lastUpdate ?? '-'}'),
+                        Text('Última atualizacao: ${device.lastUpdate ?? '-'}'),
                         const SizedBox(height: 10),
                         if (position != null) ...[
                           Text(
@@ -148,7 +148,7 @@ class MdvrDeviceDetailScreen extends ConsumerWidget {
           },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) =>
-              Center(child: Text('Erro ao carregar posicoes: $error')),
+              Center(child: Text('Erro ao carregar posições: $error')),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

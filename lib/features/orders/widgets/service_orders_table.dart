@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/service_order_models.dart';
@@ -45,7 +45,7 @@ class ServiceOrdersTable extends StatelessWidget {
                 Expanded(flex: 1, child: _HeaderCell('Prioridade')),
                 Expanded(flex: 2, child: _HeaderCell('Abertura')),
                 Expanded(flex: 2, child: _HeaderCell('Agendamento')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
+                Expanded(flex: 2, child: _HeaderCell('Ações')),
               ],
             ),
           ),

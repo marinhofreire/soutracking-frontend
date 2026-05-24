@@ -1,10 +1,39 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'sensor_presentation.dart';
+
+final _telemetryDeviceHistoryProvider =
+    FutureProvider.family.autoDispose<List<TraccarPosition>, int>(
+  (ref, deviceId) async {
+    final session = ref.watch(sessionProvider);
+    if (!session.isAuthenticated) {
+      return const <TraccarPosition>[];
+    }
+    final client = ref.watch(traccarClientProvider);
+    try {
+      final rows = await client.getPositions(
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+        deviceId: deviceId,
+      );
+      rows.sort((a, b) {
+        final ta = _parseDate(a.fixTime);
+        final tb = _parseDate(b.fixTime);
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta);
+      });
+      return rows;
+    } catch (_) {
+      return const <TraccarPosition>[];
+    }
+  },
+);
 
 class TelemetrySensorsScreen extends ConsumerStatefulWidget {
   const TelemetrySensorsScreen({super.key});
@@ -36,7 +65,7 @@ class _TelemetrySensorsScreenState
     }
     if (positionsAsync.hasError) {
       return Center(
-        child: Text('Falha ao carregar posicoes: ${positionsAsync.error}'),
+        child: Text('Falha ao carregar posições: ${positionsAsync.error}'),
       );
     }
 
@@ -67,6 +96,16 @@ class _TelemetrySensorsScreenState
     final filteredSections = _filterSensorSections(sections, _search);
     final rowsCount = filteredSections.fold<int>(
         0, (sum, section) => sum + section.items.length);
+    final historyAsync = _deviceId == null
+        ? const AsyncData<List<TraccarPosition>>(<TraccarPosition>[])
+        : ref.watch(_telemetryDeviceHistoryProvider(_deviceId!));
+    final eventsAsync = _deviceId == null
+        ? const AsyncData<List<Map<String, dynamic>>>(
+            <Map<String, dynamic>>[],
+          )
+        : ref.watch(deviceEventsProvider(_deviceId!));
+    final deviceHistory =
+        historyAsync.valueOrNull ?? const <TraccarPosition>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,9 +113,19 @@ class _TelemetrySensorsScreenState
         _buildToolbar(devices, rowsCount),
         const SizedBox(height: 10),
         _buildTelemetryGrid(snapshots),
+        if (selectedSnapshot != null) ...[
+          const SizedBox(height: 10),
+          _buildSelectedVehicleHeader(selectedSnapshot),
+        ],
         const SizedBox(height: 10),
         Expanded(
-          child: _buildSensorDetails(filteredSections),
+          child: _buildSensorDetails(
+            selectedSnapshot: selectedSnapshot,
+            filteredSections: filteredSections,
+            deviceHistory: deviceHistory,
+            historyLoading: historyAsync.isLoading,
+            eventsAsync: eventsAsync,
+          ),
         ),
       ],
     );
@@ -110,7 +159,7 @@ class _TelemetrySensorsScreenState
             child: TextField(
               onChanged: (value) => setState(() => _search = value),
               decoration: const InputDecoration(
-                hintText: 'Buscar sensor (ex: ignicao, bateria)',
+                hintText: 'Buscar sensor (ex: ignição, bateria)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -154,9 +203,9 @@ class _TelemetrySensorsScreenState
                 _TelemetryHeaderCell(flex: 16, label: 'Status'),
                 _TelemetryHeaderCell(flex: 26, label: 'Equipamento'),
                 _TelemetryHeaderCell(flex: 16, label: 'IMEI / ID'),
-                _TelemetryHeaderCell(flex: 18, label: 'Ultima conexao'),
+                _TelemetryHeaderCell(flex: 18, label: 'Última conexão'),
                 _TelemetryHeaderCell(flex: 10, label: 'Velocidade'),
-                _TelemetryHeaderCell(flex: 8, label: 'Ignicao'),
+                _TelemetryHeaderCell(flex: 8, label: 'Ignição'),
                 _TelemetryHeaderCell(flex: 10, label: 'Bateria'),
                 _TelemetryHeaderCell(flex: 10, label: 'Sinal GSM'),
               ],
@@ -313,71 +362,358 @@ class _TelemetrySensorsScreenState
     );
   }
 
-  Widget _buildSensorDetails(List<SensorDisplaySection> filteredSections) {
+  Widget _buildSelectedVehicleHeader(_TelemetryDeviceSnapshot snapshot) {
+    final statusText = snapshot.device.status.trim().toLowerCase() == 'online'
+        ? 'Online'
+        : snapshot.device.status.trim().toLowerCase() == 'offline'
+            ? 'Offline'
+            : 'Sem comunicação';
     return _TranslucentCard(
-      child: filteredSections.isEmpty
-          ? const Center(
-              child: Text(
-                'Sensores nao recebidos para o dispositivo selecionado.',
-                style: TextStyle(
-                  color: Color(0xFF526684),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            )
-          : ListView(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.directions_car_filled_rounded,
+            color: Color(0xFF176EEB),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final section in filteredSections) ...[
-                  Text(
-                    section.title,
-                    style: const TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w900,
-                    ),
+                Text(
+                  snapshot.device.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
                   ),
-                  const SizedBox(height: 6),
-                  for (final item in section.items) ...[
-                    Row(
-                      children: [
-                        _BlinkingIcon(
-                          enabled: _sensorShouldBlink(item),
-                          child: Icon(
-                            item.icon,
-                            size: 16,
-                            color: _sensorColor(item),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 4,
-                          child: Text(
-                            item.label,
-                            style: const TextStyle(
-                              color: Color(0xFF1F2A44),
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          flex: 3,
-                          child: Text(
-                            item.value,
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: _sensorValueColor(item),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 10),
-                  ],
-                  const SizedBox(height: 8),
-                ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$statusText • Última atualização: ${snapshot.lastConnectionLabel}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF526684),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          _HeaderQuickMetric(
+            label: 'Velocidade',
+            value: snapshot.speedLabel,
+            color: snapshot.speedKmh >= 1
+                ? const Color(0xFF16A34A)
+                : const Color(0xFF64748B),
+          ),
+          const SizedBox(width: 6),
+          _HeaderQuickMetric(
+            label: 'Sinal',
+            value: snapshot.gsmLabel,
+            color: _gsmColor(snapshot.gsmLevel),
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildSensorDetails({
+    required _TelemetryDeviceSnapshot? selectedSnapshot,
+    required List<SensorDisplaySection> filteredSections,
+    required List<TraccarPosition> deviceHistory,
+    required bool historyLoading,
+    required AsyncValue<List<Map<String, dynamic>>> eventsAsync,
+  }) {
+    if (selectedSnapshot == null) {
+      return const _TranslucentCard(
+        child: Center(
+          child: Text(
+            'Selecione um dispositivo para visualizar a telemetria.',
+            style: TextStyle(
+              color: Color(0xFF526684),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final events = _sortedEvents(eventsAsync.valueOrNull ?? const []);
+
+    return _TranslucentCard(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _buildTelemetryOverviewGrid(
+            snapshot: selectedSnapshot,
+            history: deviceHistory,
+            loading: historyLoading,
+          ),
+          const SizedBox(height: 10),
+          _buildEventsPanel(
+            events: events,
+            loading: eventsAsync.isLoading,
+          ),
+          const SizedBox(height: 10),
+          if (filteredSections.isEmpty)
+            const Text(
+              'Sensores não recebidos para o dispositivo selecionado.',
+              style: TextStyle(
+                color: Color(0xFF526684),
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            for (final section in filteredSections) ...[
+              Text(
+                section.title,
+                style: const TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final item in section.items) ...[
+                Row(
+                  children: [
+                    _BlinkingIcon(
+                      enabled: _sensorShouldBlink(item),
+                      child: Icon(
+                        item.icon,
+                        size: 16,
+                        color: _sensorColor(item),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        item.label,
+                        style: const TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        item.value,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: _sensorValueColor(item),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 10),
+              ],
+              const SizedBox(height: 8),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTelemetryOverviewGrid({
+    required _TelemetryDeviceSnapshot snapshot,
+    required List<TraccarPosition> history,
+    required bool loading,
+  }) {
+    final recentRows = history.take(24).toList(growable: false);
+    final speedSeries = [
+      for (final row in recentRows.reversed) (row.speed ?? 0) * 1.852,
+    ];
+    final batterySeries = [
+      for (final row in recentRows.reversed)
+        _attrDouble(
+              row.attributes ?? const <String, dynamic>{},
+              const ['batteryLevel', 'batteryPercent', 'deviceBatteryLevel'],
+            ) ??
+            0,
+    ];
+    final gsmSeries = [
+      for (final row in recentRows.reversed)
+        _attrDouble(
+              row.attributes ?? const <String, dynamic>{},
+              const ['gsm', 'signal', 'gsmSignal'],
+            ) ??
+            0,
+    ];
+    final ignitionSeries = [
+      for (final row in recentRows.reversed)
+        _attrBool(
+              row.attributes ?? const <String, dynamic>{},
+              const ['ignition', 'ignitionOn'],
+            ) ==
+            true
+            ? 1.0
+            : 0.0,
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _TelemetryMetricSparkCard(
+          title: 'Velocidade',
+          value: snapshot.speedLabel,
+          color: const Color(0xFF16A34A),
+          points: speedSeries,
+          maxY: 160,
+          loading: loading,
+        ),
+        _TelemetryMetricSparkCard(
+          title: 'Bateria',
+          value: snapshot.batteryLabel,
+          color: _batteryColor(snapshot),
+          points: batterySeries,
+          maxY: 100,
+          loading: loading,
+        ),
+        _TelemetryMetricSparkCard(
+          title: 'Sinal GSM',
+          value: snapshot.gsmLabel,
+          color: _gsmColor(snapshot.gsmLevel),
+          points: gsmSeries,
+          maxY: 32,
+          loading: loading,
+        ),
+        _TelemetryMetricSparkCard(
+          title: 'Ignição',
+          value: snapshot.ignition == null
+              ? 'Não informado'
+              : snapshot.ignition!
+                  ? 'Ligada'
+                  : 'Desligada',
+          color: _ignitionColor(snapshot.ignition),
+          points: ignitionSeries,
+          maxY: 1,
+          loading: loading,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventsPanel({
+    required List<Map<String, dynamic>> events,
+    required bool loading,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Últimos eventos',
+            style: TextStyle(
+              color: Color(0xFF1F2A44),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (loading)
+            const LinearProgressIndicator(minHeight: 2.4)
+          else if (events.isEmpty)
+            const Text(
+              'Não informado',
+              style: TextStyle(
+                color: Color(0xFF60718D),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            )
+          else
+            for (final event in events.take(8)) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _formatEventType(event['type']),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _eventTimeLabel(event),
+                    style: const TextStyle(
+                      color: Color(0xFF526684),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _sortedEvents(List<Map<String, dynamic>> raw) {
+    final rows = [...raw];
+    rows.sort((a, b) {
+      final ta = _parseDate(
+        '${a['eventTime'] ?? a['serverTime'] ?? a['deviceTime'] ?? a['fixTime'] ?? ''}',
+      );
+      final tb = _parseDate(
+        '${b['eventTime'] ?? b['serverTime'] ?? b['deviceTime'] ?? b['fixTime'] ?? ''}',
+      );
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta);
+    });
+    return rows;
+  }
+
+  String _eventTimeLabel(Map<String, dynamic> event) {
+    final parsed = _parseDate(
+      '${event['eventTime'] ?? event['serverTime'] ?? event['deviceTime'] ?? event['fixTime'] ?? ''}',
+    );
+    if (parsed == null) return 'Não informado';
+    final dd = parsed.day.toString().padLeft(2, '0');
+    final mm = parsed.month.toString().padLeft(2, '0');
+    final hh = parsed.hour.toString().padLeft(2, '0');
+    final min = parsed.minute.toString().padLeft(2, '0');
+    return '$dd/$mm $hh:$min';
+  }
+
+  String _formatEventType(dynamic raw) {
+    final value = raw?.toString().trim() ?? '';
+    if (value.isEmpty) return 'Não informado';
+    final withSpaces = value
+        .replaceAllMapped(
+            RegExp(r'([a-z])([A-Z])'), (m) => '${m.group(1)} ${m.group(2)}')
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .trim();
+    if (withSpaces.isEmpty) return 'Não informado';
+    final first = withSpaces.substring(0, 1).toUpperCase();
+    final rest = withSpaces.length > 1 ? withSpaces.substring(1) : '';
+    return '$first$rest';
   }
 
   List<_TelemetryDeviceSnapshot> _buildSnapshots(
@@ -636,6 +972,189 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+class _HeaderQuickMetric extends StatelessWidget {
+  const _HeaderQuickMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 92),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF526684),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TelemetryMetricSparkCard extends StatelessWidget {
+  const _TelemetryMetricSparkCard({
+    required this.title,
+    required this.value,
+    required this.color,
+    required this.points,
+    required this.maxY,
+    required this.loading,
+  });
+
+  final String title;
+  final String value;
+  final Color color;
+  final List<double> points;
+  final double maxY;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 208,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF526684),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 28,
+            child: loading
+                ? const Center(
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 1.6),
+                    ),
+                  )
+                : CustomPaint(
+                    painter: _SparklinePainter(
+                      points: points,
+                      color: color,
+                      maxY: maxY,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  const _SparklinePainter({
+    required this.points,
+    required this.color,
+    required this.maxY,
+  });
+
+  final List<double> points;
+  final Color color;
+  final double maxY;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0xFFDDE5F0);
+    canvas.drawLine(
+      Offset(0, size.height - 1),
+      Offset(size.width, size.height - 1),
+      bgPaint,
+    );
+
+    if (points.length < 2) return;
+
+    final seriesMax =
+        points.reduce((a, b) => a > b ? a : b).clamp(1.0, maxY).toDouble();
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final x = i * (size.width / (points.length - 1));
+      final clamped = points[i].clamp(0.0, seriesMax).toDouble();
+      final y = size.height - (clamped / seriesMax) * size.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    final linePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) {
+    if (oldDelegate.points.length != points.length ||
+        oldDelegate.color != color ||
+        oldDelegate.maxY != maxY) {
+      return true;
+    }
+    for (var i = 0; i < points.length; i++) {
+      if (points[i] != oldDelegate.points[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
 class _TranslucentCard extends StatelessWidget {
   const _TranslucentCard({
     required this.child,
@@ -889,12 +1408,13 @@ String _gsmDisplayLabel({required double? gsm, required double? rssi}) {
 
 String _relativeTimeLabel(String? raw) {
   final date = _parseDate(raw);
-  if (date == null) return 'Nao informado';
+  if (date == null) return 'Não informado';
   final now = DateTime.now();
   final diff = now.difference(date);
 
   if (diff.inMinutes < 1) return 'agora';
-  if (diff.inMinutes < 60) return 'ha ${diff.inMinutes} min';
-  if (diff.inHours < 24) return 'ha ${diff.inHours} h';
-  return 'ha ${diff.inDays} d';
+  if (diff.inMinutes < 60) return 'há ${diff.inMinutes} min';
+  if (diff.inHours < 24) return 'há ${diff.inHours} h';
+  if (diff.inDays == 1) return 'há 1 dia';
+  return 'há ${diff.inDays} dias';
 }

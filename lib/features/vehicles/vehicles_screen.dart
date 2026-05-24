@@ -1,8 +1,10 @@
+﻿import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../state/session_state.dart';
+import '../telemetry/sensor_presentation.dart';
 
 final _devicePositionProvider = FutureProvider.family
     .autoDispose<TraccarPosition?, int>((ref, deviceId) async {
@@ -117,7 +119,7 @@ DateTime? _parseDateTime(dynamic value) {
 
 String _formatDateTime(DateTime? value) {
   if (value == null) {
-    return 'Nao informado';
+    return 'Não informado';
   }
   final dd = value.day.toString().padLeft(2, '0');
   final mm = value.month.toString().padLeft(2, '0');
@@ -129,7 +131,7 @@ String _formatDateTime(DateTime? value) {
 
 String _formatRelativeTime(DateTime? value) {
   if (value == null) {
-    return 'Nao informado';
+    return 'Não informado';
   }
 
   final diff = DateTime.now().difference(value);
@@ -143,27 +145,30 @@ String _formatRelativeTime(DateTime? value) {
 
   final minutes = diff.inMinutes;
   if (minutes < 60) {
-    return 'ha ${minutes}min';
+    return 'há ${minutes} min';
   }
 
   final hours = diff.inHours;
   if (hours < 24) {
-    return 'ha ${hours}h';
+    return 'há ${hours} h';
   }
 
   final days = diff.inDays;
-  return 'ha ${days}d';
+  if (days == 1) {
+    return 'há 1 dia';
+  }
+  return 'há ${days} dias';
 }
 
 String _formatBoolean(dynamic raw) {
   if (raw == null) {
-    return 'Nao informado';
+    return 'Não informado';
   }
   final parsed = _toBool(raw);
   if (parsed == null) {
-    return 'Nao informado';
+    return 'Não informado';
   }
-  return parsed ? 'Sim' : 'Nao';
+  return parsed ? 'Sim' : 'Não';
 }
 
 bool? _toBool(dynamic raw) {
@@ -188,7 +193,7 @@ bool? _toBool(dynamic raw) {
 String _eventTypeLabel(dynamic raw) {
   final value = raw?.toString().trim() ?? '';
   if (value.isEmpty) {
-    return 'Evento nao identificado';
+    return 'Evento não identificado';
   }
   final withSpace = value
       .replaceAllMapped(
@@ -197,7 +202,7 @@ String _eventTypeLabel(dynamic raw) {
       .replaceAll('-', ' ')
       .trim();
   if (withSpace.isEmpty) {
-    return 'Evento nao identificado';
+    return 'Evento não identificado';
   }
   final first = withSpace.substring(0, 1).toUpperCase();
   final rest = withSpace.length > 1 ? withSpace.substring(1) : '';
@@ -214,26 +219,43 @@ class VehiclesScreen extends ConsumerStatefulWidget {
 class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
   static const Duration _offlineStaleThreshold = Duration(minutes: 30);
 
+  final TextEditingController _searchController = TextEditingController();
+
   int? _selectedDeviceId;
+  String _groupFilter = 'Todos os grupos';
+  String _driverFilter = 'Todos os motoristas';
+  String _statusFilter = 'Todos os status';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final session = ref.watch(sessionProvider);
+    final includeTechnical = session.isAdministrator || kDebugMode;
     final devicesAsync = ref.watch(devicesProvider);
     final positionsAsync = ref.watch(positionsProvider);
 
     if (devicesAsync.isLoading || positionsAsync.isLoading) {
-      return const _LoadingPanel();
+      return const SizedBox.expand(child: _VehiclesLoadingState());
     }
 
     if (devicesAsync.hasError) {
-      return _ErrorPanel(
-        message: 'Falha ao carregar veiculos: ${devicesAsync.error}',
+      return SizedBox.expand(
+        child: _ErrorPanel(
+          message: 'Falha ao carregar veículos: ${devicesAsync.error}',
+        ),
       );
     }
 
     if (positionsAsync.hasError) {
-      return _ErrorPanel(
-        message: 'Falha ao carregar posicoes: ${positionsAsync.error}',
+      return SizedBox.expand(
+        child: _ErrorPanel(
+          message: 'Falha ao carregar posições: ${positionsAsync.error}',
+        ),
       );
     }
 
@@ -242,57 +264,119 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
     final vehicles = _buildVehicleViews(devices, positions);
     final kpis = _VehiclesKpis.fromVehicles(vehicles);
 
-    _VehicleViewData? selected;
-    if (_selectedDeviceId != null) {
-      for (final vehicle in vehicles) {
-        if (vehicle.device.id == _selectedDeviceId) {
-          selected = vehicle;
-          break;
+    final groupOptions = <String>[
+      'Todos os grupos',
+      ...{for (final item in vehicles) item.categoryLabel},
+    ];
+    final driverOptions = <String>[
+      'Todos os motoristas',
+      ...{for (final item in vehicles) _driverLabel(item)},
+    ];
+    const statusOptions = <String>[
+      'Todos os status',
+      'Online',
+      'Offline',
+      'Em movimento',
+      'Parado',
+      'Sem comunicação',
+    ];
+    final filteredVehicles = _applyFilters(vehicles);
+
+    return SizedBox.expand(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _VehiclesPageHeader(
+            onAddVehicle: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Cadastro visual de veículo em ajuste.')),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _VehiclesKpiRow(summary: kpis),
+          const SizedBox(height: 10),
+          _VehiclesFiltersBar(
+            searchController: _searchController,
+            groupOptions: groupOptions,
+            driverOptions: driverOptions,
+            statusOptions: statusOptions,
+            groupValue: _groupFilter,
+            driverValue: _driverFilter,
+            statusValue: _statusFilter,
+            onSearchChanged: (_) => setState(() {}),
+            onGroupChanged: (value) => setState(() => _groupFilter = value),
+            onDriverChanged: (value) => setState(() => _driverFilter = value),
+            onStatusChanged: (value) => setState(() => _statusFilter = value),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: filteredVehicles.isEmpty
+                ? const _EmptyVehiclesPanel()
+                : _VehiclesListPanel(
+                    vehicles: filteredVehicles,
+                    selectedDeviceId: _selectedDeviceId,
+                    onSelect: (vehicle) {
+                      setState(() => _selectedDeviceId = vehicle.device.id);
+                    },
+                  ),
+          ),
+          if (_selectedDeviceId != null && includeTechnical) ...[
+            const SizedBox(height: 10),
+            _VehicleDetailsInlinePanel(selectedDeviceId: _selectedDeviceId!),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _driverLabel(_VehicleViewData vehicle) {
+    final raw = vehicle.device.attributes?['driverName'];
+    final label = raw?.toString().trim() ?? '';
+    return label.isEmpty ? 'Não informado' : label;
+  }
+
+  String _statusLabel(_VehicleViewData vehicle) {
+    if (vehicle.isMoving) return 'Em movimento';
+    if (vehicle.isOperationalOnline) return 'Parado';
+    final normalized = vehicle.operationalStatusLabel.toLowerCase();
+    if (normalized.contains('unknown')) return 'Sem comunicação';
+    return 'Offline';
+  }
+
+  List<_VehicleViewData> _applyFilters(List<_VehicleViewData> vehicles) {
+    final query = _searchController.text.trim().toLowerCase();
+    return vehicles.where((vehicle) {
+      if (query.isNotEmpty) {
+        final driver = _driverLabel(vehicle).toLowerCase();
+        final plate = vehicle.identifier.toLowerCase();
+        final name = vehicle.nameLabel.toLowerCase();
+        final group = vehicle.categoryLabel.toLowerCase();
+        final found = plate.contains(query) ||
+            name.contains(query) ||
+            driver.contains(query) ||
+            group.contains(query);
+        if (!found) {
+          return false;
         }
       }
-    }
 
-    AsyncValue<TraccarPosition?>? selectedPositionAsync;
-    AsyncValue<List<Map<String, dynamic>>>? selectedEventsAsync;
+      if (_groupFilter != 'Todos os grupos' &&
+          vehicle.categoryLabel != _groupFilter) {
+        return false;
+      }
 
-    final selectedDeviceId = _selectedDeviceId;
-    if (selectedDeviceId != null) {
-      selectedPositionAsync =
-          ref.watch(_devicePositionProvider(selectedDeviceId));
-      selectedEventsAsync = ref.watch(_deviceEventsProvider(selectedDeviceId));
-    }
+      if (_driverFilter != 'Todos os motoristas' &&
+          _driverLabel(vehicle) != _driverFilter) {
+        return false;
+      }
 
-    final selectedPosition = selectedPositionAsync?.valueOrNull;
-    final selectedEvents =
-        selectedEventsAsync?.valueOrNull ?? const <Map<String, dynamic>>[];
-    final eventsLoading = selectedEventsAsync?.isLoading == true;
+      if (_statusFilter != 'Todos os status' &&
+          _statusLabel(vehicle) != _statusFilter) {
+        return false;
+      }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _VehiclesKpiRow(summary: kpis),
-        const SizedBox(height: 10),
-        Expanded(
-          child: vehicles.isEmpty
-              ? const _EmptyVehiclesPanel()
-              : _VehiclesListPanel(
-                  vehicles: vehicles,
-                  selectedDeviceId: _selectedDeviceId,
-                  onSelect: (vehicle) {
-                    setState(() => _selectedDeviceId = vehicle.device.id);
-                  },
-                ),
-        ),
-        if (selected != null) ...[
-          const SizedBox(height: 10),
-          _VehicleDetailPanel(
-            vehicle: selected.copyWith(positionOverride: selectedPosition),
-            eventsLoading: eventsLoading,
-            recentEvents: selectedEvents,
-          ),
-        ],
-      ],
-    );
+      return true;
+    }).toList();
   }
 
   List<_VehicleViewData> _buildVehicleViews(
@@ -327,29 +411,329 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
   }
 }
 
-class _LoadingPanel extends StatelessWidget {
-  const _LoadingPanel();
+class _VehiclesPageHeader extends StatelessWidget {
+  const _VehiclesPageHeader({required this.onAddVehicle});
+
+  final VoidCallback onAddVehicle;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDE5F0)),
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
-      child: const SizedBox(
-        height: 160,
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2.2,
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4DA3FF)),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF3FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.directions_car_filled_outlined,
+              color: Color(0xFF2D8CFF),
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Veículos',
+                  style: TextStyle(
+                    color: Color(0xFF25344A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  'Cadastro e ciclo de vida da frota',
+                  style: TextStyle(
+                    color: Color(0xFF5F738F),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: onAddVehicle,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Adicionar veículo'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF2D8CFF),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VehiclesFiltersBar extends StatelessWidget {
+  const _VehiclesFiltersBar({
+    required this.searchController,
+    required this.groupOptions,
+    required this.driverOptions,
+    required this.statusOptions,
+    required this.groupValue,
+    required this.driverValue,
+    required this.statusValue,
+    required this.onSearchChanged,
+    required this.onGroupChanged,
+    required this.onDriverChanged,
+    required this.onStatusChanged,
+  });
+
+  final TextEditingController searchController;
+  final List<String> groupOptions;
+  final List<String> driverOptions;
+  final List<String> statusOptions;
+  final String groupValue;
+  final String driverValue;
+  final String statusValue;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onGroupChanged;
+  final ValueChanged<String> onDriverChanged;
+  final ValueChanged<String> onStatusChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 260,
+            child: TextField(
+              controller: searchController,
+              onChanged: onSearchChanged,
+              decoration: InputDecoration(
+                hintText: 'Buscar por placa ou ID',
+                prefixIcon: const Icon(Icons.search_rounded),
+                isDense: true,
+                filled: true,
+                fillColor: const Color(0xFFF8FBFF),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFD6E0EE)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFD6E0EE)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF7CB0FF)),
+                ),
+              ),
+            ),
+          ),
+          _FilterDropdown(
+            label: 'Grupo',
+            options: groupOptions,
+            value: groupValue,
+            onChanged: onGroupChanged,
+          ),
+          _FilterDropdown(
+            label: 'Motorista',
+            options: driverOptions,
+            value: driverValue,
+            onChanged: onDriverChanged,
+          ),
+          _FilterDropdown(
+            label: 'Status',
+            options: statusOptions,
+            value: statusValue,
+            onChanged: onStatusChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterDropdown extends StatelessWidget {
+  const _FilterDropdown({
+    required this.label,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final List<String> options;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedValue = options.contains(value) ? value : options.first;
+    return SizedBox(
+      width: 190,
+      child: DropdownButtonFormField<String>(
+        initialValue: normalizedValue,
+        isExpanded: true,
+        items: [
+          for (final option in options)
+            DropdownMenuItem<String>(
+              value: option,
+              child: Text(
+                option,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+        ],
+        onChanged: (next) {
+          if (next != null) {
+            onChanged(next);
+          }
+        },
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          filled: true,
+          fillColor: const Color(0xFFF8FBFF),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFD6E0EE)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFD6E0EE)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF7CB0FF)),
           ),
         ),
       ),
     );
   }
 }
+
+class _VehiclesLoadingState extends StatelessWidget {
+  const _VehiclesLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _VehiclesPageHeader(onAddVehicle: _noopAction),
+        const SizedBox(height: 10),
+        const _VehiclesKpiRow(
+          summary: _VehiclesKpis(
+            total: 0,
+            online: 0,
+            offline: 0,
+            moving: 0,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          height: 64,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.84),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD6E0EE)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Expanded(child: _EmptyVehiclesPanel()),
+      ],
+    );
+  }
+}
+
+class _VehicleDetailsInlinePanel extends ConsumerWidget {
+  const _VehicleDetailsInlinePanel({required this.selectedDeviceId});
+
+  final int selectedDeviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final devices =
+        ref.watch(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+    final positions =
+        ref.watch(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
+
+    TraccarDevice? selectedDevice;
+    for (final device in devices) {
+      if (device.id == selectedDeviceId) {
+        selectedDevice = device;
+        break;
+      }
+    }
+    if (selectedDevice == null) {
+      return const SizedBox.shrink();
+    }
+
+    TraccarPosition? selectedPosition;
+    for (final position in positions) {
+      if (position.deviceId != selectedDeviceId) {
+        continue;
+      }
+      final currentTime = _parseDateTime(selectedPosition?.fixTime);
+      final nextTime = _parseDateTime(position.fixTime);
+      if (selectedPosition == null ||
+          (nextTime != null &&
+              (currentTime == null || nextTime.isAfter(currentTime)))) {
+        selectedPosition = position;
+      }
+    }
+
+    final selectedPositionAsync =
+        ref.watch(_devicePositionProvider(selectedDeviceId));
+    final selectedEventsAsync =
+        ref.watch(_deviceEventsProvider(selectedDeviceId));
+    final events =
+        selectedEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
+    final includeTechnical =
+        ref.watch(sessionProvider).isAdministrator || kDebugMode;
+
+    final vehicleData = _VehicleViewData(
+      device: selectedDevice,
+      position: selectedPosition,
+      positionOverride: selectedPositionAsync.valueOrNull,
+      offlineStaleThreshold: const Duration(minutes: 30),
+    );
+
+    return _VehicleDetailPanel(
+      vehicle: vehicleData,
+      includeTechnical: includeTechnical,
+      recentEvents: events,
+      eventsLoading: selectedEventsAsync.isLoading,
+    );
+  }
+}
+
+void _noopAction() {}
 
 class _ErrorPanel extends StatelessWidget {
   const _ErrorPanel({required this.message});
@@ -360,9 +744,9 @@ class _ErrorPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.86),
+        color: const Color(0xD9FFFFFF),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDE5F0)),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
       child: SizedBox(
         height: 160,
@@ -373,7 +757,7 @@ class _ErrorPanel extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF1F2A44),
+                color: Color(0xFF25344A),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -481,13 +865,21 @@ class _KpiCard extends StatelessWidget {
       width: 186,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+        color: const Color(0xE6FFFFFF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.46)),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 18),
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -496,7 +888,7 @@ class _KpiCard extends StatelessWidget {
                 Text(
                   value,
                   style: const TextStyle(
-                    color: Color(0xFF1F2A44),
+                    color: Color(0xFF25344A),
                     fontWeight: FontWeight.w800,
                     fontSize: 20,
                   ),
@@ -506,7 +898,7 @@ class _KpiCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF526684),
+                    color: Color(0xFF5F738F),
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -527,15 +919,15 @@ class _EmptyVehiclesPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.86),
+        color: const Color(0xD9FFFFFF),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDE5F0)),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
       child: const Center(
         child: Text(
           'Nenhum veiculo disponivel no momento',
           style: TextStyle(
-            color: Color(0xFF1F2A44),
+            color: Color(0xFF25344A),
             fontWeight: FontWeight.w700,
             fontSize: 14,
           ),
@@ -558,18 +950,59 @@ class _VehiclesListPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      itemCount: vehicles.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final vehicle = vehicles[index];
-        final selected = vehicle.device.id == selectedDeviceId;
-        return _VehicleTile(
-          vehicle: vehicle,
-          selected: selected,
-          onTap: () => onSelect(vehicle),
-        );
-      },
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xE6FFFFFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xCCF8FBFF),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Expanded(flex: 3, child: _HeaderCell('Placa/ID')),
+                Expanded(flex: 3, child: _HeaderCell('Veiculo')),
+                Expanded(flex: 2, child: _HeaderCell('Grupo')),
+                Expanded(flex: 2, child: _HeaderCell('Motorista')),
+                Expanded(flex: 2, child: _HeaderCell('Status')),
+                Expanded(flex: 3, child: _HeaderCell('Última atualizacao')),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              itemCount: vehicles.length,
+              separatorBuilder: (_, __) => Divider(
+                color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                height: 1,
+              ),
+              itemBuilder: (context, index) {
+                final vehicle = vehicles[index];
+                final selected = vehicle.device.id == selectedDeviceId;
+                return _VehicleTile(
+                  vehicle: vehicle,
+                  selected: selected,
+                  onTap: () => onSelect(vehicle),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -590,59 +1023,45 @@ class _VehicleTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: selected
-                ? Colors.white.withValues(alpha: 0.94)
-                : Colors.white.withValues(alpha: 0.86),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF4DA3FF).withValues(alpha: 0.72)
-                  : const Color(0xFFDDE5F0),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          color: selected
+              ? const Color(0xFFEAF2FF).withValues(alpha: 0.55)
+              : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      vehicle.nameLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  _StatusChip(label: vehicle.operationalStatusLabel),
-                ],
+              Expanded(flex: 3, child: _CellText(vehicle.identifier)),
+              Expanded(flex: 3, child: _CellText(vehicle.nameLabel)),
+              Expanded(flex: 2, child: _CellText(vehicle.categoryLabel)),
+              Expanded(
+                flex: 2,
+                child: _CellText(
+                  vehicle.device.attributes?['driverName']?.toString() ??
+                      'Não informado',
+                ),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 14,
-                runSpacing: 6,
-                children: [
-                  _InfoLine(title: 'Identificador', value: vehicle.identifier),
-                  _InfoLine(
-                    title: 'Ultima comunicacao',
-                    value: vehicle.lastCommunicationLabel,
+              Expanded(
+                flex: 2,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _StatusChip(
+                    label: vehicle.isMoving
+                        ? 'Em movimento'
+                        : (vehicle.isOperationalOnline
+                            ? 'Parado'
+                            : (vehicle.operationalStatusLabel
+                                    .toLowerCase()
+                                    .contains('unknown')
+                                ? 'Sem comunicação'
+                                : 'Offline')),
                   ),
-                  _InfoLine(
-                    title: 'Tempo sem comunicacao',
-                    value: vehicle.lastCommunicationAgoLabel,
-                  ),
-                  _InfoLine(title: 'Velocidade', value: vehicle.speedLabel),
-                  _InfoLine(title: 'Ignicao', value: vehicle.ignitionLabel),
-                  _InfoLine(title: 'Lat/Lng', value: vehicle.latLngLabel),
-                ],
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: _CellText(vehicle.lastCommunicationAgoLabel),
               ),
             ],
           ),
@@ -652,28 +1071,69 @@ class _VehicleTile extends StatelessWidget {
   }
 }
 
+class _HeaderCell extends StatelessWidget {
+  const _HeaderCell(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF5F738F),
+        fontWeight: FontWeight.w700,
+        fontSize: 12,
+      ),
+    );
+  }
+}
+
+class _CellText extends StatelessWidget {
+  const _CellText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Color(0xFF334155),
+        fontWeight: FontWeight.w600,
+        fontSize: 12,
+      ),
+    );
+  }
+}
+
 class _VehicleDetailPanel extends StatelessWidget {
   const _VehicleDetailPanel({
     required this.vehicle,
+    required this.includeTechnical,
     required this.recentEvents,
     required this.eventsLoading,
   });
 
   final _VehicleViewData vehicle;
+  final bool includeTechnical;
   final List<Map<String, dynamic>> recentEvents;
   final bool eventsLoading;
 
   @override
   Widget build(BuildContext context) {
     final checklistReady = vehicle.isReadyForValidation;
+    final sections = vehicle.sensorSections(includeTechnical: includeTechnical);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
+        color: const Color(0xD9FFFFFF),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDE5F0)),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -681,7 +1141,7 @@ class _VehicleDetailPanel extends StatelessWidget {
           const Text(
             'Detalhe do veiculo',
             style: TextStyle(
-              color: Color(0xFF1F2A44),
+              color: Color(0xFF25344A),
               fontWeight: FontWeight.w800,
               fontSize: 14,
             ),
@@ -704,11 +1164,11 @@ class _VehicleDetailPanel extends StatelessWidget {
                 value: vehicle.rawStatusLabel,
               ),
               _InfoLine(
-                title: 'Ultima comunicacao',
+                title: 'Última comunicação',
                 value: vehicle.lastCommunicationLabel,
               ),
               _InfoLine(
-                title: 'Tempo desde ultima',
+                title: 'Tempo desde última',
                 value: vehicle.lastCommunicationAgoLabel,
               ),
               _InfoLine(title: 'Data GPS', value: vehicle.gpsDateLabel),
@@ -716,18 +1176,63 @@ class _VehicleDetailPanel extends StatelessWidget {
               _InfoLine(title: 'Longitude', value: vehicle.longitudeLabel),
               _InfoLine(title: 'Velocidade', value: vehicle.speedLabel),
               _InfoLine(title: 'Direcao', value: vehicle.courseLabel),
-              _InfoLine(title: 'Ignicao', value: vehicle.ignitionLabel),
-              _InfoLine(title: 'Bateria', value: vehicle.batteryLabel),
-              _InfoLine(title: 'Sinal', value: vehicle.signalLabel),
+              _InfoLine(title: 'Ignição', value: vehicle.ignitionLabel),
+              _InfoLine(title: 'Bateria interna', value: vehicle.batteryLabel),
+              _InfoLine(title: 'Sinal GSM', value: vehicle.signalLabel),
               _InfoLine(title: 'Bloqueio', value: vehicle.blockedLabel),
               _InfoLine(title: 'Movimento', value: vehicle.movementLabel),
             ],
           ),
           const SizedBox(height: 10),
           const Text(
+            'Sensores NT20/X22',
+            style: TextStyle(
+              color: Color(0xFF25344A),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (sections.isEmpty)
+            const Text(
+              'Sensores n\u00E3o recebidos',
+              style: TextStyle(
+                color: Color(0xFF5F738F),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final section in sections) ...[
+                  Text(
+                    section.title,
+                    style: const TextStyle(
+                      color: Color(0xFF25344A),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      for (final item in section.items)
+                        _InfoLine(title: item.label, value: item.value),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ),
+          const SizedBox(height: 10),
+          const Text(
             'Eventos recentes',
             style: TextStyle(
-              color: Color(0xFF1F2A44),
+              color: Color(0xFF25344A),
               fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
@@ -749,7 +1254,7 @@ class _VehicleDetailPanel extends StatelessWidget {
             const Text(
               'Sem eventos recentes para este equipamento.',
               style: TextStyle(
-                color: Color(0xFF526684),
+                color: Color(0xFF5F738F),
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),
@@ -777,7 +1282,7 @@ class _VehicleDetailPanel extends StatelessWidget {
           const Text(
             'Checklist de homologacao',
             style: TextStyle(
-              color: Color(0xFF1F2A44),
+              color: Color(0xFF25344A),
               fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
@@ -792,7 +1297,7 @@ class _VehicleDetailPanel extends StatelessWidget {
                 value: _formatBoolean(vehicle.equipmentRegistered),
               ),
               _InfoLine(
-                title: 'Comunicacao recebida',
+                title: 'Comunicação recebida',
                 value: _formatBoolean(vehicle.communicationReceived),
               ),
               _InfoLine(
@@ -804,7 +1309,7 @@ class _VehicleDetailPanel extends StatelessWidget {
                 value: _formatBoolean(recentEvents.isNotEmpty),
               ),
               _InfoLine(
-                title: 'Pronto para validacao',
+                title: 'Pronto para validação',
                 value: checklistReady ? 'Sim (homologado)' : 'Pendente',
               ),
             ],
@@ -823,13 +1328,18 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalized = label.toLowerCase();
-    final isOnline = normalized.contains('online');
-    final fgColor =
-        isOnline ? const Color(0xFF047857) : const Color(0xFFB42318);
-    final bgColor =
-        isOnline ? const Color(0xFFEAFBF3) : const Color(0xFFFDECEC);
-    final borderColor =
-        isOnline ? const Color(0xFFA7F3D0) : const Color(0xFFFBCACA);
+    final isGreen =
+        normalized.contains('parado') || normalized.contains('movimento');
+    final isWarning = normalized.contains('sem comunicacao');
+    final fgColor = isGreen
+        ? const Color(0xFF047857)
+        : (isWarning ? const Color(0xFFB45309) : const Color(0xFFB42318));
+    final bgColor = isGreen
+        ? const Color(0xFFEAFBF3)
+        : (isWarning ? const Color(0xFFFFF7ED) : const Color(0xFFFDECEC));
+    final borderColor = isGreen
+        ? const Color(0xFFA7F3D0)
+        : (isWarning ? const Color(0xFFFBD38D) : const Color(0xFFFBCACA));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -893,10 +1403,20 @@ class _VehicleViewData {
   }
 
   TraccarPosition? get _effectivePosition => positionOverride ?? position;
+  Map<String, dynamic> get _mergedAttributes => {
+        ...?device.attributes,
+        ...?_effectivePosition?.attributes,
+      };
+
+  bool get hasValidGps => hasValidGpsPosition(
+        latitude: _effectivePosition?.latitude,
+        longitude: _effectivePosition?.longitude,
+        attributes: _mergedAttributes,
+      );
 
   String get nameLabel {
     final text = device.name.trim();
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get identifier {
@@ -907,7 +1427,7 @@ class _VehicleViewData {
         device.attributes?['registration'] ??
         device.attributes?['identifier'];
     final text = raw?.toString().trim() ?? '';
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get categoryLabel {
@@ -916,14 +1436,14 @@ class _VehicleViewData {
         device.attributes?['vehicleModel'] ??
         device.attributes?['type'];
     final text = raw?.toString().trim() ?? '';
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get _normalizedStatus => device.status.trim().toLowerCase();
 
   String get rawStatusLabel {
     final text = device.status.trim();
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   bool get _statusUnknown =>
@@ -953,7 +1473,7 @@ class _VehicleViewData {
     if (isOperationalOnline) return 'Online';
     if (_statusUnknown) return 'Unknown';
     if (isOperationalOffline) return 'Offline';
-    return 'Nao informado';
+    return 'Não informado';
   }
 
   double? get speed {
@@ -966,7 +1486,7 @@ class _VehicleViewData {
 
   String get speedLabel {
     final current = speed;
-    if (current == null) return 'Nao informado';
+    if (current == null) return 'Não informado';
     return '${current.toStringAsFixed(0)} km/h';
   }
 
@@ -991,30 +1511,40 @@ class _VehicleViewData {
 
   String get ignitionLabel {
     final ignition = _ignition;
-    if (ignition == null) return 'Nao informado';
+    if (ignition == null) return 'Não informado';
     return ignition ? 'Ligada' : 'Desligada';
   }
 
   String get batteryLabel {
-    final raw = _readAttr([
+    final levelRaw = _readAttr([
       'batteryLevel',
-      'battery',
       'batteryPercent',
-      'charge',
-      'power',
-      'voltage',
-      'batteryVoltage',
       'deviceBatteryLevel',
     ]);
-    if (raw == null) return 'Nao informado';
-    if (raw is num) {
-      if (raw > 0 && raw <= 100) {
-        return '${raw.toStringAsFixed(0)}%';
-      }
-      return raw.toStringAsFixed(1);
+    final level = _toNumber(levelRaw);
+    if (level != null) {
+      final normalized = level <= 1 ? level * 100 : level;
+      return '${normalized.toStringAsFixed(0)}%';
     }
-    final text = raw.toString().trim();
-    return text.isEmpty ? 'Nao informado' : text;
+
+    final batteryRaw = _readAttr([
+      'battery',
+      'batteryVoltage',
+      'deviceBattery',
+    ]);
+    final battery = _toNumber(batteryRaw);
+    if (battery != null) {
+      return '${battery.toStringAsFixed(2).replaceAll('.', ',')} V';
+    }
+
+    final powerRaw = _readAttr(['power', 'voltage']);
+    final power = _toNumber(powerRaw);
+    if (power != null) {
+      return '${power.toStringAsFixed(2).replaceAll('.', ',')} V';
+    }
+
+    final text = (levelRaw ?? batteryRaw ?? powerRaw)?.toString().trim() ?? '';
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get signalLabel {
@@ -1026,10 +1556,10 @@ class _VehicleViewData {
       'satellites',
       'gpsSignal',
     ]);
-    if (raw == null) return 'Nao informado';
+    if (raw == null) return 'Não informado';
     if (raw is num) return raw.toString();
     final text = raw.toString().trim();
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get blockedLabel {
@@ -1041,7 +1571,7 @@ class _VehicleViewData {
       'immobilizer',
     ]);
     final value = _toBool(raw);
-    if (value == null) return 'Nao informado';
+    if (value == null) return 'Não informado';
     return value ? 'Bloqueado' : 'Desbloqueado';
   }
 
@@ -1056,30 +1586,31 @@ class _VehicleViewData {
 
   String get courseLabel {
     final raw = _readAttr(['course', 'heading']);
-    if (raw == null) return 'Nao informado';
+    if (raw == null) return 'Não informado';
     if (raw is num) {
-      return '${raw.toStringAsFixed(0)}°';
+      return '${raw.toStringAsFixed(0)}\u00B0';
     }
     final text = raw.toString().trim();
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get latLngLabel {
-    final current = _effectivePosition;
-    if (current == null) return 'Nao informado';
-    return '${current.latitude.toStringAsFixed(6)}, '
-        '${current.longitude.toStringAsFixed(6)}';
+    return formatGpsCoordinateLabel(
+      latitude: _effectivePosition?.latitude,
+      longitude: _effectivePosition?.longitude,
+      attributes: _mergedAttributes,
+    );
   }
 
   String get latitudeLabel {
     final current = _effectivePosition;
-    if (current == null) return 'Nao informado';
+    if (!hasValidGps || current == null) return 'Sem GPS v\u00E1lido';
     return current.latitude.toStringAsFixed(6);
   }
 
   String get longitudeLabel {
     final current = _effectivePosition;
-    if (current == null) return 'Nao informado';
+    if (!hasValidGps || current == null) return 'Sem GPS v\u00E1lido';
     return current.longitude.toStringAsFixed(6);
   }
 
@@ -1091,16 +1622,25 @@ class _VehicleViewData {
   DateTime? get _gpsAt => _parseDateTime(_effectivePosition?.fixTime);
 
   String get gpsDateLabel {
+    if (!hasValidGps) return 'Sem GPS v\u00E1lido';
     final gps = _gpsAt;
-    if (gps == null) return 'Nao informado';
+    if (gps == null) return 'Não informado';
     final comm = _lastCommunicationAt;
     if (comm != null) {
       final delta = gps.difference(comm).inMinutes.abs();
       if (delta <= 1) {
-        return 'Igual a ultima comunicacao';
+        return 'Igual a última comunicação';
       }
     }
     return _formatDateTime(gps);
+  }
+
+  List<SensorDisplaySection> sensorSections({required bool includeTechnical}) {
+    return buildSensorDisplaySections(
+      deviceAttributes: device.attributes,
+      positionAttributes: _effectivePosition?.attributes,
+      includeTechnical: includeTechnical,
+    );
   }
 
   bool get equipmentRegistered => device.id > 0;
@@ -1111,4 +1651,14 @@ class _VehicleViewData {
 
   bool get isReadyForValidation =>
       equipmentRegistered && communicationReceived && positionReceived;
+
+  double? _toNumber(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final normalized = value.trim();
+      if (normalized.isEmpty) return null;
+      return double.tryParse(normalized.replaceAll(',', '.'));
+    }
+    return null;
+  }
 }

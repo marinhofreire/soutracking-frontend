@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/inventory_models.dart';
@@ -46,8 +46,8 @@ class InventoryTable extends StatelessWidget {
                 Expanded(flex: 2, child: _HeaderCell('Status')),
                 Expanded(flex: 2, child: _HeaderCell('Local')),
                 Expanded(flex: 2, child: _HeaderCell('Fornecedor')),
-                Expanded(flex: 2, child: _HeaderCell('Ultima movimentacao')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
+                Expanded(flex: 2, child: _HeaderCell('Última movimentacao')),
+                Expanded(flex: 2, child: _HeaderCell('Ações')),
               ],
             ),
           ),

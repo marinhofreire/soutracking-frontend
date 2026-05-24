@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/driver_models.dart';
@@ -36,10 +36,10 @@ class DriversTable extends StatelessWidget {
                 Expanded(flex: 2, child: _HeaderCell('CNH')),
                 Expanded(flex: 2, child: _HeaderCell('Veiculo vinculado')),
                 Expanded(flex: 2, child: _HeaderCell('Status')),
-                Expanded(flex: 2, child: _HeaderCell('Ultima atividade')),
+                Expanded(flex: 2, child: _HeaderCell('Última atividade')),
                 Expanded(flex: 2, child: _HeaderCell('Validade CNH')),
                 Expanded(flex: 1, child: _HeaderCell('Score')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
+                Expanded(flex: 2, child: _HeaderCell('Ações')),
               ],
             ),
           ),

@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -180,7 +180,7 @@ class OpenF1Client {
       ];
 
       final severityRaw = (flag.isNotEmpty ? flag : category).toLowerCase();
-      var severity = 'Medio';
+      var severity = 'Médio';
       if (severityRaw.contains('red') || severityRaw.contains('danger')) {
         severity = 'Alto';
       } else if (severityRaw.contains('green') ||

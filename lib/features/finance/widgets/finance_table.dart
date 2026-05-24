@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/finance_models.dart';
@@ -26,7 +26,7 @@ class FinanceTable extends StatelessWidget {
           const Text(
             'Cobrancas',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF25344A),
               fontWeight: FontWeight.w700,
               fontSize: 16,
             ),
@@ -35,8 +35,9 @@ class FinanceTable extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
+              color: const Color(0xFFEAF3FF),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFDCE6F4)),
             ),
             child: const Row(
               children: [
@@ -48,7 +49,7 @@ class FinanceTable extends StatelessWidget {
                 Expanded(flex: 2, child: _HeaderCell('Forma de pagamento')),
                 Expanded(flex: 2, child: _HeaderCell('Status')),
                 Expanded(flex: 2, child: _HeaderCell('Criado em')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
+                Expanded(flex: 2, child: _HeaderCell('Ações')),
               ],
             ),
           ),
@@ -155,7 +156,7 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFB8C5D9),
+        color: Color(0xFF5F738F),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),

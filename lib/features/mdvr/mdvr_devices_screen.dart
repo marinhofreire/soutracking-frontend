@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -194,7 +194,7 @@ class _MdvrDevicesScreenState extends ConsumerState<MdvrDevicesScreen> {
           },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) =>
-              Center(child: Text('Erro ao carregar posicoes: $error')),
+              Center(child: Text('Erro ao carregar posições: $error')),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

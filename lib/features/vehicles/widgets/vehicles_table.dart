@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/vehicle_models.dart';
@@ -35,10 +35,10 @@ class VehiclesTable extends StatelessWidget {
                 Expanded(flex: 3, child: _HeaderCell('Modelo')),
                 Expanded(flex: 2, child: _HeaderCell('Motorista')),
                 Expanded(flex: 2, child: _HeaderCell('Status')),
-                Expanded(flex: 2, child: _HeaderCell('Ignicao')),
+                Expanded(flex: 2, child: _HeaderCell('Ignição')),
                 Expanded(flex: 2, child: _HeaderCell('Velocidade')),
-                Expanded(flex: 2, child: _HeaderCell('Ultima atualizacao')),
-                Expanded(flex: 2, child: _HeaderCell('Acoes')),
+                Expanded(flex: 2, child: _HeaderCell('Última atualizacao')),
+                Expanded(flex: 2, child: _HeaderCell('Ações')),
               ],
             ),
           ),

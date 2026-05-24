@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../models/call_models.dart';
 
@@ -32,7 +32,7 @@ class CallsKpiRow extends StatelessWidget {
           icon: Icons.timer_off_outlined,
         ),
         _KpiCard(
-          label: 'Concluidos',
+          label: 'Concluídos',
           value: summary.closed.toString(),
           color: const Color(0xFFF59E0B),
           icon: Icons.check_circle_outline,

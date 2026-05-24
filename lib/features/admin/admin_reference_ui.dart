@@ -1,4 +1,4 @@
-import 'dart:ui';
+﻿import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -28,24 +28,18 @@ class AdminReferenceScaffold extends StatelessWidget {
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1120;
         final showDualMenuLayout = showSecondaryMenu && wide;
+
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (breadcrumbs.isNotEmpty)
-                  Text(
-                    breadcrumbs.join('  >  '),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFFB8C5D9),
+            if (breadcrumbs.isNotEmpty)
+              Text(
+                breadcrumbs.join('  >  '),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF5F738F),
                       fontWeight: FontWeight.w600,
                     ),
-                  ),
-              ],
-            ),
+              ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -53,48 +47,55 @@ class AdminReferenceScaffold extends StatelessWidget {
                   child: Text(
                     title,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF25344A),
+                        ),
                   ),
                 ),
                 if (action != null) action!,
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             child,
           ],
         );
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-          child: showDualMenuLayout
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 240,
-                      child: AdminGlassPanel(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 12,
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1560),
+              child: showDualMenuLayout
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 248,
+                          child: AdminGlassPanel(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 12,
+                            ),
+                            child:
+                                AdminSecondaryMenu(selectedKey: selectedMenu),
+                          ),
                         ),
-                        child: AdminSecondaryMenu(selectedKey: selectedMenu),
-                      ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: AdminGlassPanel(
+                            padding: const EdgeInsets.all(18),
+                            child: content,
+                          ),
+                        ),
+                      ],
+                    )
+                  : AdminGlassPanel(
+                      padding: const EdgeInsets.all(18),
+                      child: content,
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: AdminGlassPanel(
-                        padding: const EdgeInsets.all(20),
-                        child: content,
-                      ),
-                    ),
-                  ],
-                )
-              : AdminGlassPanel(
-                  padding: const EdgeInsets.all(20),
-                  child: content,
-                ),
+            ),
+          ),
         );
       },
     );
@@ -117,24 +118,24 @@ class AdminGlassPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const panelSurface = Color(0xEB12161D);
-    const panelBorder = Color(0x40FFFFFF);
+    final panelSurface = Colors.white.withValues(alpha: 0.84);
+    const panelBorder = Color(0xFFDCE6F4);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
             color: backgroundColor ?? panelSurface,
-            borderRadius: BorderRadius.circular(26),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: borderColor ?? panelBorder),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x220F172A),
-                blurRadius: 28,
-                offset: Offset(0, 18),
+                color: Color(0x1A1A2B44),
+                blurRadius: 18,
+                offset: Offset(0, 8),
               ),
             ],
           ),
@@ -151,20 +152,20 @@ class AdminSecondaryMenu extends StatelessWidget {
   final String selectedKey;
 
   static const _items = <_AdminMenuItem>[
-    _AdminMenuItem('users', 'Usuários Internos', Icons.people_alt_outlined),
-    _AdminMenuItem('profiles', 'Perfis e Usuários', Icons.badge_outlined),
+    _AdminMenuItem('users', 'UsuÃ¡rios Internos', Icons.people_alt_outlined),
+    _AdminMenuItem('profiles', 'Perfis e UsuÃ¡rios', Icons.badge_outlined),
     _AdminMenuItem(
       'permissions-access',
-      'Permissões',
+      'PermissÃµes',
       Icons.verified_user_outlined,
     ),
-    _AdminMenuItem('preferences', 'Preferências', Icons.tune_outlined),
+    _AdminMenuItem('preferences', 'PreferÃªncias', Icons.tune_outlined),
     _AdminMenuItem(
       'notifications',
-      'Notificações',
+      'NotificaÃ§Ãµes',
       Icons.notifications_none_outlined,
     ),
-    _AdminMenuItem('announcement', 'Anúncio', Icons.campaign_outlined),
+    _AdminMenuItem('announcement', 'AnÃºncio', Icons.campaign_outlined),
     _AdminMenuItem('logs', 'Logs', Icons.article_outlined),
     _AdminMenuItem('server', 'Servidor', Icons.dns_outlined),
     _AdminMenuItem('audit', 'Auditoria', Icons.policy_outlined),
@@ -183,22 +184,22 @@ class AdminSecondaryMenu extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: const Color(0x1400BFA5),
+                  color: const Color(0xFFEAF3FF),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.admin_panel_settings_outlined,
-                  color: Color(0xFF0DAF9F),
+                  color: Color(0xFF176EEB),
                   size: 18,
                 ),
               ),
               const SizedBox(width: 10),
               Text(
-                'Administração',
+                'AdministraÃ§Ã£o',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+                      color: const Color(0xFF25344A),
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
             ],
           ),
@@ -221,10 +222,10 @@ class _AdminMenuTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
       decoration: BoxDecoration(
-        color: selected ? const Color(0x2E8EC5FF) : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        color: selected ? const Color(0xFFEAF3FF) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: selected ? const Color(0x6697CBFF) : Colors.transparent,
+          color: selected ? const Color(0xFFC7DAF7) : Colors.transparent,
         ),
       ),
       child: ListTile(
@@ -232,15 +233,17 @@ class _AdminMenuTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         leading: Icon(
           item.icon,
-          color: selected ? const Color(0xFF9FCEFF) : Colors.white70,
+          color: selected ? const Color(0xFF176EEB) : const Color(0xFF5F738F),
           size: 18,
         ),
         title: Text(
           item.label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: selected ? Colors.white : Colors.white70,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-          ),
+                color: selected
+                    ? const Color(0xFF25344A)
+                    : const Color(0xFF5F738F),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              ),
         ),
       ),
     );
@@ -266,10 +269,10 @@ class AdminActionButton extends StatelessWidget {
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF3E8BFF),
+        backgroundColor: const Color(0xFF2C7BEA),
         foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -285,8 +288,9 @@ class AdminTableHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF6F9FC),
+        color: Colors.white.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
       child: Row(
         children: [
@@ -296,9 +300,9 @@ class AdminTableHeader extends StatelessWidget {
               child: Text(
                 _headers[i],
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: const Color(0xFF7A8CA8),
-                  fontWeight: FontWeight.w700,
-                ),
+                      color: const Color(0xFF5F738F),
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
             ),
         ],
@@ -326,9 +330,9 @@ class AdminStatusChip extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }
@@ -359,9 +363,9 @@ class AdminAvatar extends StatelessWidget {
       child: Text(
         initials,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-        ),
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }
@@ -499,3 +503,4 @@ class _AdminMenuItem {
   final String label;
   final IconData icon;
 }
+
