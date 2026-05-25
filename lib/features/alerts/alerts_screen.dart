@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/display_text_formatter.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../admin/admin_reference_ui.dart';
@@ -27,8 +28,8 @@ final alertsEventsByPeriodProvider =
       from: from,
       to: now,
     );
-  } catch (_) {
-    return [];
+  } catch (error) {
+    throw Exception('N\u00e3o foi poss\u00edvel carregar alertas: $error');
   }
 });
 
@@ -44,9 +45,8 @@ final alertsRealDevicesProvider =
       cookie: session.cookie,
       authHeader: session.authHeader,
     );
-  } catch (_) {
-    // No menu Alertas, evita fallback mock para não inventar dados.
-    return [];
+  } catch (error) {
+    throw Exception('N\u00e3o foi poss\u00edvel carregar alertas: $error');
   }
 });
 
@@ -81,15 +81,25 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(alertsRealDevicesProvider);
     final listAsync = ref.watch(alertsEventsByPeriodProvider(_period));
+    final notificationsAsync = ref.watch(notificationsProvider);
+    final permissionsAsync = ref.watch(permissionsProvider);
+    final ruleFilter = _resolveRuleFilter(
+      notificationsAsync: notificationsAsync,
+      permissionsAsync: permissionsAsync,
+    );
 
     return AdminReferenceScaffold(
       title: 'Alertas',
-      breadcrumbs: const ['Operacao', 'Alertas'],
+      breadcrumbs: const ['Operação', 'Alertas'],
       selectedMenu: 'alerts',
       child: devicesAsync.when(
         data: (devices) => listAsync.when(
           data: (events) {
-            final records = _mapEvents(events, devices);
+            final records = _mapEvents(
+              events,
+              devices,
+              ruleFilter: ruleFilter,
+            );
             final summary = _buildSummary(records);
             final filtered = _applyFilters(records);
 
@@ -157,20 +167,18 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   onVehicleChanged: (value) => setState(() => _vehicle = value),
                 ),
                 const SizedBox(height: 12),
-                const _DevelopmentNotice(),
-                const SizedBox(height: 12),
                 AlertsTable(records: filtered),
               ],
             );
           },
           loading: () => const _LoadingPanel(),
           error: (error, _) => _ErrorPanel(
-            message: 'Falha ao carregar alertas: $error',
+            message: 'N\u00e3o foi poss\u00edvel carregar alertas',
           ),
         ),
         loading: () => const _LoadingPanel(),
         error: (error, _) => _ErrorPanel(
-          message: 'Falha ao carregar veículos: $error',
+          message: 'N\u00e3o foi poss\u00edvel carregar alertas',
         ),
       ),
     );
@@ -192,9 +200,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   }
 
   List<AlertRecord> _mapEvents(
-    List<Map<String, dynamic>> events,
-    List<TraccarDevice> devices,
-  ) {
+      List<Map<String, dynamic>> events, List<TraccarDevice> devices,
+      {required _AlertRuleFilter ruleFilter}) {
     final devicesById = <int, TraccarDevice>{
       for (final item in devices) item.id: item
     };
@@ -212,6 +219,13 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       final ignition = _resolveIgnition(event, attributes);
       final battery = _resolveBattery(event, attributes);
       final address = _resolveAddress(event, attributes);
+      if (!ruleFilter.matches(
+        eventType: typeCode,
+        deviceId: deviceId,
+        attributes: attributes,
+      )) {
+        continue;
+      }
 
       records.add(
         AlertRecord(
@@ -235,6 +249,25 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
 
     records.sort((a, b) => b.dateTime.compareTo(a.dateTime));
     return records;
+  }
+
+  _AlertRuleFilter _resolveRuleFilter({
+    required AsyncValue<List<Map<String, dynamic>>> notificationsAsync,
+    required AsyncValue<List<Map<String, dynamic>>> permissionsAsync,
+  }) {
+    final notifications = notificationsAsync.valueOrNull ?? const [];
+    final permissions = permissionsAsync.valueOrNull ?? const [];
+
+    if (notifications.isNotEmpty) {
+      final filter = _AlertRuleFilter.fromServer(
+        notifications: notifications,
+        permissions: permissions,
+      );
+      if (filter.hasRules) {
+        return filter;
+      }
+    }
+    return _AlertRuleFilter.fallback();
   }
 
   AlertKpiSummary _buildSummary(List<AlertRecord> records) {
@@ -317,7 +350,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return 'Dispositivo';
     }
     final device = devicesById[deviceId];
-    final label = device?.name.trim() ?? '';
+    final label = formatDisplayText(device?.name, fallback: '').trim();
     if (label.isNotEmpty) {
       return label;
     }
@@ -398,8 +431,9 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     ];
     for (final candidate in candidates) {
       final value = candidate?.trim() ?? '';
-      if (value.isNotEmpty && value.toLowerCase() != 'null') {
-        return value;
+      final clean = formatDisplayText(value, fallback: '').trim();
+      if (clean.isNotEmpty && clean.toLowerCase() != 'null') {
+        return clean;
       }
     }
 
@@ -587,7 +621,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
           normalized == 'off' ||
           normalized == 'desligada' ||
           normalized == 'nao' ||
-          normalized == 'nÃ£o') {
+          normalized == 'não') {
         return false;
       }
     }
@@ -595,41 +629,226 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   }
 }
 
-class _DevelopmentNotice extends StatelessWidget {
-  const _DevelopmentNotice();
+class _AlertRuleFilter {
+  _AlertRuleFilter._({
+    required this.useServerRules,
+    required this.globalTypes,
+    required this.deviceIdsByType,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFED7AA)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.construction_outlined,
-            size: 18,
-            color: Color(0xFFB45309),
-          ),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Submenus especificos de alertas: Em desenvolvimento.',
-              style: TextStyle(
-                color: Color(0xFF9A3412),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
+  final bool useServerRules;
+  final Set<String> globalTypes;
+  final Map<String, Set<int>> deviceIdsByType;
+
+  factory _AlertRuleFilter.fallback() {
+    return _AlertRuleFilter._(
+      useServerRules: false,
+      globalTypes: const <String>{},
+      deviceIdsByType: const <String, Set<int>>{},
     );
+  }
+
+  factory _AlertRuleFilter.fromServer({
+    required List<Map<String, dynamic>> notifications,
+    required List<Map<String, dynamic>> permissions,
+  }) {
+    final globalTypes = <String>{};
+    final deviceIdsByType = <String, Set<int>>{};
+
+    final deviceIdsByGroup = <int, Set<int>>{};
+    for (final permission in permissions) {
+      final groupId = _asInt(permission['groupId']);
+      final deviceId = _asInt(permission['deviceId']);
+      if (groupId == null || deviceId == null) {
+        continue;
+      }
+      deviceIdsByGroup.putIfAbsent(groupId, () => <int>{}).add(deviceId);
+    }
+
+    for (final notification in notifications) {
+      if (!_isNotificationEnabled(notification)) {
+        continue;
+      }
+
+      final type = _normalizeType(notification['type']);
+      if (type.isEmpty) {
+        continue;
+      }
+
+      final notificationId = _asInt(notification['id']);
+      final always = _asBool(notification['always']) == true;
+      if (always || notificationId == null) {
+        globalTypes.add(type);
+        continue;
+      }
+
+      var scoped = false;
+      var hasUserOnlyLink = false;
+      final typeDevices = deviceIdsByType.putIfAbsent(type, () => <int>{});
+
+      for (final permission in permissions) {
+        if (_asInt(permission['notificationId']) != notificationId) {
+          continue;
+        }
+
+        scoped = true;
+        final permissionDeviceId = _asInt(permission['deviceId']);
+        if (permissionDeviceId != null) {
+          typeDevices.add(permissionDeviceId);
+        }
+
+        final permissionGroupId = _asInt(permission['groupId']);
+        if (permissionGroupId != null) {
+          final groupDevices = deviceIdsByGroup[permissionGroupId];
+          if (groupDevices != null && groupDevices.isNotEmpty) {
+            typeDevices.addAll(groupDevices);
+          }
+        }
+
+        if (permissionDeviceId == null &&
+            permissionGroupId == null &&
+            _asInt(permission['userId']) != null) {
+          hasUserOnlyLink = true;
+        }
+      }
+
+      final noDeviceScope = typeDevices.isEmpty;
+      if (!scoped || hasUserOnlyLink || noDeviceScope) {
+        globalTypes.add(type);
+      }
+    }
+
+    return _AlertRuleFilter._(
+      useServerRules: true,
+      globalTypes: globalTypes,
+      deviceIdsByType: deviceIdsByType,
+    );
+  }
+
+  bool matches({
+    required String eventType,
+    required int? deviceId,
+    required Map<String, dynamic> attributes,
+  }) {
+    final candidates = _eventTypeCandidates(eventType, attributes);
+    if (candidates.isEmpty) {
+      return false;
+    }
+
+    if (!useServerRules) {
+      return true;
+    }
+
+    for (final candidate in candidates) {
+      if (globalTypes.contains(candidate)) {
+        return true;
+      }
+      final allowedDevices = deviceIdsByType[candidate];
+      if (deviceId != null &&
+          allowedDevices != null &&
+          allowedDevices.contains(deviceId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool get hasRules {
+    if (globalTypes.isNotEmpty) {
+      return true;
+    }
+    for (final ids in deviceIdsByType.values) {
+      if (ids.isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static Set<String> _eventTypeCandidates(
+    String eventType,
+    Map<String, dynamic> attributes,
+  ) {
+    final items = <String>{};
+    final normalizedType = _normalizeType(eventType);
+    if (normalizedType.isNotEmpty) {
+      items.add(normalizedType);
+    }
+
+    final alarm = _normalizeType(attributes['alarm']);
+    if (alarm.isNotEmpty) {
+      items.add(alarm);
+    }
+
+    final event = _normalizeType(attributes['event']);
+    if (event.isNotEmpty) {
+      items.add(event);
+    }
+
+    return items;
+  }
+
+  static bool _isNotificationEnabled(Map<String, dynamic> notification) {
+    final disabled = _asBool(notification['disabled']);
+    if (disabled == true) {
+      return false;
+    }
+    final enabled = _asBool(notification['enabled']);
+    if (enabled == false) {
+      return false;
+    }
+    return true;
+  }
+
+  static String _normalizeType(dynamic value) {
+    final text = value?.toString().trim().toLowerCase() ?? '';
+    if (text.isEmpty || text == 'null') {
+      return '';
+    }
+    return text.replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  static bool? _asBool(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value > 0;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' ||
+          normalized == '1' ||
+          normalized == 'yes' ||
+          normalized == 'sim' ||
+          normalized == 'on') {
+        return true;
+      }
+      if (normalized == 'false' ||
+          normalized == '0' ||
+          normalized == 'no' ||
+          normalized == 'nao' ||
+          normalized == 'off') {
+        return false;
+      }
+    }
+    return null;
   }
 }
 
@@ -662,7 +881,7 @@ class _ErrorPanel extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFFDDE5F0),
+              color: Color(0xFF5F738F),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -671,3 +890,4 @@ class _ErrorPanel extends StatelessWidget {
     );
   }
 }
+

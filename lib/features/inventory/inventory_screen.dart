@@ -69,7 +69,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
     return AdminReferenceScaffold(
       title: 'Estoque',
-      breadcrumbs: const ['Operacao', 'Estoque'],
+      breadcrumbs: const ['Operação', 'Estoque'],
       selectedMenu: 'inventory',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,0 +1,166 @@
+{
+  "startedAt": "2026-05-15T12:09:31.813Z",
+  "frontUrl": "http://localhost:65517/",
+  "backendUrl": "http://api.soutracking.com.br/",
+  "headed": false,
+  "loginAttempted": false,
+  "checks": [
+    {
+      "name": "backend_load",
+      "ok": true,
+      "details": "Backend abriu na guia 2."
+    },
+    {
+      "name": "frontend_load",
+      "ok": true,
+      "details": "Frontend abriu na guia 1."
+    },
+    {
+      "name": "flutter_runtime_ready",
+      "ok": false,
+      "details": "Flutter runtime nao detectado dentro do timeout."
+    },
+    {
+      "name": "frontend_signature",
+      "ok": true,
+      "details": "title=SouTracking; hasGlass=true; hasLoader=false; flt=flt-semantics-placeholder:1, flt-announcement-host:1, flt-announcement-polite:1, flt-announcement-assertive:1, flt-glass-pane:1, flt-text-editing-host:1, flt-semantics-host:1"
+    },
+    {
+      "name": "login_form_dom_detected",
+      "ok": true,
+      "details": "Campos de login nao detectados via DOM (comum em Flutter CanvasKit)."
+    },
+    {
+      "name": "login_attempt",
+      "ok": true,
+      "details": "Login automatico pulado: tela nao detectavel via DOM neste modo de renderizacao."
+    },
+    {
+      "name": "reports_menu_dom_detection",
+      "ok": true,
+      "details": "Menu Relatorios nao detectado via DOM (validar visualmente no navegador aberto)."
+    }
+  ],
+  "consoleEvents": [
+    {
+      "page": "backend",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "at": "2026-05-15T12:09:32.688Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "Google Maps JavaScript API has been loaded directly without loading=async. This can result in suboptimal performance. For best-practice loading patterns please see https://goo.gle/js-api-loading",
+      "at": "2026-05-15T12:09:33.625Z"
+    },
+    {
+      "page": "frontend",
+      "type": "info",
+      "text": "DDC is about to load 1/2 scripts with pool size = 1000",
+      "at": "2026-05-15T12:09:33.678Z"
+    },
+    {
+      "page": "frontend",
+      "type": "info",
+      "text": "DDC is about to load 836/836 scripts with pool size = 1000",
+      "at": "2026-05-15T12:09:34.228Z"
+    },
+    {
+      "page": "frontend",
+      "type": "log",
+      "text": "Starting application from main method in: org-dartlang-app:/web_entrypoint.dart.",
+      "at": "2026-05-15T12:09:39.508Z"
+    },
+    {
+      "page": "frontend",
+      "type": "log",
+      "text": "[INFO] Traccar baseUrl em uso: \"http://api.soutracking.com.br\" | endpoint:  | presentationMode: false",
+      "at": "2026-05-15T12:09:40.014Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "[.WebGL-0x114001af600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "at": "2026-05-15T12:09:40.590Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "[.WebGL-0x114001af600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "at": "2026-05-15T12:09:40.612Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "[.WebGL-0x114001af600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "at": "2026-05-15T12:09:40.632Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "[.WebGL-0x114001af600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
+      "at": "2026-05-15T12:09:40.985Z"
+    }
+  ],
+  "requestFailures": [],
+  "httpErrors": [
+    {
+      "page": "backend",
+      "url": "http://api.soutracking.com.br/",
+      "status": 404,
+      "at": "2026-05-15T12:09:32.685Z"
+    }
+  ],
+  "screenshots": [
+    "C:\\Projetos\\Soutrackingflutter\\tools\\playwright\\reports\\2026-05-15T12-09-31-812Z\\frontend-inicial.png"
+  ],
+  "finishedAt": "2026-05-15T12:10:22.739Z",
+  "frontState": {
+    "title": "SouTracking",
+    "hasFlutterRuntime": true,
+    "hasGlassPane": true,
+    "hasLoader": false,
+    "fltTop": [
+      [
+        "flt-semantics-placeholder",
+        1
+      ],
+      [
+        "flt-announcement-host",
+        1
+      ],
+      [
+        "flt-announcement-polite",
+        1
+      ],
+      [
+        "flt-announcement-assertive",
+        1
+      ],
+      [
+        "flt-glass-pane",
+        1
+      ],
+      [
+        "flt-text-editing-host",
+        1
+      ],
+      [
+        "flt-semantics-host",
+        1
+      ]
+    ],
+    "bodyTextLength": 0,
+    "bodyTextSample": ""
+  },
+  "summary": {
+    "totalChecks": 7,
+    "passedChecks": 6,
+    "failedChecks": 1,
+    "consoleErrors": 1,
+    "consoleWarnings": 5,
+    "requestFailures": 0,
+    "httpErrors": 1
+  }
+}

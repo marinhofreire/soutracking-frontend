@@ -1,0 +1,8 @@
+{
+  "href": "http://127.0.0.1:8190/?v=static-build-check&panel=map",
+  "hasFlutterView": true,
+  "hasGlass": true,
+  "stillWhite": false,
+  "mapHints": true,
+  "loginHints": false
+}

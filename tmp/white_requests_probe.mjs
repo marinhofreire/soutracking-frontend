@@ -1,0 +1,15 @@
+﻿import { chromium } from '../tools/playwright/node_modules/playwright/index.mjs';
+const url='http://127.0.0.1:8186/?v=20260522-white-fix&panel=map';
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:1510,height:860}});
+const issues=[];
+page.on('requestfailed',r=>issues.push({type:'failed',method:r.method(),url:r.url(),err:r.failure()?.errorText}));
+page.on('response',async r=>{const s=r.status(); if(s>=400) issues.push({type:'http',status:s,url:r.url(),method:r.request().method()});});
+page.on('console',m=>issues.push({type:'console',level:m.type(),text:m.text()}));
+page.on('pageerror',e=>issues.push({type:'pageerror',text:e.message}));
+await page.goto(url,{waitUntil:'networkidle',timeout:120000});
+await page.waitForTimeout(8000);
+const scripts=await page.evaluate(()=>[...document.scripts].map(s=>s.src||'(inline)').slice(0,40));
+const bodyChildren=await page.evaluate(()=>[...document.body.children].map(c=>({tag:c.tagName.toLowerCase(),id:c.id,cls:c.className,html:c.outerHTML.slice(0,160)})));
+console.log(JSON.stringify({issues,scripts,bodyChildren},null,2));
+await browser.close();

@@ -5,6 +5,7 @@ import 'core/app_router.dart';
 import 'core/app_theme.dart';
 import 'core/white_label.dart';
 import 'features/home/home_shell.dart';
+import 'features/home/pixel_perfect_image_screens.dart';
 import 'features/login/login_screen.dart';
 import 'state/session_state.dart';
 
@@ -15,18 +16,27 @@ void main() {
 class SouFleetApp extends ConsumerWidget {
   const SouFleetApp({super.key});
 
+  bool _isPixelMode() {
+    final raw = Uri.base.queryParameters['pixel']?.trim().toLowerCase();
+    return raw == '1' || raw == 'true' || raw == 'yes';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
     final whiteLabelAsync = ref.watch(whiteLabelProvider);
+    final pixelMode = _isPixelMode();
 
     return whiteLabelAsync.when(
       data: (config) {
-        final home = session.status == SessionStatus.loading
-            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-            : session.isAuthenticated
-                ? const _SessionActivityCapture(child: HomeShell())
-                : const LoginScreen();
+        final home = pixelMode
+            ? const PixelPerfectImageScreens()
+            : session.status == SessionStatus.loading
+                ? const Scaffold(
+                    body: Center(child: CircularProgressIndicator()))
+                : session.isAuthenticated
+                    ? _SessionActivityCapture(child: HomeShell())
+                    : const LoginScreen();
         return MaterialApp(
           title: config.appName,
           theme: buildAppTheme(config),
@@ -40,14 +50,20 @@ class SouFleetApp extends ConsumerWidget {
         theme: buildAppTheme(WhiteLabelConfig.fallback),
         debugShowCheckedModeBanner: false,
         onGenerateRoute: appOnGenerateRoute,
-        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+        home: pixelMode
+            ? const PixelPerfectImageScreens()
+            : const Scaffold(body: Center(child: CircularProgressIndicator())),
       ),
       error: (_, __) => MaterialApp(
         title: WhiteLabelConfig.fallback.appName,
         theme: buildAppTheme(WhiteLabelConfig.fallback),
         debugShowCheckedModeBanner: false,
         onGenerateRoute: appOnGenerateRoute,
-        home: session.isAuthenticated ? const HomeShell() : const LoginScreen(),
+        home: pixelMode
+            ? const PixelPerfectImageScreens()
+            : session.isAuthenticated
+                ? HomeShell()
+                : const LoginScreen(),
       ),
     );
   }

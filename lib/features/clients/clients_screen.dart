@@ -40,7 +40,7 @@ class ClientsScreen extends ConsumerWidget {
 
     return AdminReferenceScaffold(
       title: 'Clientes',
-      breadcrumbs: const ['Operacao', 'Clientes'],
+      breadcrumbs: const ['Operação', 'Clientes'],
       selectedMenu: 'clients',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

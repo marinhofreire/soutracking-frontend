@@ -1,0 +1,11 @@
+﻿import { chromium } from '../tools/playwright/node_modules/playwright/index.mjs';
+const browser = await chromium.launch({headless:true});
+const page = await browser.newPage();
+await page.goto('http://127.0.0.1:8186/?v=test', {waitUntil:'domcontentloaded'});
+console.log('url1', page.url());
+await page.evaluate(() => localStorage.setItem('x','1'));
+console.log('keys1', await page.evaluate(() => Object.keys(localStorage)));
+await page.goto('http://127.0.0.1:8186/?v=test2', {waitUntil:'domcontentloaded'});
+console.log('url2', page.url());
+console.log('keys2', await page.evaluate(() => Object.keys(localStorage)));
+await browser.close();

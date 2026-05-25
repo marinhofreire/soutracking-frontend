@@ -70,6 +70,7 @@ flutter:
   assets:
     - assets/white_label.json
     - assets/branding/
+    - assets/branding/pixel_screens/
     - assets/config/menu_master.json
     - assets/markers/
 

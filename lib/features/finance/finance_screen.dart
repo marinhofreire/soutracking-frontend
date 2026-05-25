@@ -69,7 +69,7 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
 
     return AdminReferenceScaffold(
       title: 'Financeiro',
-      breadcrumbs: const ['Operacao', 'Financeiro'],
+      breadcrumbs: const ['Operação', 'Financeiro'],
       selectedMenu: 'finance',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,0 +1,15 @@
+﻿{
+  "name": "soutracking-playwright-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tabs": "node open-two-tabs.mjs",
+    "tabs:headless": "node open-two-tabs.mjs --headless --auto-close=8000",
+    "validate": "node validate-two-tabs.mjs",
+    "validate:ui": "node validate-two-tabs.mjs --headed"
+  },
+  "devDependencies": {
+    "playwright": "^1.54.0"
+  }
+}

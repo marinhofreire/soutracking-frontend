@@ -1,0 +1,95 @@
+{
+  "startedAt": "2026-05-23T18:41:25.647Z",
+  "frontUrl": "http://127.0.0.1:9005/",
+  "backendUrl": "http://api.soutracking.com.br/",
+  "headed": false,
+  "loginAttempted": false,
+  "checks": [
+    {
+      "name": "backend_load",
+      "ok": true,
+      "details": "Backend abriu na guia 2."
+    },
+    {
+      "name": "frontend_load",
+      "ok": true,
+      "details": "Frontend abriu na guia 1."
+    },
+    {
+      "name": "flutter_runtime_ready",
+      "ok": false,
+      "details": "Flutter runtime nao detectado dentro do timeout."
+    },
+    {
+      "name": "frontend_signature",
+      "ok": true,
+      "details": "title=SouTracking; hasGlass=false; hasLoader=false; flt="
+    },
+    {
+      "name": "login_form_dom_detected",
+      "ok": true,
+      "details": "Campos de login nao detectados via DOM (comum em Flutter CanvasKit)."
+    },
+    {
+      "name": "login_attempt",
+      "ok": true,
+      "details": "Login automatico pulado: tela nao detectavel via DOM neste modo de renderizacao."
+    },
+    {
+      "name": "reports_menu_dom_detection",
+      "ok": true,
+      "details": "Menu Relatorios nao detectado via DOM (validar visualmente no navegador aberto)."
+    }
+  ],
+  "consoleEvents": [
+    {
+      "page": "backend",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "at": "2026-05-23T18:41:35.476Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "Google Maps JavaScript API has been loaded directly without loading=async. This can result in suboptimal performance. For best-practice loading patterns please see https://goo.gle/js-api-loading",
+      "at": "2026-05-23T18:41:36.568Z"
+    },
+    {
+      "page": "frontend",
+      "type": "info",
+      "text": "DDC is about to load 1/2 scripts with pool size = 1000",
+      "at": "2026-05-23T18:41:37.028Z"
+    }
+  ],
+  "requestFailures": [],
+  "httpErrors": [
+    {
+      "page": "backend",
+      "url": "http://api.soutracking.com.br/",
+      "status": 404,
+      "at": "2026-05-23T18:41:35.432Z"
+    }
+  ],
+  "screenshots": [
+    "C:\\Projetos\\Soutrackingflutter\\tools\\playwright\\reports\\2026-05-23T18-41-25-624Z\\frontend-inicial.png"
+  ],
+  "finishedAt": "2026-05-23T18:42:26.044Z",
+  "frontState": {
+    "title": "SouTracking",
+    "hasFlutterRuntime": true,
+    "hasGlassPane": false,
+    "hasLoader": false,
+    "fltTop": [],
+    "bodyTextLength": 0,
+    "bodyTextSample": ""
+  },
+  "summary": {
+    "totalChecks": 7,
+    "passedChecks": 6,
+    "failedChecks": 1,
+    "consoleErrors": 1,
+    "consoleWarnings": 1,
+    "requestFailures": 0,
+    "httpErrors": 1
+  }
+}

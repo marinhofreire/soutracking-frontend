@@ -92,21 +92,21 @@ class ReportRecord {
 
   String get latitudeLabel {
     if (latitude == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return latitude!.toStringAsFixed(6);
   }
 
   String get longitudeLabel {
     if (longitude == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return longitude!.toStringAsFixed(6);
   }
 
   String get speedKmhLabel {
     if (speedKnots == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     final kmh = speedKnots! * 1.852;
     return '${kmh.toStringAsFixed(1)} km/h';
@@ -114,24 +114,24 @@ class ReportRecord {
 
   String get ignitionLabel {
     if (ignition == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return ignition! ? 'Ligada' : 'Desligada';
   }
 
   String get batteryLabel {
     final text = battery?.trim() ?? '';
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get addressLabel {
     final text = address?.trim() ?? '';
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   String get attributesSummaryLabel {
     if (attributes.isEmpty) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     final summary = <String>[];
     for (final entry in attributes.entries) {
@@ -143,7 +143,7 @@ class ReportRecord {
       if (summary.length >= 6) break;
     }
     if (summary.isEmpty) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return summary.join(' | ');
   }
@@ -203,7 +203,7 @@ extension ReportStatusView on ReportStatus {
       case ReportStatus.ready:
         return 'Pronto';
       case ReportStatus.processing:
-        return 'Processando';
+        return 'Em processamento';
       case ReportStatus.scheduled:
         return 'Agendado';
       case ReportStatus.failed:

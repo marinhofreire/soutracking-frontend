@@ -18,7 +18,7 @@ class ServiceOrdersApiService {
   Future<List<Map<String, dynamic>>> fetchOrderHistory({
     required String orderId,
   }) async {
-    // Estrutura preparada para historico de atendimento e execucao.
+    // Estrutura preparada para histórico de atendimento e execucao.
     return <Map<String, dynamic>>[];
   }
 

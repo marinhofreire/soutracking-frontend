@@ -111,7 +111,7 @@ extension ServiceTypeView on ServiceType {
       case ServiceType.trackerRemoval:
         return 'Retirada de rastreador';
       case ServiceType.preventiveMaintenance:
-        return 'Manutencao preventiva';
+        return 'Manutenção preventiva';
       case ServiceType.chipReplacement:
         return 'Troca de chip';
       case ServiceType.electricalDiagnostics:

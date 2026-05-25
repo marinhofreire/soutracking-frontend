@@ -1,0 +1,21 @@
+{
+  "beforeLogin": {
+    "href": "http://127.0.0.1:8190/?v=static-build-check&panel=map",
+    "hasFlutterView": true,
+    "hasGlass": true,
+    "isWhite": false,
+    "loginScreen": false,
+    "hasMapHints": false,
+    "textLen": 0
+  },
+  "afterLogin": {
+    "href": "http://127.0.0.1:8190/?v=static-build-check&panel=map",
+    "hasFlutterView": true,
+    "hasGlass": true,
+    "isWhite": false,
+    "loginScreen": false,
+    "hasMapHints": false,
+    "hasSidebarHints": false,
+    "textLen": 0
+  }
+}

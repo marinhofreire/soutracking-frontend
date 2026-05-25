@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 
@@ -44,38 +44,43 @@ class AlertsFiltersBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return AdminGlassPanel(
       child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
+        spacing: 10,
+        runSpacing: 10,
         children: [
           _FilterField(
             label: 'Período',
             value: period,
             options: periodOptions,
             onChanged: onPeriodChanged,
+            width: 160,
           ),
           _FilterField(
             label: 'Tipo',
             value: type,
             options: typeOptions,
             onChanged: onTypeChanged,
+            width: 170,
           ),
           _FilterField(
             label: 'Severidade',
             value: severity,
             options: severityOptions,
             onChanged: onSeverityChanged,
+            width: 170,
           ),
           _FilterField(
             label: 'Status',
             value: status,
             options: statusOptions,
             onChanged: onStatusChanged,
+            width: 170,
           ),
           _FilterField(
-            label: 'Veículo',
+            label: 'Equipamento',
             value: vehicle,
             options: vehicleOptions,
             onChanged: onVehicleChanged,
+            width: 220,
           ),
         ],
       ),
@@ -89,19 +94,26 @@ class _FilterField extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    required this.width,
   });
 
   final String label;
   final String value;
   final List<String> options;
   final ValueChanged<String> onChanged;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 210,
+      width: width,
       child: DropdownButtonFormField<String>(
         initialValue: value,
+        dropdownColor: const Color(0xFF102039),
+        style: const TextStyle(
+          color: Color(0xFFE7F2FF),
+          fontWeight: FontWeight.w600,
+        ),
         items: [
           for (final option in options)
             DropdownMenuItem<String>(
@@ -114,12 +126,24 @@ class _FilterField extends StatelessWidget {
         },
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: const TextStyle(color: Color(0xFF9DB6D5)),
+          filled: true,
+          fillColor: const Color(0xB30D1B31),
           isDense: true,
-          border: const OutlineInputBorder(),
+          border: const OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFF294A73)),
+          ),
+          enabledBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFF294A73)),
+          ),
+          focusedBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFF4A95FF)),
+          ),
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         ),
       ),
     );
   }
 }
+

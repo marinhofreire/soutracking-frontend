@@ -133,6 +133,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'fences':
       case 'geofences':
         return 'geofences';
+      case 'manutenção':
+      case 'manutencao':
       case 'ManutenÃƒÂ§ÃƒÂ£o':
       case 'manutenÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o':
       case 'maintenance':
@@ -682,7 +684,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'devices':
         return 'Gestão operacional de rastreadores';
       case 'telemetry':
-        return 'Telemetria operacional em tempo real';
+        return 'Sensores e dados operacionais';
       case 'routes':
         return 'Hist\u00F3rico, replay e quilometragem';
       case 'alerts':
@@ -704,7 +706,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'mdvr':
         return 'Monitoramento de câmeras e evidências';
       case 'telemetry-demo':
-        return 'Telemetria operacional em tempo real';
+        return 'Sensores e dados operacionais';
       case 'logs':
         return 'Data log por comunicação do dispositivo';
       case 'reports':
@@ -817,9 +819,41 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     List<_OperationalMenuItem> items,
     SessionState session,
   ) {
-    // During pixel-perfect migration we keep one canonical menu source for
-    // all sessions to avoid legacy/regression branches in rendering.
-    return items;
+    if (!_isPixelDemoMode(session)) {
+      return items;
+    }
+
+    const pixelAllowedMenuIds = <String>{
+      'dashboard',
+      'map',
+      'devices',
+      'telemetry',
+      'alerts',
+      'reports',
+    };
+
+    return items
+        .where((item) => pixelAllowedMenuIds.contains(item.id))
+        .toList(growable: false);
+  }
+
+  bool _isPixelDemoMode(SessionState session) {
+    if (session.isAdministrator) {
+      return false;
+    }
+
+    final email = (session.email ?? '').trim().toLowerCase();
+    final explicitPixelUser = email.contains('pixel');
+    if (!kIsWeb) {
+      return explicitPixelUser;
+    }
+
+    final pixelFlag = Uri.base.queryParameters['pixel']?.trim().toLowerCase();
+    final enabledByUrl = pixelFlag == '1' ||
+        pixelFlag == 'true' ||
+        pixelFlag == 'on' ||
+        pixelFlag == 'yes';
+    return explicitPixelUser || enabledByUrl;
   }
 
   String? _badgeText(int value) {
@@ -1665,8 +1699,7 @@ class _OperationalMap extends StatelessWidget {
               consumeTapEvents: true,
               icon: markerIcon,
               infoWindow: gmaps.InfoWindow(
-                title:
-                    '${snapshot.device.name} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ $statusSummary',
+                title: '${snapshot.device.name} • $statusSummary',
               ),
               onTap: () => onVehicleTap(snapshot),
             ),
@@ -2226,7 +2259,7 @@ class _TopSearchBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '$title - Dados de rastreamento',
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -2992,9 +3025,15 @@ class _SideMenu extends StatelessWidget {
     final expanded = open;
     final compactDensity = cardDensity == VisualCardDensity.compact;
     final cleanBrandName = brandName.trim().isEmpty ? 'SouTracking' : brandName;
-    final logoAsset = brandLogoAsset?.trim() ?? '';
+    final requestedLogoAsset = brandLogoAsset?.trim() ?? '';
+    const defaultSoutrackingLogoAsset =
+        'assets/branding/soutracking_logo_horizontal.png';
+    final isSoutrackingBrand =
+        cleanBrandName.toLowerCase().contains('soutracking');
+    final logoAsset =
+        isSoutrackingBrand ? defaultSoutrackingLogoAsset : requestedLogoAsset;
     final hasLogo = logoAsset.isNotEmpty;
-    final expandedWidth = compactDensity ? 208.0 : 224.0;
+    final expandedWidth = compactDensity ? 222.0 : 238.0;
     final collapsedWidth = compactDensity ? 68.0 : 72.0;
 
     return AnimatedPositioned(
@@ -3021,33 +3060,47 @@ class _SideMenu extends StatelessWidget {
                 children: [
                   if (expanded) ...[
                     SizedBox(
-                      height: 40,
+                      height: 58,
                       child: Row(
                         children: [
                           IconButton(
                             tooltip: 'Recolher menu',
                             onPressed: onToggle,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 34,
+                              minHeight: 34,
+                            ),
+                            visualDensity: VisualDensity.compact,
                             icon: const Icon(
                               Icons.menu_open_rounded,
                               color: Color(0xFF25344A),
                               size: 19,
                             ),
                           ),
-                          const SizedBox(width: 2),
+                          const SizedBox(width: 1),
                           Expanded(
                             child: hasLogo
-                                ? Image.asset(
-                                    logoAsset,
-                                    fit: BoxFit.contain,
+                                ? Container(
+                                    color: Colors.transparent,
                                     alignment: Alignment.centerLeft,
-                                    errorBuilder: (_, __, ___) => Text(
-                                      cleanBrandName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF1F2A44),
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w900,
+                                    child: SizedBox(
+                                      height: compactDensity ? 42 : 46,
+                                      child: Image.asset(
+                                        logoAsset,
+                                        fit: BoxFit.fitWidth,
+                                        width: double.infinity,
+                                        alignment: Alignment.centerLeft,
+                                        errorBuilder: (_, __, ___) => Text(
+                                          cleanBrandName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF1F2A44),
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   )
@@ -3065,7 +3118,7 @@ class _SideMenu extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     const Divider(color: Color(0xFFE2E8F0), height: 1),
                     const SizedBox(height: 8),
                   ] else ...[
@@ -5858,7 +5911,7 @@ class _VehicleBottomContent extends StatelessWidget {
                       Text(
                         isCollapsed
                             ? snapshot.speedLabel
-                            : '${snapshot.identifierLabel} â€¢ ${snapshot.speedLabel} â€¢ ${snapshot.relativeLastPoint}',
+                            : '${snapshot.identifierLabel} • ${snapshot.speedLabel} • ${snapshot.relativeLastPoint}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -7145,7 +7198,7 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
       (
         'positionSingle',
         Icons.my_location_outlined,
-        'PosiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+        'Posição'
       ),
       ('engineStop', Icons.lock_outline_rounded, 'Bloquear'),
       ('engineResume', Icons.lock_open_rounded, 'Desbloquear'),
@@ -7174,17 +7227,35 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
 
 String _humanizeEventType(String type) {
   final normalized = type.trim();
+  final key = normalized.toLowerCase();
+  switch (key) {
+    case 'devicemoving':
+      return 'Em movimento';
+    case 'deviceonline':
+      return 'Online';
+    case 'devicestopped':
+      return 'Parado';
+    case 'deviceoffline':
+      return 'Offline';
+    case 'deviceunknown':
+      return 'Status desconhecido';
+    case 'ignitionon':
+      return 'Ignição ligada';
+    case 'ignitionoff':
+      return 'Ignição desligada';
+  }
+
   switch (normalized) {
     case 'deviceOnline':
-      return 'Dispositivo online';
+      return 'Online';
     case 'deviceOffline':
-      return 'Dispositivo offline';
+      return 'Offline';
     case 'deviceUnknown':
       return 'Status desconhecido';
     case 'ignitionOn':
-      return 'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o ligada';
+      return 'Ignição ligada';
     case 'ignitionOff':
-      return 'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o desligada';
+      return 'Ignição desligada';
     case 'deviceMoving':
       return 'Em movimento';
     case 'deviceStopped':
@@ -15248,8 +15319,7 @@ class _VehicleSnapshot {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
         normalizedStatus == 'nao informado' ||
-        normalizedStatus ==
-            'nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o informado' ||
+        normalizedStatus == 'não informado' ||
         normalizedStatus == 'n/a';
   }
 

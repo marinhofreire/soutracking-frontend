@@ -45,13 +45,26 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   String _displayNumber(double value, {int decimals = 2}) {
     return value.toStringAsFixed(decimals).replaceAll('.', ',');
   }
+  String _formatThousands(double value) {
+    if (value != value.roundToDouble()) {
+      return _displayNumber(value);
+    }
+    final digits = value.round().abs().toString();
+    final chunks = <String>[];
+    for (var i = digits.length; i > 0; i -= 3) {
+      final start = i - 3 < 0 ? 0 : i - 3;
+      chunks.insert(0, digits.substring(start, i));
+    }
+    final joined = chunks.join('.');
+    return value < 0 ? '-$joined' : joined;
+  }
 
   String _typeLabel(String type) {
     switch (type) {
       case 'distance':
-        return 'Distancia (km)';
+        return 'Distância';
       case 'engineHours':
-        return 'Horimetro (h)';
+        return 'Horímetro';
       case 'days':
         return 'Intervalo em dias';
       default:
@@ -62,13 +75,27 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   String _formatPeriodValue(double value, String type) {
     switch (type) {
       case 'distance':
-        return '${_compactNumber(value)} km';
+        return '${_formatThousands(value)} km';
       case 'engineHours':
-        return '${_compactNumber(value)} h';
+        return '${_formatThousands(value)} h';
       case 'days':
-        return '${_compactNumber(value)} dias';
+        return '${_formatThousands(value)} dias';
       default:
         return _compactNumber(value);
+    }
+  }
+
+  String _templateMetricLabel(String type, double value) {
+    final formatted = _formatPeriodValue(value, type);
+    switch (type) {
+      case 'distance':
+        return 'Distância: $formatted';
+      case 'engineHours':
+        return 'Horímetro: $formatted';
+      case 'days':
+        return 'Intervalo: $formatted';
+      default:
+        return formatted;
     }
   }
 
@@ -76,25 +103,24 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     final start = _parseNumber(_startController.text);
     final period = _parseNumber(_periodController.text);
     if (start == null || period == null) {
-      return 'Formula: proxima manutencao = valor inicial + periodo.';
+      return 'Fórmula: próxima manutenção = valor inicial + período.';
     }
 
     final next = start + period;
     switch (_type) {
       case 'distance':
-        return 'Proxima manutencao em ${_displayNumber(next)} km '
-            '(inicio ${_displayNumber(start)} + periodo ${_displayNumber(period)}).';
+        return 'Próxima manutenção em ${_displayNumber(next)} km '
+            '(início ${_displayNumber(start)} + período ${_displayNumber(period)}).';
       case 'engineHours':
-        return 'Proxima manutencao em ${_displayNumber(next)} h '
-            '(inicio ${_displayNumber(start)} + periodo ${_displayNumber(period)}).';
+        return 'Próxima manutenção em ${_displayNumber(next)} h '
+            '(início ${_displayNumber(start)} + período ${_displayNumber(period)}).';
       case 'days':
-        return 'Proxima manutencao apos ${_displayNumber(next, decimals: 0)} dias '
-            '(inicio ${_displayNumber(start, decimals: 0)} + periodo ${_displayNumber(period, decimals: 0)}).';
+        return 'Próxima manutenção após ${_displayNumber(next, decimals: 0)} dias '
+            '(início ${_displayNumber(start, decimals: 0)} + período ${_displayNumber(period, decimals: 0)}).';
       default:
-        return 'Formula: proxima manutencao = $start + $period.';
+        return 'Fórmula: próxima manutenção = $start + $period.';
     }
   }
-
   void _applyTemplate(_MaintenanceTemplate template) {
     _nameController.text = template.name;
     _periodController.text = _compactNumber(template.period);
@@ -113,7 +139,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Nome, dispositivo, valor inicial e periodo sao obrigatorios.',
+            'Nome, dispositivo, valor inicial e período são obrigatórios.',
           ),
         ),
       );
@@ -166,11 +192,11 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     final id = idValue is int ? idValue : int.tryParse('$idValue');
     if (id == null) return;
 
-    final name = '${item['name'] ?? 'Manutencao #$id'}';
+    final name = '${item['name'] ?? 'Manutenção #$id'}';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Excluir manutencao'),
+        title: const Text('Excluir manutenção'),
         content: Text('Excluir "$name" do servidor de rastreamento?'),
         actions: [
           TextButton(
@@ -200,12 +226,12 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
       ref.invalidate(maintenanceProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Manutencao excluida.')),
+        const SnackBar(content: Text('Manutenção excluída.')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao excluir manutencao: $error')),
+        SnackBar(content: Text('Falha ao excluir manutenção: $error')),
       );
     } finally {
       if (mounted) setState(() => _deletingId = null);
@@ -215,23 +241,23 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   Widget _buildTemplateCatalog() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD8E1EF)),
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE6F2)),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Modelos prontos de manutencao',
+            'Modelos prontos de manutenção',
             style: Theme.of(
               context,
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           const Text(
-            'Itens ja mapeados (pneu, correia, oleo e outros). '
+            'Itens já mapeados (pneu, correia, óleo e outros). '
             'Selecione um modelo e preencha apenas os dados faltantes.',
             style: TextStyle(color: Color(0xFF51607A)),
           ),
@@ -261,9 +287,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                       child: _MaintenanceTemplateCard(
                         template: template,
                         selected: _selectedTemplate?.id == template.id,
-                        typeLabel: _typeLabel(template.type),
-                        periodLabel:
-                            _formatPeriodValue(template.period, template.type),
+                        metricLabel: _templateMetricLabel(template.type, template.period),
                         onUse: () => _applyTemplate(template),
                       ),
                     ),
@@ -284,7 +308,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     final list = maintenanceAsync.when(
       data: (items) {
         if (items.isEmpty) {
-          return const Center(child: Text('Nenhum plano de manutencao'));
+          return const Center(child: Text('Nenhum plano de manutenção ativo'));
         }
         return ListView.separated(
           itemCount: items.length,
@@ -293,7 +317,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             final item = items[index];
             final idValue = item['id'];
             final id = idValue is int ? idValue : int.tryParse('$idValue');
-            final title = '${item['name'] ?? 'Manutencao'}';
+            final title = '${item['name'] ?? 'Manutenção'}';
 
             final type = '${item['type'] ?? ''}'.trim();
             final start = _parseNumber('${item['start'] ?? ''}');
@@ -303,19 +327,19 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             final subtitleParts = <String>[
               if (type.isNotEmpty) 'Tipo: ${_typeLabel(type)}',
               if (start != null)
-                'Inicio: ${_formatPeriodValue(start, type.isEmpty ? _type : type)}',
+                'Início: ${_formatPeriodValue(start, type.isEmpty ? _type : type)}',
               if (period != null)
-                'Periodo: ${_formatPeriodValue(period, type.isEmpty ? _type : type)}',
+                'Período: ${_formatPeriodValue(period, type.isEmpty ? _type : type)}',
               if (device != null) 'Dispositivo: $device',
             ];
 
             return Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(12),
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.outline,
+                  color: const Color(0xFFDDE6F2),
                 ),
               ),
               child: Row(
@@ -334,17 +358,19 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                           const SizedBox(height: 4),
                           Text(
                             subtitleParts.join(' | '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
-                                ?.copyWith(color: const Color(0xFF60718D)),
+                                ?.copyWith(color: const Color(0xFF5F738F)),
                           ),
                         ],
                       ],
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Excluir manutencao',
+                    tooltip: 'Excluir manutenção',
                     onPressed: _deletingId == id
                         ? null
                         : () => _deleteMaintenance(item),
@@ -371,35 +397,36 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     final form = Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFFFF),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE6F2)),
       ),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Manutencao',
+            'Manutenção',
             style: Theme.of(context)
                 .textTheme
                 .headlineSmall
-                ?.copyWith(color: const Color(0xFF1F2A44)),
+                ?.copyWith(color: const Color(0xFF25344A)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           _buildTemplateCatalog(),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           TextField(
             controller: _nameController,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'Nome do plano'),
-            style: const TextStyle(color: Color(0xFF1F2A44)),
+            style: const TextStyle(color: Color(0xFF25344A)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             key: ValueKey('maintenance-type-$_type'),
             initialValue: _type,
             items: const [
-              DropdownMenuItem(value: 'distance', child: Text('Distancia')),
+              DropdownMenuItem(value: 'distance', child: Text('Distância')),
               DropdownMenuItem(
                   value: 'engineHours', child: Text('Horas motor')),
               DropdownMenuItem(value: 'days', child: Text('Dias')),
@@ -409,9 +436,9 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             },
             decoration: const InputDecoration(labelText: 'Tipo'),
             dropdownColor: Colors.white,
-            style: const TextStyle(color: Color(0xFF1F2A44)),
+            style: const TextStyle(color: Color(0xFF25344A)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           devicesAsync.when(
             data: (devices) {
               return DropdownButtonFormField<int>(
@@ -428,38 +455,38 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                 onChanged: (value) => setState(() => _deviceId = value),
                 decoration: const InputDecoration(labelText: 'Dispositivo'),
                 dropdownColor: Colors.white,
-                style: const TextStyle(color: Color(0xFF1F2A44)),
+                style: const TextStyle(color: Color(0xFF25344A)),
               );
             },
             loading: () => const LinearProgressIndicator(),
             error: (error, _) => Text(
               'Erro: $error',
-              style: const TextStyle(color: Color(0xFF1F2A44)),
+              style: const TextStyle(color: Color(0xFF25344A)),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           TextField(
             controller: _startController,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Valor inicial atual (km / h / dias)',
-              helperText: 'Preencha com o valor atual do veiculo.',
+              helperText: 'Preencha com o valor atual do veículo.',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(color: Color(0xFF1F2A44)),
+            style: const TextStyle(color: Color(0xFF25344A)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           TextField(
             controller: _periodController,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Periodo',
-              helperText: 'Intervalo entre manutencoes.',
+              helperText: 'Intervalo entre manutenções.',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(color: Color(0xFF1F2A44)),
+            style: const TextStyle(color: Color(0xFF25344A)),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             _formulaPreview(),
             style: const TextStyle(
@@ -468,7 +495,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           FilledButton(
             onPressed: _saving ? null : _createMaintenance,
             child: _saving
@@ -485,19 +512,28 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 980;
+        final isWide = constraints.maxWidth >= 1200;
         if (isWide) {
           return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 540,
-                margin: const EdgeInsets.only(left: 16, right: 20, top: 24),
-                child: form,
+              Expanded(
+                flex: 5,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 16, top: 16),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 540),
+                      child: SingleChildScrollView(child: form),
+                    ),
+                  ),
+                ),
               ),
               Expanded(
+                flex: 6,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 24, right: 16),
+                  padding: const EdgeInsets.only(top: 16, right: 12),
                   child: list,
                 ),
               ),
@@ -505,10 +541,10 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
           );
         }
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           children: [
             form,
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             SizedBox(height: 460, child: list),
           ],
         );
@@ -539,15 +575,13 @@ class _MaintenanceTemplateCard extends StatelessWidget {
   const _MaintenanceTemplateCard({
     required this.template,
     required this.selected,
-    required this.typeLabel,
-    required this.periodLabel,
+    required this.metricLabel,
     required this.onUse,
   });
 
   final _MaintenanceTemplate template;
   final bool selected;
-  final String typeLabel;
-  final String periodLabel;
+  final String metricLabel;
   final VoidCallback onUse;
 
   IconData _groupIcon(String group) {
@@ -579,12 +613,14 @@ class _MaintenanceTemplateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFE7F0FF) : const Color(0xFFFFFFFF),
+        color: selected
+            ? const Color(0xFFEAF3FF)
+            : Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected ? const Color(0xFF2E6DFF) : const Color(0xFFD5DFEE),
+          color: selected ? const Color(0xFFBBD7FF) : const Color(0xFFDDE6F2),
         ),
       ),
       child: Column(
@@ -601,7 +637,7 @@ class _MaintenanceTemplateCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF60718D),
+                    color: Color(0xFF5F738F),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -616,12 +652,12 @@ class _MaintenanceTemplateCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontWeight: FontWeight.w700,
-              color: Color(0xFF1F2A44),
+              color: Color(0xFF25344A),
             ),
           ),
           const SizedBox(height: 3),
           Text(
-            '$typeLabel | $periodLabel',
+            metricLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -660,67 +696,67 @@ class _MaintenanceTemplateCard extends StatelessWidget {
 const List<_MaintenanceTemplate> _maintenanceTemplates = [
   _MaintenanceTemplate(
     id: 'oil-engine',
-    name: 'Troca de oleo do motor',
-    group: 'Lubrificacao',
+    name: 'Troca de óleo do motor',
+    group: 'Lubrificação',
     type: 'distance',
     period: 10000,
-    formula: 'Formula: km atual + 10000 km.',
+    formula: 'Fórmula: km atual + 10.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'oil-filter',
-    name: 'Troca do filtro de oleo',
-    group: 'Lubrificacao',
+    name: 'Troca do filtro de óleo',
+    group: 'Lubrificação',
     type: 'distance',
     period: 10000,
-    formula: 'Formula: km atual + 10000 km.',
+    formula: 'Fórmula: km atual + 10.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'air-filter',
     name: 'Troca do filtro de ar',
-    group: 'Lubrificacao',
+    group: 'Lubrificação',
     type: 'distance',
     period: 15000,
-    formula: 'Formula: km atual + 15000 km.',
+    formula: 'Fórmula: km atual + 15.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'fuel-filter',
-    name: 'Troca do filtro de combustivel',
-    group: 'Lubrificacao',
+    name: 'Troca do filtro de combustível',
+    group: 'Lubrificação',
     type: 'distance',
     period: 20000,
-    formula: 'Formula: km atual + 20000 km.',
+    formula: 'Fórmula: km atual + 20.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'timing-belt',
     name: 'Correia dentada',
-    group: 'Transmissao',
+    group: 'Transmissão',
     type: 'distance',
     period: 60000,
-    formula: 'Formula: km atual + 60000 km.',
+    formula: 'Fórmula: km atual + 60.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'accessory-belt',
     name: 'Correia auxiliar',
-    group: 'Transmissao',
+    group: 'Transmissão',
     type: 'distance',
     period: 40000,
-    formula: 'Formula: km atual + 40000 km.',
+    formula: 'Fórmula: km atual + 40.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'clutch-inspection',
-    name: 'Inspecao da embreagem',
-    group: 'Transmissao',
+    name: 'Inspeção da embreagem',
+    group: 'Transmissão',
     type: 'distance',
     period: 30000,
-    formula: 'Formula: km atual + 30000 km.',
+    formula: 'Fórmula: km atual + 30.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'tire-rotation',
-    name: 'Rodizio de pneus',
+    name: 'Rodízio de pneus',
     group: 'Pneus',
     type: 'distance',
     period: 10000,
-    formula: 'Formula: km atual + 10000 km.',
+    formula: 'Fórmula: km atual + 10.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'tire-replacement',
@@ -728,7 +764,7 @@ const List<_MaintenanceTemplate> _maintenanceTemplates = [
     group: 'Pneus',
     type: 'distance',
     period: 40000,
-    formula: 'Formula: km atual + 40000 km.',
+    formula: 'Fórmula: km atual + 40.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'alignment',
@@ -736,7 +772,7 @@ const List<_MaintenanceTemplate> _maintenanceTemplates = [
     group: 'Pneus',
     type: 'distance',
     period: 10000,
-    formula: 'Formula: km atual + 10000 km.',
+    formula: 'Fórmula: km atual + 10.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'brake-pad',
@@ -744,7 +780,7 @@ const List<_MaintenanceTemplate> _maintenanceTemplates = [
     group: 'Freios',
     type: 'distance',
     period: 25000,
-    formula: 'Formula: km atual + 25000 km.',
+    formula: 'Fórmula: km atual + 25.000 km.',
   ),
   _MaintenanceTemplate(
     id: 'brake-fluid',
@@ -752,15 +788,15 @@ const List<_MaintenanceTemplate> _maintenanceTemplates = [
     group: 'Freios',
     type: 'days',
     period: 730,
-    formula: 'Formula: dias atuais + 730 dias.',
+    formula: 'Fórmula: dias atuais + 730 dias.',
   ),
   _MaintenanceTemplate(
     id: 'battery-check',
     name: 'Bateria veicular',
-    group: 'Eletrico',
+    group: 'Elétrico',
     type: 'days',
     period: 365,
-    formula: 'Formula: dias atuais + 365 dias.',
+    formula: 'Fórmula: dias atuais + 365 dias.',
   ),
   _MaintenanceTemplate(
     id: 'coolant',
@@ -768,30 +804,30 @@ const List<_MaintenanceTemplate> _maintenanceTemplates = [
     group: 'Motor',
     type: 'days',
     period: 365,
-    formula: 'Formula: dias atuais + 365 dias.',
+    formula: 'Fórmula: dias atuais + 365 dias.',
   ),
   _MaintenanceTemplate(
     id: 'general-review',
-    name: 'Revisao geral',
+    name: 'Revisão geral',
     group: 'Checklist',
     type: 'days',
     period: 180,
-    formula: 'Formula: dias atuais + 180 dias.',
+    formula: 'Fórmula: dias atuais + 180 dias.',
   ),
   _MaintenanceTemplate(
     id: 'engine-hours-oil',
-    name: 'Troca de oleo por horimetro',
-    group: 'Operacao pesada',
+    name: 'Troca de óleo por horímetro',
+    group: 'Operação pesada',
     type: 'engineHours',
     period: 250,
-    formula: 'Formula: horimetro atual + 250 h.',
+    formula: 'Fórmula: horímetro atual + 250 h.',
   ),
   _MaintenanceTemplate(
     id: 'engine-hours-review',
-    name: 'Revisao por horimetro',
-    group: 'Operacao pesada',
+    name: 'Revisão por horímetro',
+    group: 'Operação pesada',
     type: 'engineHours',
     period: 500,
-    formula: 'Formula: horimetro atual + 500 h.',
+    formula: 'Fórmula: horímetro atual + 500 h.',
   ),
 ];

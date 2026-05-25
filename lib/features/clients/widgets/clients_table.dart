@@ -17,7 +17,7 @@ class ClientsTable extends StatelessWidget {
           const Text(
             'Carteira de clientes',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF25344A),
               fontWeight: FontWeight.w700,
               fontSize: 16,
             ),
@@ -26,8 +26,9 @@ class ClientsTable extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
+              color: const Color(0xFFEAF3FF),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFDCE6F4)),
             ),
             child: const Row(
               children: [
@@ -126,7 +127,7 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFB8C5D9),
+        color: Color(0xFF5F738F),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),

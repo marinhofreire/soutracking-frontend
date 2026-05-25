@@ -211,7 +211,7 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
     if (!mounted) return;
     if (!launched) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nao foi possivel abrir o HTML.')),
+        const SnackBar(content: Text('Não foi possível abrir o HTML.')),
       );
     }
   }

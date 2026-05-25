@@ -1,0 +1,157 @@
+{
+  "panels": {
+    "dashboard": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=dashboard",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [
+        "[requestfailed] http://127.0.0.1:8186/dart_sdk.js :: net::ERR_ABORTED",
+        "[requestfailed] https://www.gstatic.com/flutter-canvaskit/3452d735bd38224ef2db85ca763d862d6326b17f/chromium/canvaskit.wasm :: net::ERR_ABORTED"
+      ],
+      "screenshot": ".tmp_13_dashboard.png"
+    },
+    "map": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=map",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_map.png"
+    },
+    "vehicles": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=vehicles",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_vehicles.png"
+    },
+    "devices": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=devices",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_devices.png"
+    },
+    "telemetry": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=telemetry",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_telemetry.png"
+    },
+    "alerts": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=alerts",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_alerts.png"
+    },
+    "fences": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=fences",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_fences.png"
+    },
+    "reports": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=reports",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_reports.png"
+    },
+    "commands": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=commands",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_commands.png"
+    },
+    "maintenance": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=maintenance",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_maintenance.png"
+    },
+    "communication": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=communication",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_communication.png"
+    },
+    "logs": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=logs",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_logs.png"
+    },
+    "settings": {
+      "url": "http://127.0.0.1:8186/?v=20260522-13-telas-final&panel=settings",
+      "textLen": 0,
+      "htmlLen": 146393,
+      "textSample": "",
+      "hasLoading": false,
+      "hasSessaoExpirada": false,
+      "hasMojibake": false,
+      "logs": [],
+      "screenshot": ".tmp_13_settings.png"
+    }
+  },
+  "login": {
+    "bodyTextSnippet": ""
+  },
+  "globalErrors": [
+    "[requestfailed] http://127.0.0.1:8186/dart_sdk.js :: net::ERR_ABORTED",
+    "[requestfailed] https://www.gstatic.com/flutter-canvaskit/3452d735bd38224ef2db85ca763d862d6326b17f/chromium/canvaskit.wasm :: net::ERR_ABORTED"
+  ]
+}

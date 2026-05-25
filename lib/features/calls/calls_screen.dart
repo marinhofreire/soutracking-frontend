@@ -61,7 +61,7 @@ class _CallsScreenState extends ConsumerState<CallsScreen> {
 
     return AdminReferenceScaffold(
       title: 'Chamados',
-      breadcrumbs: const ['Operacao', 'Chamados'],
+      breadcrumbs: const ['Operação', 'Chamados'],
       selectedMenu: 'calls',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

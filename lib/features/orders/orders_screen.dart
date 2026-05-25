@@ -67,7 +67,7 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
 
     return AdminReferenceScaffold(
       title: 'Ordens de Servico',
-      breadcrumbs: const ['Operacao', 'Ordens de Servico'],
+      breadcrumbs: const ['Operação', 'Ordens de Servico'],
       selectedMenu: 'orders',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

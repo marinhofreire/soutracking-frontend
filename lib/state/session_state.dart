@@ -309,7 +309,7 @@ class SessionController extends StateNotifier<SessionState> {
       email: email,
     );
     if (presentationMode) {
-      // ForÃ§a modo demo estÃ¡vel
+      // Força modo demo estável
       const tenantConfig = TenantConfig(
         tenantId: 'demo',
         companyName: 'SouTracking Demo',
@@ -352,8 +352,8 @@ class SessionController extends StateNotifier<SessionState> {
     }
     try {
       final session = await _client.login(email: email, password: password);
-      // Hotfix: removida validaÃ§Ã£o manual de /api/server e /api/devices para permitir build.
-      // Segue fluxo normal apÃ³s login.
+      // Hotfix: removida validação manual de /api/server e /api/devices para permitir build.
+      // Segue fluxo normal após login.
       TenantConfig tenantConfig = TenantConfig.fallback;
       try {
         final tenantRaw = await _client.getTenantConfig(
@@ -386,7 +386,7 @@ class SessionController extends StateNotifier<SessionState> {
           isCompanyAdmin: session.user['administrator'] == true,
           branding: const {
             'appName': 'Soutracking',
-            'tagline': 'GestÃ£o inteligente de frotas e ativos',
+            'tagline': 'Gestão inteligente de frotas e ativos',
             'primaryColor': '#7C5CFF',
             'secondaryColor': '#7C5CFF',
           },
@@ -664,7 +664,7 @@ FutureProvider<List<Map<String, dynamic>>> _genericListProvider(String path) {
   return FutureProvider<List<Map<String, dynamic>>>((ref) async {
     final session = ref.watch(sessionProvider);
     if (presentationMode || !session.isAuthenticated) {
-      // DEMO: nunca lanÃ§a exception, sempre retorna vazio
+      // DEMO: nunca lança exception, sempre retorna vazio
       return [];
     }
     final client = ref.watch(traccarClientProvider);
@@ -778,7 +778,7 @@ final attributesProvider =
       };
     }
   } catch (_) {
-    // ignora falha de /attributes para nÃ£o bloquear catÃ¡logo
+    // ignora falha de /attributes para não bloquear catálogo
   }
 
   try {

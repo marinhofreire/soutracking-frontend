@@ -1,4 +1,4 @@
-const DEFAULT_TRACCAR_PROXY_ORIGIN = "https://app.mackflow.com.br";
+const DEFAULT_TRACCAR_PROXY_ORIGIN = "http://api.soutracking.com.br";
 
 function corsHeaders(request) {
   const origin = request.headers.get("Origin") || "*";

@@ -31,7 +31,7 @@ class InventoryApiService {
   }
 
   Future<List<Map<String, dynamic>>> fetchTechnicianLinks() async {
-    // Preparado para vinculo com tecnico responsavel.
+    // Preparado para vinculo com técnico responsavel.
     return const [];
   }
 

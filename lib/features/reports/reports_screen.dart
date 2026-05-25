@@ -1,9 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../state/session_state.dart';
-import '../admin/admin_reference_ui.dart';
 import 'models/report_models.dart';
 import 'services/report_export_service.dart';
 import 'widgets/report_category_cards.dart';
@@ -232,20 +231,20 @@ String _resolveName(Map<String, dynamic> raw, ReportType type) {
 
   switch (type) {
     case ReportType.routes:
-      return 'RelatÃ³rio de rotas';
+      return 'Relatório de rotas';
     case ReportType.trips:
-      return 'RelatÃ³rio de viagens';
+      return 'Relatório de viagens';
     case ReportType.stops:
-      return 'RelatÃ³rio de paradas';
+      return 'Relatório de paradas';
     case ReportType.distance:
-      return 'RelatÃ³rio de resumo';
+      return 'Relatório de resumo';
     default:
-      return 'RelatÃ³rio de eventos';
+      return 'Relatório de eventos';
   }
 }
 
 String _resolveVehicleName(int? deviceId, Map<int, TraccarDevice> devicesById) {
-  if (deviceId == null) return 'NÃ£o informado';
+  if (deviceId == null) return 'Não informado';
   final device = devicesById[deviceId];
   final name = device?.name.trim() ?? '';
   if (name.isNotEmpty) return name;
@@ -265,7 +264,7 @@ String _resolveDriver(Map<String, dynamic> raw) {
       return text;
     }
   }
-  return 'NÃ£o informado';
+  return 'Não informado';
 }
 
 String _resolvePeriod(Map<String, dynamic> raw, DateTime from, DateTime to) {
@@ -352,7 +351,7 @@ bool? _asBool(dynamic value) {
         normalized == 'off' ||
         normalized == 'desligada' ||
         normalized == 'nao' ||
-        normalized == 'nÃ£o') {
+        normalized == 'não') {
       return false;
     }
   }
@@ -472,12 +471,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       return;
     }
     if (!_hasSearched) {
-      _showAction('Busque um relatorio antes de exportar');
+      _showAction('Busque um relatório antes de exportar');
       return;
     }
-    final target = singleRecord == null ? records : <ReportRecord>[singleRecord];
+    final target =
+        singleRecord == null ? records : <ReportRecord>[singleRecord];
     if (target.isEmpty) {
-      _showAction('Busque um relatorio antes de exportar');
+      _showAction('Busque um relatório antes de exportar');
       return;
     }
     final result = await exportReports(
@@ -510,10 +510,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       ),
     );
 
-    return AdminReferenceScaffold(
-      title: 'RelatÃ³rios',
-      breadcrumbs: const ['OperaÃ§Ã£o', 'RelatÃ³rios'],
-      selectedMenu: 'reports',
+    return SizedBox.expand(
       child: listAsync.when(
         data: (records) {
           final summary = _buildSummary(records);
@@ -546,15 +543,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             'Todos',
             ...{for (final item in records) item.status.label},
           ];
-          final canExport = true;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ReportsKpiRow(summary: summary),
+              const _ReportsPageHeader(),
               const SizedBox(height: 12),
               ReportCategoryCards(
                 categories: categories,
+                selectedTypeLabel: _type,
                 onGenerate: (type) {
                   setState(() {
                     _type = type.label;
@@ -613,7 +610,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   filtered,
                   ReportExportFormat.pdf,
                 ),
-                canExport: canExport,
+                canExport: true,
                 pdfEnabled: _pdfEnabled,
                 onClearFilters: () {
                   setState(() {
@@ -628,28 +625,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              ReportsTable(
-                records: filtered,
-                onView: (record) => _showAction('Visualizando ${record.name}.'),
-                onExportPdf: (record) => _exportRecords(
-                  filtered,
-                  ReportExportFormat.pdf,
-                  singleRecord: record,
+              ReportsKpiRow(summary: summary),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ReportsTable(
+                  records: filtered,
+                  onView: (record) =>
+                      _showAction('Visualizando ${record.name}.'),
+                  onExportPdf: (record) => _exportRecords(
+                    filtered,
+                    ReportExportFormat.pdf,
+                    singleRecord: record,
+                  ),
+                  onExportExcel: (record) => _exportRecords(
+                    filtered,
+                    ReportExportFormat.csv,
+                    singleRecord: record,
+                  ),
+                  canExportRow: filtered.isNotEmpty,
+                  pdfEnabled: _pdfEnabled,
                 ),
-                onExportExcel: (record) => _exportRecords(
-                  filtered,
-                  ReportExportFormat.csv,
-                  singleRecord: record,
-                ),
-                canExportRow: filtered.isNotEmpty,
-                pdfEnabled: _pdfEnabled,
               ),
             ],
           );
         },
         loading: () => const _LoadingPanel(),
         error: (error, _) => _ErrorPanel(
-          message: 'Falha ao carregar relatÃ³rios: $error',
+          message: 'Falha ao carregar relatórios: $error',
         ),
       ),
     );
@@ -693,15 +695,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _categoryDescription(ReportType type) {
     switch (type) {
       case ReportType.routes:
-        return 'Percursos e variaÃ§Ãµes por perÃ­odo.';
+        return 'Endpoint /reports/route';
       case ReportType.trips:
-        return 'Viagens concluÃ­das e tempos de trajeto.';
+        return 'Endpoint /reports/trips';
       case ReportType.stops:
-        return 'Paradas e permanÃªncia por local.';
+        return 'Endpoint /reports/stops';
       case ReportType.events:
-        return 'Eventos operacionais registrados.';
+        return 'Endpoint /reports/events';
       case ReportType.distance:
-        return 'Resumo consolidado do perÃ­odo selecionado.';
+        return 'Endpoint /reports/summary';
       default:
         return 'Categoria operacional.';
     }
@@ -724,16 +726,121 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 }
 
+void _noopRecordAction(ReportRecord _) {}
+
+class _ReportsPageHeader extends StatelessWidget {
+  const _ReportsPageHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9F2FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.article_outlined,
+              color: Color(0xFF2D8CFF),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Relatórios',
+                  style: TextStyle(
+                    color: Color(0xFF25344A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  'Relatórios operacionais e executivos',
+                  style: TextStyle(
+                    color: Color(0xFF60718D),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: null,
+            icon: const Icon(Icons.file_download_outlined, size: 18),
+            label: const Text('Exportar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LoadingPanel extends StatelessWidget {
   const _LoadingPanel();
 
   @override
   Widget build(BuildContext context) {
-    return const AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator()),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _ReportsPageHeader(),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          height: 60,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.84),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD6E0EE)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          height: 116,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.84),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD6E0EE)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const ReportsKpiRow(
+          summary: ReportKpiSummary(
+            generated: 0,
+            scheduled: 0,
+            exports: 0,
+            criticalAlerts: 0,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ReportsTable(
+            records: const [],
+            onView: _noopRecordAction,
+            onExportPdf: _noopRecordAction,
+            onExportExcel: _noopRecordAction,
+            canExportRow: false,
+            pdfEnabled: false,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -745,21 +852,35 @@ class _ErrorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFDDE5F0),
-              fontWeight: FontWeight.w600,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _ReportsPageHeader(),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.84),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFD6E0EE)),
+            ),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF5F738F),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
-

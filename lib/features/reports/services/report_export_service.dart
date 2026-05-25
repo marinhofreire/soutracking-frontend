@@ -37,7 +37,7 @@ Future<ReportExportResult> exportReports({
   if (records.isEmpty) {
     return const ReportExportResult(
       status: ReportExportStatus.missingData,
-      message: 'Busque um relatorio antes de exportar',
+      message: 'Busque um relatório antes de exportar',
     );
   }
 
@@ -143,7 +143,7 @@ String _buildHtml(List<ReportRecord> records) {
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <title>Relatorios SouTracking</title>
+  <title>Relatórios SouTracking</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; color: #1f2a44; }
     h1 { font-size: 20px; margin-bottom: 12px; }
@@ -154,17 +154,17 @@ String _buildHtml(List<ReportRecord> records) {
   </style>
 </head>
 <body>
-  <h1>Relatorios SouTracking</h1>
+  <h1>Relatórios SouTracking</h1>
   <table>
     <thead>
       <tr>
-        <th>Tipo do relatorio</th>
+        <th>Tipo do relatório</th>
         <th>Veiculo/dispositivo</th>
         <th>Data/hora</th>
         <th>Latitude</th>
         <th>Longitude</th>
         <th>Velocidade</th>
-        <th>Ignicao</th>
+        <th>Ignição</th>
         <th>Bateria</th>
         <th>Evento/Status</th>
         <th>Endereco</th>

@@ -1,0 +1,69 @@
+{
+  "startedAt": "2026-05-15T12:01:27.006Z",
+  "frontUrl": "http://localhost:65517/",
+  "backendUrl": "http://api.soutracking.com.br/",
+  "headed": false,
+  "loginAttempted": false,
+  "checks": [
+    {
+      "name": "backend_load",
+      "ok": true,
+      "details": "Backend abriu na guia 2."
+    },
+    {
+      "name": "frontend_load",
+      "ok": true,
+      "details": "Frontend abriu na guia 1."
+    },
+    {
+      "name": "screen_detected",
+      "ok": false,
+      "details": "Nao detectou login nem shell principal."
+    },
+    {
+      "name": "login_attempt",
+      "ok": false,
+      "details": "Login nao tentado porque tela de login nao estava visivel."
+    },
+    {
+      "name": "reports_menu_visible",
+      "ok": false,
+      "details": "Menu Relatorios nao visivel neste estado."
+    }
+  ],
+  "consoleEvents": [
+    {
+      "page": "backend",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "at": "2026-05-15T12:01:36.244Z"
+    },
+    {
+      "page": "frontend",
+      "type": "warning",
+      "text": "Google Maps JavaScript API has been loaded directly without loading=async. This can result in suboptimal performance. For best-practice loading patterns please see https://goo.gle/js-api-loading",
+      "at": "2026-05-15T12:01:37.625Z"
+    }
+  ],
+  "requestFailures": [],
+  "httpErrors": [
+    {
+      "page": "backend",
+      "url": "http://api.soutracking.com.br/",
+      "status": 404,
+      "at": "2026-05-15T12:01:36.207Z"
+    }
+  ],
+  "screenshots": [
+    "C:\\Projetos\\Soutrackingflutter\\tools\\playwright\\reports\\2026-05-15T12-01-27-006Z\\frontend-inicial.png"
+  ],
+  "finishedAt": "2026-05-15T12:01:44.555Z",
+  "summary": {
+    "totalChecks": 5,
+    "passedChecks": 2,
+    "failedChecks": 3,
+    "consoleEvents": 2,
+    "requestFailures": 0,
+    "httpErrors": 1
+  }
+}

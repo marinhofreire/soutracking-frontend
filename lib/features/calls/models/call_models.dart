@@ -88,7 +88,7 @@ extension CallCategoryView on CallCategory {
       case CallCategory.diagnostics:
         return 'Diagnostico';
       case CallCategory.maintenance:
-        return 'Manutencao';
+        return 'Manutenção';
       case CallCategory.support:
         return 'Suporte';
       case CallCategory.report:

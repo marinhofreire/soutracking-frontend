@@ -34,10 +34,10 @@ class VisualSettings {
   static const defaults = VisualSettings(
     balloonSize: VisualBalloonSize.medium,
     logoMode: VisualLogoMode.normal,
-    cardDensity: VisualCardDensity.comfortable,
-    transparency: VisualTransparency.medium,
+    cardDensity: VisualCardDensity.compact,
+    transparency: VisualTransparency.high,
     fontSize: VisualFontSize.normal,
-    mapMode: VisualMapMode.premium,
+    mapMode: VisualMapMode.normal,
   );
 
   VisualSettings copyWith({
@@ -72,42 +72,43 @@ class VisualSettings {
   double get textScale {
     switch (fontSize) {
       case VisualFontSize.normal:
-        return 1.0;
+        // Keep the approved premium layout with a slightly denser typography.
+        return 0.92;
       case VisualFontSize.large:
-        return 1.08;
+        return 1.0;
     }
   }
 
   double get glassOpacity {
     switch (transparency) {
       case VisualTransparency.low:
-        return 0.96;
+        return 0.88;
       case VisualTransparency.medium:
-        return 0.9;
-      case VisualTransparency.high:
         return 0.82;
+      case VisualTransparency.high:
+        return 0.76;
     }
   }
 
   double get backdropOverlayAlpha {
     switch (transparency) {
       case VisualTransparency.low:
-        return 0.4;
+        return 0.26;
       case VisualTransparency.medium:
-        return 0.3;
+        return 0.20;
       case VisualTransparency.high:
-        return 0.2;
+        return 0.14;
     }
   }
 
   double get glassBlur {
     switch (transparency) {
       case VisualTransparency.low:
-        return 4;
+        return 5;
       case VisualTransparency.medium:
-        return 6;
+        return 7;
       case VisualTransparency.high:
-        return 9;
+        return 8;
     }
   }
 

@@ -12,7 +12,7 @@ App Flutter para gestão de frotas com integração Traccar.
 
 ## API
 
-Base padrão: https://app.mackflow.com.br/api
+Base padrão: http://api.soutracking.com.br/api
 
 ## Como rodar
 

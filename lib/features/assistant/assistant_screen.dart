@@ -643,7 +643,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     final regionQuery = _extractRegionHint(input);
     final regionShape = await _resolveRegionArea(regionQuery);
     if (regionShape == null) {
-      return 'Nao consegui identificar a regiao para criar a cerca. Tente informar um endereco ou regiao mais especifica.';
+      return 'Não consegui identificar a regiao para criar a cerca. Tente informar um endereco ou regiao mais especifica.';
     }
 
     final fenceName = _buildRegionFenceName(regionQuery);
@@ -713,7 +713,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
       ref.invalidate(geofencesProvider);
       ref.invalidate(notificationsProvider);
 
-      return 'Automacao concluida: cerca "$fenceName" criada, alerta de ${isExit ? 'saida' : 'entrada'} criado e vinculado ao grupo ${targetGroup['name']}.';
+      return 'Automação concluida: cerca "$fenceName" criada, alerta de ${isExit ? 'saida' : 'entrada'} criado e vinculado ao grupo ${targetGroup['name']}.';
     } catch (e) {
       return 'Falha na automacao da cerca/alerta/grupo: $e';
     }
@@ -1078,7 +1078,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
               child: TextField(
                 controller: _controller,
                 decoration: const InputDecoration(
-                  labelText: 'Digite sua solicitacao…',
+                  labelText: 'Digite sua solicitacao?',
                 ),
                 onSubmitted: _sendMessage,
               ),

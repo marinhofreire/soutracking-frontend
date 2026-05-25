@@ -68,7 +68,7 @@ class InventoryItemRecord {
   final String supplier;
   final DateTime lastMovementAt;
 
-  // Campos opcionais para vinculos futuros com OS, veiculo, tecnico e chip.
+  // Campos opcionais para vinculos futuros com OS, veiculo, técnico e chip.
   final String? linkedOrderId;
   final String? linkedVehicle;
   final String? linkedTechnician;

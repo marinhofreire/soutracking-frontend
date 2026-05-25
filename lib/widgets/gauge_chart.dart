@@ -96,7 +96,7 @@ class GaugePainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = min(size.width, size.height) / 2 - 10;
 
-    // Ângulo inicial e final (semicírculo de baixo)
+    // ?ngulo inicial e final (semic?rculo de baixo)
     const startAngle = pi * 0.75; // 135 graus
     const sweepAngle = pi * 1.5; // 270 graus
 

@@ -195,6 +195,25 @@ String _eventTypeLabel(dynamic raw) {
   if (value.isEmpty) {
     return 'Evento não identificado';
   }
+
+  final normalizedKey = value.toLowerCase();
+  switch (normalizedKey) {
+    case 'devicemoving':
+      return 'Em movimento';
+    case 'deviceonline':
+      return 'Online';
+    case 'devicestopped':
+      return 'Parado';
+    case 'deviceoffline':
+      return 'Offline';
+    case 'deviceunknown':
+      return 'Status desconhecido';
+    case 'ignitionon':
+      return 'Ignição ligada';
+    case 'ignitionoff':
+      return 'Ignição desligada';
+  }
+
   final withSpace = value
       .replaceAllMapped(
           RegExp(r'([a-z])([A-Z])'), (m) => '${m.group(1)} ${m.group(2)}')

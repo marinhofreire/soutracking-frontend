@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../admin/admin_reference_ui.dart';
 import '../models/report_models.dart';
 
 class ReportCategoryCards extends StatelessWidget {
@@ -8,107 +7,110 @@ class ReportCategoryCards extends StatelessWidget {
     super.key,
     required this.categories,
     required this.onGenerate,
+    required this.selectedTypeLabel,
   });
 
   final List<ReportCategory> categories;
   final ValueChanged<ReportType> onGenerate;
+  final String selectedTypeLabel;
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
         children: [
-          const Text(
-            'Categorias de relatório',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
+          for (final category in categories)
+            _CategoryPill(
+              category: category,
+              active: selectedTypeLabel == category.type.label,
+              onTap: () => onGenerate(category.type),
             ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final category in categories)
-                _CategoryCard(category: category, onGenerate: onGenerate),
-            ],
-          ),
         ],
       ),
     );
   }
 }
 
-class _CategoryCard extends StatelessWidget {
-  const _CategoryCard({required this.category, required this.onGenerate});
+class _CategoryPill extends StatelessWidget {
+  const _CategoryPill({
+    required this.category,
+    required this.active,
+    required this.onTap,
+  });
 
   final ReportCategory category;
-  final ValueChanged<ReportType> onGenerate;
+  final bool active;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 230,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final borderColor =
+        active ? const Color(0xFF9FC3FF) : const Color(0xFFD6E0EE);
+    final bgColor = active ? const Color(0xFFEAF3FF) : const Color(0xFFF8FBFF);
+    final titleColor =
+        active ? const Color(0xFF1E3A5F) : const Color(0xFF3E5679);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 190,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
             children: [
-              Icon(_iconForType(category.type), color: const Color(0xFF9FCEFF)),
+              Icon(
+                _iconForType(category.type),
+                size: 16,
+                color:
+                    active ? const Color(0xFF2D8CFF) : const Color(0xFF60718D),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  category.type.label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      category.type.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.2,
+                      ),
+                    ),
+                    Text(
+                      category.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF6F819C),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 10.8,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            category.description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFFB8C5D9),
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${category.generatedCount} gerados',
-                  style: const TextStyle(
-                    color: Color(0xFFDDE5F0),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => onGenerate(category.type),
-                icon: const Icon(Icons.play_arrow_outlined, size: 16),
-                label: const Text('Gerar'),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -116,13 +118,13 @@ class _CategoryCard extends StatelessWidget {
   IconData _iconForType(ReportType type) {
     switch (type) {
       case ReportType.trips:
-        return Icons.trip_origin_outlined;
+        return Icons.route_outlined;
       case ReportType.routes:
         return Icons.alt_route_outlined;
       case ReportType.events:
-        return Icons.event_note_outlined;
+        return Icons.article_outlined;
       case ReportType.stops:
-        return Icons.stop_circle_outlined;
+        return Icons.pause_circle_outline_rounded;
       case ReportType.distance:
         return Icons.straighten_outlined;
       case ReportType.speed:
@@ -132,7 +134,7 @@ class _CategoryCard extends StatelessWidget {
       case ReportType.drivers:
         return Icons.badge_outlined;
       case ReportType.vehicles:
-        return Icons.local_shipping_outlined;
+        return Icons.directions_car_filled_outlined;
     }
   }
 }

@@ -17,7 +17,7 @@ class CallsApiService {
   Future<List<Map<String, dynamic>>> fetchTicketMessages({
     required String ticketId,
   }) async {
-    // Estrutura preparada para historico de mensagens do atendimento.
+    // Estrutura preparada para histórico de mensagens do atendimento.
     return <Map<String, dynamic>>[];
   }
 

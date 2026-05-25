@@ -66,7 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (canEnterInDemo || sessionNow.isAuthenticated) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => const HomeShell(),
+          builder: (_) => HomeShell(),
         ),
       );
     }

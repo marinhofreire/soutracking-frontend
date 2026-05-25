@@ -1,0 +1,17 @@
+import { chromium } from '../tools/playwright/node_modules/playwright/index.mjs';
+const base='http://127.0.0.1:8186/?v=20260522-map-devices-status-final';
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({ viewport:{width:1510,height:860} });
+const page = await context.newPage();
+const reqs=[];
+page.on('request', r=>{ const u=r.url(); if (u.includes('googleapis')||u.includes('gstatic')||u.includes('maps')) reqs.push(u);});
+await page.goto(`${base}&panel=dashboard`,{waitUntil:'networkidle',timeout:120000});
+await page.waitForTimeout(2000);
+await page.mouse.click(744,435); await page.keyboard.press('Control+A'); await page.keyboard.type('demo@mackflow.com.br');
+await page.mouse.click(744,531); await page.keyboard.press('Control+A'); await page.keyboard.type('123456');
+await page.mouse.click(744,645); await page.waitForTimeout(8500);
+await page.goto(`${base}&panel=map`,{waitUntil:'networkidle',timeout:120000});
+await page.waitForTimeout(6000);
+const unique=[...new Set(reqs)].filter(u=>u.includes('marker')||u.includes('maps')||u.includes('gstatic')).slice(0,400);
+console.log(JSON.stringify({count:reqs.length, uniqueCount:unique.length, sample:unique},null,2));
+await browser.close();

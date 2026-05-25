@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/alert_models.dart';
@@ -15,11 +15,11 @@ class AlertsTable extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Lista de alertas',
+            'Eventos de alerta',
             style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
+              color: Color(0xFFE7F2FF),
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
             ),
           ),
           const SizedBox(height: 10),
@@ -28,151 +28,127 @@ class AlertsTable extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.84),
+                color: const Color(0xD9FFFFFF),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDDE5F0)),
+                border: Border.all(color: const Color(0xFFD6E0EE)),
               ),
               child: const Text(
-                'Nenhum alerta encontrado no periodo selecionado',
+                'Nenhum alerta encontrado',
                 style: TextStyle(
-                  color: Color(0xFF25344A),
+                  color: Color(0xFFA8C0DF),
                   fontWeight: FontWeight.w600,
                 ),
               ),
             )
-          else ...[
+          else
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
+                color: const Color(0xE6FFFFFF),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD6E0EE)),
               ),
-              child: const Row(
+              child: Column(
                 children: [
-                  Expanded(flex: 2, child: _HeaderCell('ID')),
-                  Expanded(flex: 2, child: _HeaderCell('Severidade')),
-                  Expanded(flex: 3, child: _HeaderCell('Tipo do evento')),
-                  Expanded(flex: 2, child: _HeaderCell('Veiculo')),
-                  Expanded(flex: 2, child: _HeaderCell('Horario')),
-                  Expanded(flex: 4, child: _HeaderCell('Descricao')),
-                  Expanded(flex: 2, child: _HeaderCell('Status')),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            for (final record in records)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.84),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFDDE5F0)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xCCF8FBFF),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ),
+                    child: const Row(
                       children: [
-                        Expanded(flex: 2, child: _ValueCell(record.id)),
-                        Expanded(
-                          flex: 2,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: AdminStatusChip(
-                              label: record.severity.label,
-                              color: _severityColor(record.severity),
-                            ),
-                          ),
-                        ),
-                        Expanded(flex: 3, child: _ValueCell(record.type)),
-                        Expanded(flex: 2, child: _ValueCell(record.vehicle)),
-                        Expanded(
-                          flex: 2,
-                          child: _ValueCell(_formatDateTime(record.dateTime)),
-                        ),
-                        Expanded(flex: 4, child: _ValueCell(record.description)),
-                        Expanded(
-                          flex: 2,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: record.status == null
-                                ? const _ValueCell('Nao informado')
-                                : AdminStatusChip(
-                                    label: record.status!.label,
-                                    color: _statusColor(record.status!),
-                                  ),
-                          ),
-                        ),
+                        Expanded(flex: 2, child: _HeaderCell('Data/Hora')),
+                        Expanded(flex: 2, child: _HeaderCell('Equipamento')),
+                        Expanded(flex: 3, child: _HeaderCell('Tipo de alerta')),
+                        Expanded(flex: 2, child: _HeaderCell('Severidade')),
+                        Expanded(flex: 2, child: _HeaderCell('Status')),
+                        Expanded(flex: 4, child: _HeaderCell('Descrição')),
+                        SizedBox(width: 56),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                  ),
+                  for (final record in records)
                     Container(
-                      width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                        horizontal: 12,
+                        vertical: 9,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFD),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE4EBF5)),
+                        border: Border(
+                          bottom: BorderSide(
+                            color:
+                                const Color(0xFFD6E0EE).withValues(alpha: 0.85),
+                          ),
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          const Text(
-                            'Dados tecnicos reais',
-                            style: TextStyle(
-                              color: Color(0xFF3B4D66),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 11,
+                          Expanded(
+                            flex: 2,
+                            child: _ValueCell(_formatDateTime(record.dateTime)),
+                          ),
+                          Expanded(flex: 2, child: _ValueCell(record.vehicle)),
+                          Expanded(flex: 3, child: _ValueCell(record.type)),
+                          Expanded(
+                            flex: 2,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: AdminStatusChip(
+                                label: record.severity.label,
+                                color: _severityColor(record.severity),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 4,
-                            children: [
-                              _TechField(
-                                label: 'Lat/Lng',
-                                value: record.latLngLabel,
-                              ),
-                              _TechField(
-                                label: 'Velocidade',
-                                value: record.speedKmhLabel,
-                              ),
-                              _TechField(
-                                label: 'Ignicao',
-                                value: record.ignitionLabel,
-                              ),
-                              _TechField(
-                                label: 'Bateria',
-                                value: record.batteryLabel,
-                              ),
-                              _TechField(
-                                label: 'Endereco',
-                                value: record.addressLabel,
-                              ),
-                            ],
+                          Expanded(
+                            flex: 2,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: record.status == null
+                                  ? const _ValueCell('Não informado')
+                                  : AdminStatusChip(
+                                      label: record.status!.label,
+                                      color: _statusColor(record.status!),
+                                    ),
+                            ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Attributes: ${record.attributesSummaryLabel}',
-                            style: const TextStyle(
-                              color: Color(0xFF4B5F7A),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 11,
+                          Expanded(
+                            flex: 4,
+                            child: _ValueCell(
+                              record.description,
+                              maxLines: 2,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 56,
+                            child: Row(
+                              children: [
+                                _ActionIcon(
+                                  icon: Icons.visibility_outlined,
+                                  color: const Color(0xFF176EEB),
+                                ),
+                                const SizedBox(width: 6),
+                                _ActionIcon(
+                                  icon: Icons.more_horiz,
+                                  color: const Color(0xFF60718D),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
-          ],
+            ),
         ],
       ),
     );
@@ -221,7 +197,7 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFB8C5D9),
+        color: Color(0xFF5F738F),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),
@@ -230,43 +206,44 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _ValueCell extends StatelessWidget {
-  const _ValueCell(this.text);
+  const _ValueCell(this.text, {this.maxLines = 1});
 
   final String text;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
     return Text(
       text,
-      maxLines: 2,
+      maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
-        color: Color(0xFF25344A),
-        fontWeight: FontWeight.w700,
+        color: Color(0xFFE4F0FF),
+        fontWeight: FontWeight.w600,
         fontSize: 12,
       ),
     );
   }
 }
 
-class _TechField extends StatelessWidget {
-  const _TechField({
-    required this.label,
-    required this.value,
-  });
+class _ActionIcon extends StatelessWidget {
+  const _ActionIcon({required this.icon, required this.color});
 
-  final String label;
-  final String value;
+  final IconData icon;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '$label: $value',
-      style: const TextStyle(
-        color: Color(0xFF334155),
-        fontWeight: FontWeight.w700,
-        fontSize: 11,
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
+      child: Icon(icon, color: color, size: 13),
     );
   }
 }
+

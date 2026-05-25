@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SouTracking - Auditoria de Menus</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2a44;
+      --muted: #64748b;
+      --border: #dbe4f0;
+      --blue: #176eeb;
+      --ok: #16a34a;
+      --warn: #f59e0b;
+      --err: #dc2626;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 20px rgba(24, 49, 83, 0.06);
+    }
+
+    .header {
+      padding: 16px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .title p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input, select, button {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 10px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button.primary {
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue);
+    }
+
+    .stats {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 0 16px 14px;
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #fff;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border-top: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1100px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fbff;
+      z-index: 1;
+      font-weight: 800;
+    }
+
+    .menu-col { width: 180px; font-weight: 700; }
+    .sub-col { width: 270px; }
+    .status-col { width: 120px; }
+    .api-col { width: 120px; }
+    .dup-col { width: 110px; }
+    .obs-col { min-width: 300px; }
+
+    .status-chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .s-empty { background: #94a3b8; }
+    .s-ok { background: var(--ok); }
+    .s-warn { background: var(--warn); }
+    .s-err { background: var(--err); }
+
+    .small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div class="title">
+          <h1>Auditoria de Menus e Abas - SouTracking</h1>
+          <p>Marque o que funciona, o que nao funciona e o que esta repetido.</p>
+        </div>
+        <div class="controls">
+          <input id="search" type="text" placeholder="Buscar menu/submenu..." />
+          <select id="filterStatus">
+            <option value="">Status: todos</option>
+            <option value="OK">Funciona (OK)</option>
+            <option value="PARCIAL">Parcial</option>
+            <option value="FALHA">Nao funciona</option>
+          </select>
+          <button id="btnPrefill">Pre-marcar (Codex)</button>
+          <button id="btnReset">Limpar status</button>
+          <button id="btnExport" class="primary">Exportar CSV</button>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="table-wrap">
+        <table id="auditTable">
+          <thead>
+            <tr>
+              <th class="menu-col">Menu</th>
+              <th class="sub-col">Submenu/Aba</th>
+              <th class="status-col">Status</th>
+              <th class="api-col">API/Dados</th>
+              <th class="dup-col">Repetido?</th>
+              <th class="obs-col">Observacao</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="small">Dica: os dados ficam salvos no navegador (localStorage).</p>
+  </div>
+
+  <script>
+    const baseRows = [
+      ["Dashboard","Visao geral"],["Dashboard","Frota em tempo real"],["Dashboard","Alertas criticos"],["Dashboard","Chamados abertos"],["Dashboard","Financeiro resumido"],
+      ["Mapa","Mapa principal"],
+      ["Veiculos","Lista de veiculos"],["Veiculos","Motorista vinculado"],["Veiculos","Equipamento vinculado"],["Veiculos","Chip vinculado"],["Veiculos","Historico do veiculo"],["Veiculos","Situacao financeira"],
+      ["Rotas","Historico de rota"],["Rotas","Replay"],
+      ["Alertas","Lista de alertas"],
+      ["Manutencao","Planos de manutencao"],
+      ["Cercas","Lista de cercas"],
+      ["Chamados","Abrir chamado"],["Chamados","Chamados em andamento"],["Chamados","Chamados finalizados"],
+      ["Comunicacao","Conversas"],
+      ["IA Operacional","Criar alerta por IA"],["IA Operacional","Criar cerca por IA"],["IA Operacional","Criar relatorio por IA"],["IA Operacional","Criar chamado por IA"],["IA Operacional","Resumo diario"],["IA Operacional","Diagnostico de risco"],["IA Operacional","Sugestao de acao"],["IA Operacional","Regras inteligentes"],
+      ["Financeiro","Clientes"],["Financeiro","Cobrancas"],
+      ["Estoque","Painel demo Estoque"],
+      ["MDVR / Cameras","Painel demo MDVR"],
+      ["Telemetria","Frota em tempo real"],["Telemetria","Dispositivos"],["Telemetria","Comandos"],["Telemetria","Sensores"],
+      ["Data Log","Tela unica"],
+      ["Relatorios","Rotas"],["Relatorios","Combinado"],["Relatorios","Eventos"],["Relatorios","Viagens"],["Relatorios","Paradas"],["Relatorios","Resumo"],["Relatorios","Posicoes"],["Relatorios","Logs"],["Relatorios","Cercas (report)"],["Relatorios","Grafico"],["Relatorios","Agendados"],["Relatorios","Estatisticas"],["Relatorios","Auditoria"],
+      ["Automacoes","Regras automaticas"],["Automacoes","Gatilhos"],["Automacoes","Acoes"],["Automacoes","Webhooks"],["Automacoes","Alertas automaticos"],["Automacoes","WhatsApp automatico"],["Automacoes","Criacao automatica de chamado"],["Automacoes","Relatorios automaticos"],["Automacoes","Integracao MackFlow/Bridge"],
+      ["Configuracoes","Preferencias gerais"],["Configuracoes","Usuarios"],["Configuracoes","Dispositivos"],["Configuracoes","Permissoes"],["Configuracoes","Grupos"],["Configuracoes","Motoristas"],["Configuracoes","Atributos"],["Configuracoes","Calendarios"],["Configuracoes","Comandos"],["Configuracoes","Manutencao"],["Configuracoes","Notificacoes"],["Configuracoes","Status do servidor"]
+    ];
+
+    const KEY = "soutracking_menu_auditoria_v1";
+
+    function loadState() {
+      try {
+        return JSON.parse(localStorage.getItem(KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    }
+
+    function idFor(menu, sub) {
+      return (menu + "||" + sub).toLowerCase();
+    }
+
+    function statusChip(status) {
+      if (status === "OK") return '<span class="status-chip s-ok">OK</span>';
+      if (status === "PARCIAL") return '<span class="status-chip s-warn">PARCIAL</span>';
+      if (status === "FALHA") return '<span class="status-chip s-err">FALHA</span>';
+      return '<span class="status-chip s-empty">PENDENTE</span>';
+    }
+
+    function render() {
+      const state = loadState();
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      const f = document.getElementById("filterStatus").value;
+      const tbody = document.querySelector("#auditTable tbody");
+      tbody.innerHTML = "";
+
+      let ok = 0, parcial = 0, falha = 0, pend = 0, shown = 0;
+
+      for (const [menu, sub] of baseRows) {
+        const id = idFor(menu, sub);
+        const rowState = state[id] || {};
+        const st = rowState.status || "";
+
+        const hay = (menu + " " + sub).toLowerCase();
+        if (q && !hay.includes(q)) continue;
+        if (f && st !== f) continue;
+
+        shown++;
+        if (st === "OK") ok++;
+        else if (st === "PARCIAL") parcial++;
+        else if (st === "FALHA") falha++;
+        else pend++;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="menu-col">${menu}</td>
+          <td class="sub-col">${sub}</td>
+          <td class="status-col">
+            ${statusChip(st)}
+            <div style="margin-top:6px">
+              <select data-id="${id}" data-field="status">
+                <option value="" ${st===""?"selected":""}>Pendente</option>
+                <option value="OK" ${st==="OK"?"selected":""}>OK</option>
+                <option value="PARCIAL" ${st==="PARCIAL"?"selected":""}>Parcial</option>
+                <option value="FALHA" ${st==="FALHA"?"selected":""}>Falha</option>
+              </select>
+            </div>
+          </td>
+          <td class="api-col">
+            <select data-id="${id}" data-field="api">
+              <option value="" ${(rowState.api||"")===""?"selected":""}>--</option>
+              <option value="SIM" ${(rowState.api||"")==="SIM"?"selected":""}>SIM</option>
+              <option value="NAO" ${(rowState.api||"")==="NAO"?"selected":""}>NAO</option>
+              <option value="PARCIAL" ${(rowState.api||"")==="PARCIAL"?"selected":""}>PARCIAL</option>
+            </select>
+          </td>
+          <td class="dup-col">
+            <select data-id="${id}" data-field="dup">
+              <option value="" ${(rowState.dup||"")===""?"selected":""}>--</option>
+              <option value="NAO" ${(rowState.dup||"")==="NAO"?"selected":""}>NAO</option>
+              <option value="SIM" ${(rowState.dup||"")==="SIM"?"selected":""}>SIM</option>
+            </select>
+          </td>
+          <td class="obs-col">
+            <input data-id="${id}" data-field="obs" type="text" value="${(rowState.obs||"").replace(/"/g, "&quot;")}" placeholder="Anote erro, endpoint, repeticao, etc." style="width:100%" />
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      document.getElementById("stats").innerHTML = `
+        <span class="pill">Linhas visiveis: ${shown}</span>
+        <span class="pill">OK: ${ok}</span>
+        <span class="pill">Parcial: ${parcial}</span>
+        <span class="pill">Falha: ${falha}</span>
+        <span class="pill">Pendente: ${pend}</span>
+        <span class="pill">Perfil: Admin (base)</span>
+      `;
+
+      tbody.querySelectorAll("select,input").forEach((el) => {
+        el.addEventListener("change", onChangeCell);
+        el.addEventListener("input", onChangeCell);
+      });
+    }
+
+    function buildCodePreAudit() {
+      const map = {};
+      const put = (menu, sub, status, api, dup, obs) => {
+        map[idFor(menu, sub)] = { status, api, dup, obs };
+      };
+
+      for (const [menu, sub] of baseRows) {
+        let status = "PARCIAL";
+        let api = "PARCIAL";
+        let dup = "NAO";
+        let obs = "Pre-auditoria tecnica por codigo. Validar em execucao.";
+
+        if (menu === "Estoque" || menu === "MDVR / Cameras") {
+          api = "NAO";
+          obs = "Tela/demo local detectada por codigo.";
+        }
+
+        if (menu === "Relatorios") {
+          api = "SIM";
+          obs = "Tela ligada a endpoint de relatorio. Validar retorno da API.";
+        }
+
+        if (menu === "Data Log") {
+          api = "SIM";
+          obs = "Usa HistoryScreen com dados de historico/eventos.";
+        }
+
+        if (menu === "Manutencao" || menu === "Alertas" || menu === "Veiculos" || menu === "Cercas" || menu === "Rotas" || menu === "Chamados" || menu === "Comunicacao" || menu === "Configuracoes" || menu === "Dashboard") {
+          status = "PARCIAL";
+          api = api === "SIM" ? "SIM" : "PARCIAL";
+        }
+
+        if (menu === "IA Operacional") {
+          status = "PARCIAL";
+          api = "PARCIAL";
+          obs = "Fluxos assistidos; parte depende de Bridge/servicos externos.";
+        }
+
+        if (menu === "Mapa" && sub === "Mapa principal") {
+          status = "PARCIAL";
+          api = "PARCIAL";
+          obs = "Mapa renderizado no shell principal; validar dados de posicao.";
+        }
+
+        if (menu === "Dashboard" && sub === "Frota em tempo real") {
+          dup = "SIM";
+          obs = "Reusa conceito/tela equivalente de Veiculos > Lista.";
+        }
+        if (menu === "Dashboard" && sub === "Alertas criticos") {
+          dup = "SIM";
+          obs = "Equivalente funcional de Alertas > Lista de alertas.";
+        }
+        if (menu === "Dashboard" && sub === "Chamados abertos") {
+          dup = "SIM";
+          obs = "Equivalente funcional de Chamados em andamento.";
+        }
+        if (menu === "Rotas" && sub === "Replay") {
+          dup = "SIM";
+          obs = "Historico e replay usam mesma base de tela no codigo.";
+        }
+        if (menu === "Telemetria" && (sub === "Frota em tempo real" || sub === "Dispositivos" || sub === "Comandos")) {
+          dup = "SIM";
+          obs = "Atalho para telas existentes em outros menus.";
+        }
+        if (menu === "Veiculos" && sub === "Historico do veiculo") {
+          dup = "SIM";
+          obs = "Compartilha base de historico (similar a Data Log).";
+        }
+        if (menu === "Data Log" && sub === "Tela unica") {
+          dup = "SIM";
+          obs = "Usa HistoryScreen; possivel sobreposicao com Historico do veiculo.";
+        }
+        if (menu === "Financeiro" && sub === "Cobrancas") {
+          api = "PARCIAL";
+          obs = "Tela existe; validar integracao financeira real.";
+        }
+
+        put(menu, sub, status, api, dup, obs);
+      }
+
+      return map;
+    }
+
+    function applyPrefill({ overwrite = false } = {}) {
+      const state = loadState();
+      const pre = buildCodePreAudit();
+      for (const [key, value] of Object.entries(pre)) {
+        const current = state[key] || {};
+        if (!overwrite && (current.status || current.api || current.dup || current.obs)) {
+          continue;
+        }
+        state[key] = {
+          status: value.status,
+          api: value.api,
+          dup: value.dup,
+          obs: value.obs,
+        };
+      }
+      saveState(state);
+      render();
+    }
+
+    function onChangeCell(e) {
+      const el = e.target;
+      const id = el.dataset.id;
+      const field = el.dataset.field;
+      const state = loadState();
+      state[id] = state[id] || {};
+      state[id][field] = el.value;
+      saveState(state);
+      if (field === "status") render();
+    }
+
+    function exportCsv() {
+      const state = loadState();
+      const rows = [["Menu","Submenu/Aba","Status","API/Dados","Repetido","Observacao"]];
+      for (const [menu, sub] of baseRows) {
+        const id = idFor(menu, sub);
+        const s = state[id] || {};
+        rows.push([menu, sub, s.status || "", s.api || "", s.dup || "", s.obs || ""]);
+      }
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "soutracking_auditoria_menus.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function resetStatuses() {
+      const state = loadState();
+      for (const [menu, sub] of baseRows) {
+        const id = idFor(menu, sub);
+        if (!state[id]) state[id] = {};
+        state[id].status = "";
+      }
+      saveState(state);
+      render();
+    }
+
+    document.getElementById("search").addEventListener("input", render);
+    document.getElementById("filterStatus").addEventListener("change", render);
+    document.getElementById("btnPrefill").addEventListener("click", () => {
+      const state = loadState();
+      const hasData = Object.values(state).some((row) => {
+        if (!row) return false;
+        return row.status || row.api || row.dup || row.obs;
+      });
+      if (hasData) {
+        const overwrite = window.confirm("Ja existem marcacoes. Deseja sobrescrever tudo com a pre-marcacao tecnica?");
+        applyPrefill({ overwrite });
+      } else {
+        applyPrefill({ overwrite: true });
+      }
+    });
+    document.getElementById("btnExport").addEventListener("click", exportCsv);
+    document.getElementById("btnReset").addEventListener("click", resetStatuses);
+
+    if (Object.keys(loadState()).length === 0) {
+      applyPrefill({ overwrite: true });
+    }
+    render();
+  </script>
+</body>
+</html>

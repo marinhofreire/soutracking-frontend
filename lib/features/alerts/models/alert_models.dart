@@ -1,4 +1,4 @@
-class AlertKpiSummary {
+﻿class AlertKpiSummary {
   const AlertKpiSummary({
     required this.today,
     required this.critical,
@@ -102,21 +102,21 @@ class AlertRecord {
 
   String get latitudeLabel {
     if (latitude == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return latitude!.toStringAsFixed(6);
   }
 
   String get longitudeLabel {
     if (longitude == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return longitude!.toStringAsFixed(6);
   }
 
   String get latLngLabel {
     if (latitude == null || longitude == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return '${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}';
   }
@@ -124,7 +124,7 @@ class AlertRecord {
   String get speedKmhLabel {
     final raw = speedKnots ?? _asDouble(attributes['speed']);
     if (raw == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     final kmh = raw * 1.852;
     return '${kmh.toStringAsFixed(1)} km/h';
@@ -133,7 +133,7 @@ class AlertRecord {
   String get ignitionLabel {
     final value = ignition ?? _asBool(attributes['ignition'] ?? attributes['ignitionOn']);
     if (value == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return value ? 'Ligada' : 'Desligada';
   }
@@ -149,13 +149,13 @@ class AlertRecord {
         attributes['power'] ??
         attributes['batteryVoltage'];
     if (raw == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
 
     if (raw is num) {
       final value = raw.toDouble();
       if (!value.isFinite) {
-        return 'Nao informado';
+        return 'Não informado';
       }
       if (value > 20) {
         return '${value.toStringAsFixed(0)}%';
@@ -164,7 +164,7 @@ class AlertRecord {
     }
 
     final text = _sanitizeText(raw.toString());
-    return text ?? 'Nao informado';
+    return text ?? 'Não informado';
   }
 
   String get addressLabel {
@@ -175,12 +175,12 @@ class AlertRecord {
     final fromAttributes = _sanitizeText(
       (attributes['address'] ?? attributes['geocoder'] ?? '').toString(),
     );
-    return fromAttributes ?? 'Nao informado';
+    return fromAttributes ?? 'Não informado';
   }
 
   String get attributesSummaryLabel {
     if (attributes.isEmpty) {
-      return 'Nao informado';
+      return 'Não informado';
     }
 
     final summary = <String>[];
@@ -218,7 +218,7 @@ class AlertRecord {
     }
 
     if (summary.isEmpty) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return summary.join(' | ');
   }
@@ -236,7 +236,7 @@ class AlertRecord {
       return null;
     }
     if (value is bool) {
-      return value ? 'Sim' : 'Nao';
+      return value ? 'Sim' : 'Não';
     }
     if (value is num) {
       final number = value.toDouble();
@@ -289,10 +289,11 @@ class AlertRecord {
           normalized == 'off' ||
           normalized == 'desligada' ||
           normalized == 'nao' ||
-          normalized == 'nÃ£o') {
+          normalized == 'não') {
         return false;
       }
     }
     return null;
   }
 }
+

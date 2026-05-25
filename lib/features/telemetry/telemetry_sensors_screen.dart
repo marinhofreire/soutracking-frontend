@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/display_text_formatter.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'sensor_presentation.dart';
@@ -74,7 +75,10 @@ class _TelemetrySensorsScreenState
     final latestByDevice = _latestPositionByDevice(positions);
     final snapshots = _buildSnapshots(devices, latestByDevice);
 
-    if (_deviceId == null && snapshots.isNotEmpty) {
+    if (snapshots.isEmpty) {
+      _deviceId = null;
+    } else if (_deviceId == null ||
+        !snapshots.any((snapshot) => snapshot.device.id == _deviceId)) {
       _deviceId = snapshots.first.device.id;
     }
 
@@ -107,8 +111,8 @@ class _TelemetrySensorsScreenState
     final deviceHistory =
         historyAsync.valueOrNull ?? const <TraccarPosition>[];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: EdgeInsets.zero,
       children: [
         _buildToolbar(devices, rowsCount),
         const SizedBox(height: 10),
@@ -118,14 +122,12 @@ class _TelemetrySensorsScreenState
           _buildSelectedVehicleHeader(selectedSnapshot),
         ],
         const SizedBox(height: 10),
-        Expanded(
-          child: _buildSensorDetails(
-            selectedSnapshot: selectedSnapshot,
-            filteredSections: filteredSections,
-            deviceHistory: deviceHistory,
-            historyLoading: historyAsync.isLoading,
-            eventsAsync: eventsAsync,
-          ),
+        _buildSensorDetails(
+          selectedSnapshot: selectedSnapshot,
+          filteredSections: filteredSections,
+          deviceHistory: deviceHistory,
+          historyLoading: historyAsync.isLoading,
+          eventsAsync: eventsAsync,
         ),
       ],
     );
@@ -138,20 +140,24 @@ class _TelemetrySensorsScreenState
         runSpacing: 10,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(
-            width: 320,
-            child: DropdownButtonFormField<int>(
-              initialValue: _deviceId,
-              items: [
-                for (final d in devices)
-                  DropdownMenuItem(value: d.id, child: Text(d.name)),
-              ],
-              onChanged: (value) => setState(() => _deviceId = value),
-              decoration: const InputDecoration(
-                labelText: 'Dispositivo',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
+            SizedBox(
+              width: 320,
+              child: DropdownButtonFormField<int>(
+                key: ValueKey<int?>(_deviceId),
+                initialValue: _deviceId,
+                items: [
+                  for (final d in devices)
+                    DropdownMenuItem(
+                      value: d.id,
+                      child: Text(formatDisplayText(d.name)),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _deviceId = value),
+                decoration: const InputDecoration(
+                  labelText: 'Equipamento',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
             ),
           ),
           SizedBox(
@@ -215,7 +221,7 @@ class _TelemetrySensorsScreenState
             const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Nenhum dispositivo recebido.',
+                'Nenhum equipamento recebido.',
                 style: TextStyle(
                   color: Color(0xFF60718D),
                   fontWeight: FontWeight.w700,
@@ -223,139 +229,144 @@ class _TelemetrySensorsScreenState
               ),
             )
           else
-            SizedBox(
-              height: 228,
-              child: ListView.separated(
-                itemCount: snapshots.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final snapshot = snapshots[index];
-                  final selected = snapshot.device.id == _deviceId;
-                  return InkWell(
-                    onTap: () => setState(() => _deviceId = snapshot.device.id),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? const Color(0xFFEAF3FF).withValues(alpha: 0.72)
-                            : Colors.transparent,
-                        border: selected
-                            ? Border(
-                                left: BorderSide(
-                                  color: const Color(0xFF176EEB),
-                                  width: 2,
-                                ),
-                              )
-                            : null,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 16,
-                            child: _StatusPill(snapshot: snapshot),
-                          ),
-                          Expanded(
-                            flex: 26,
-                            child: Text(
-                              snapshot.device.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF1F2A44),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 16,
-                            child: Text(
-                              snapshot.device.uniqueId ?? '--',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF4B5C77),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 18,
-                            child: Text(
-                              snapshot.lastConnectionLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF4B5C77),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 10,
-                            child: Text(
-                              snapshot.speedLabel,
-                              style: TextStyle(
-                                color: snapshot.speedKmh >= 1
-                                    ? const Color(0xFF16A34A)
-                                    : const Color(0xFF4B5C77),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 8,
-                            child: Icon(
-                              Icons.power_settings_new_rounded,
-                              color: _ignitionColor(snapshot.ignition),
-                              size: 19,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 10,
-                            child: Text(
-                              snapshot.batteryLabel,
-                              style: TextStyle(
-                                color: _batteryColor(snapshot),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 10,
-                            child: Row(
-                              children: [
-                                _BlinkingIcon(
-                                  enabled:
-                                      snapshot.gsmLevel == _GsmLevel.critical,
-                                  child: Icon(
-                                    _gsmIcon(snapshot.gsmLevel),
-                                    color: _gsmColor(snapshot.gsmLevel),
-                                    size: 19,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    snapshot.gsmLabel,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: _gsmColor(snapshot.gsmLevel),
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
+            Column(
+              children: [
+                for (var index = 0; index < snapshots.length; index++) ...[
+                  Builder(
+                    builder: (context) {
+                      final snapshot = snapshots[index];
+                      final selected = snapshot.device.id == _deviceId;
+                      return InkWell(
+                        onTap: () => setState(() => _deviceId = snapshot.device.id),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? const Color(0xFFEAF3FF).withValues(alpha: 0.72)
+                                : Colors.transparent,
+                            border: selected
+                                ? Border(
+                                    left: BorderSide(
+                                      color: const Color(0xFF176EEB),
+                                      width: 2,
                                     ),
+                                  )
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 16,
+                                child: _StatusPill(snapshot: snapshot),
+                              ),
+                              Expanded(
+                                flex: 26,
+                                child: Text(
+                                  formatDisplayText(snapshot.device.name),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1F2A44),
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                              Expanded(
+                                flex: 16,
+                                child: Text(
+                                  formatDisplayText(
+                                    snapshot.device.uniqueId,
+                                    fallback: '--',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF4B5C77),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 18,
+                                child: Text(
+                                  snapshot.lastConnectionLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF4B5C77),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 10,
+                                child: Text(
+                                  snapshot.speedLabel,
+                                  style: TextStyle(
+                                    color: snapshot.speedKmh >= 1
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFF4B5C77),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 8,
+                                child: Icon(
+                                  Icons.power_settings_new_rounded,
+                                  color: _ignitionColor(snapshot.ignition),
+                                  size: 19,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 10,
+                                child: Text(
+                                  snapshot.batteryLabel,
+                                  style: TextStyle(
+                                    color: _batteryColor(snapshot),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 10,
+                                child: Row(
+                                  children: [
+                                    _BlinkingIcon(
+                                      enabled:
+                                          snapshot.gsmLevel == _GsmLevel.critical,
+                                      child: Icon(
+                                        _gsmIcon(snapshot.gsmLevel),
+                                        color: _gsmColor(snapshot.gsmLevel),
+                                        size: 19,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        snapshot.gsmLabel,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: _gsmColor(snapshot.gsmLevel),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+                        ),
+                      );
+                    },
+                  ),
+                  if (index < snapshots.length - 1) const Divider(height: 1),
+                ],
+              ],
             ),
         ],
       ),
@@ -383,7 +394,7 @@ class _TelemetrySensorsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  snapshot.device.name,
+                  formatDisplayText(snapshot.device.name),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -436,7 +447,7 @@ class _TelemetrySensorsScreenState
       return const _TranslucentCard(
         child: Center(
           child: Text(
-            'Selecione um dispositivo para visualizar a telemetria.',
+            'Selecione um equipamento para visualizar a telemetria',
             style: TextStyle(
               color: Color(0xFF526684),
               fontWeight: FontWeight.w700,
@@ -449,8 +460,8 @@ class _TelemetrySensorsScreenState
     final events = _sortedEvents(eventsAsync.valueOrNull ?? const []);
 
     return _TranslucentCard(
-      child: ListView(
-        padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTelemetryOverviewGrid(
             snapshot: selectedSnapshot,
@@ -704,6 +715,25 @@ class _TelemetrySensorsScreenState
   String _formatEventType(dynamic raw) {
     final value = raw?.toString().trim() ?? '';
     if (value.isEmpty) return 'Não informado';
+
+    final normalizedKey = value.toLowerCase();
+    switch (normalizedKey) {
+      case 'devicemoving':
+        return 'Em movimento';
+      case 'deviceonline':
+        return 'Online';
+      case 'devicestopped':
+        return 'Parado';
+      case 'deviceoffline':
+        return 'Offline';
+      case 'deviceunknown':
+        return 'Status desconhecido';
+      case 'ignitionon':
+        return 'Ignição ligada';
+      case 'ignitionoff':
+        return 'Ignição desligada';
+    }
+
     final withSpaces = value
         .replaceAllMapped(
             RegExp(r'([a-z])([A-Z])'), (m) => '${m.group(1)} ${m.group(2)}')

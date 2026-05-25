@@ -97,15 +97,21 @@ const bool kShowPlaceholderPanels = bool.fromEnvironment(
   defaultValue: false,
 );
 
-// Log do endpoint Traccar em uso (aparece no console ao iniciar app)
+// Log de depuracao de endpoint da API (somente em debug).
 void logTraccarBaseUrl({String? endpoint}) {
+  if (!kDebugMode) return;
+  final target = endpoint?.trim() ?? '';
   // ignore: avoid_print
-  print(
-      '[INFO] Traccar baseUrl em uso: "$kTraccarBaseUrl" | endpoint: ${endpoint ?? ''} | presentationMode: $presentationMode');
+  print(target.isEmpty
+      ? '[DEBUG] API baseUrl em uso: "$kTraccarBaseUrl" | presentationMode: $presentationMode'
+      : '[DEBUG] API baseUrl em uso: "$kTraccarBaseUrl" | endpoint: $target | presentationMode: $presentationMode');
 }
 
 void logSouAssistBaseUrl({String? endpoint}) {
+  if (!kDebugMode) return;
+  final target = endpoint?.trim() ?? '';
   // ignore: avoid_print
-  print(
-      '[INFO] SouFind baseUrl em uso: "$kSouAssistApiBaseUrl" | endpoint: ${endpoint ?? ''} | presentationMode: $presentationMode');
+  print(target.isEmpty
+      ? '[DEBUG] API de apoio baseUrl em uso: "$kSouAssistApiBaseUrl" | presentationMode: $presentationMode'
+      : '[DEBUG] API de apoio baseUrl em uso: "$kSouAssistApiBaseUrl" | endpoint: $target | presentationMode: $presentationMode');
 }

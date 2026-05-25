@@ -35,7 +35,7 @@ class MockInventoryRepository implements InventoryRepository {
       InventorySummaryCard(
         title: 'Itens reservados',
         value: '51',
-        subtitle: '16 aguardando tecnico responsavel',
+        subtitle: '16 aguardando técnico responsavel',
       ),
     ];
   }
@@ -116,7 +116,7 @@ class MockInventoryRepository implements InventoryRepository {
         category: InventoryCategory.installationKit,
         quantity: 0,
         status: InventoryStatus.discarded,
-        location: 'Descarte tecnico',
+        location: 'Descarte técnico',
         supplier: 'Kit Master',
         lastMovementAt: now.subtract(const Duration(days: 20)),
       ),

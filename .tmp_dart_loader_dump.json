@@ -1,0 +1,32 @@
+{
+  "hasDartLoader": true,
+  "dartLoaderKeys": [
+    "moduleIdToUrl",
+    "rootDirectories",
+    "urlToModuleId",
+    "loader",
+    "loadConfig",
+    "LoadConfiguration",
+    "forceLoadScript",
+    "forceLoadModule",
+    "DDCLoader",
+    "loadScripts"
+  ],
+  "hasLoader": true,
+  "loaderType": "DDCLoader",
+  "loaderKeys": [
+    "attemptCount",
+    "loadConfig",
+    "queue",
+    "numToLoad",
+    "numLoaded",
+    "numFailed",
+    "nextAttempt",
+    "intendedHotRestartGeneration"
+  ],
+  "hasGlass": false,
+  "canvasCount": 0,
+  "bodyChildren": [
+    "script"
+  ]
+}

@@ -221,7 +221,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao carregar historico: $e')),
+        SnackBar(content: Text('Falha ao carregar histórico: $e')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -246,7 +246,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       source: 'Posicao',
       timestamp: timestamp,
       type: 'Posicao',
-      description: 'Comunicacao de posicionamento',
+      description: 'Comunicação de posicionamento',
       speedKmh: speed,
       ignition: ignition,
       battery: battery,
@@ -486,7 +486,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final visibleRows = _filteredRows;
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
 
-    var equipmentName = 'Nao informado';
+    var equipmentName = 'Não informado';
     for (final device in devices) {
       if (device.id == _deviceId) {
         equipmentName = device.name;
@@ -531,12 +531,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ..sort(),
     ];
 
-    const panelBackground = Color(0xC20F1D32);
-    const panelBorder = Color(0x3E5A759B);
-    const titleColor = Color(0xFFE9F1FF);
-    const subtitleColor = Color(0xFF9CB1CC);
-    const fieldColor = Color(0xAA13273F);
-    const lineColor = Color(0x33536A87);
+    const panelBackground = Color(0xEFFFFFFF);
+    const panelBorder = Color(0xFFD6E0EE);
+    const titleColor = Color(0xFF25344A);
+    const subtitleColor = Color(0xFF5F738F);
+    const fieldColor = Color(0xFFF7F9FD);
+    const lineColor = Color(0xFFD6E0EE);
 
     InputDecoration darkInput({String? hintText, String? labelText}) {
       return InputDecoration(
@@ -593,7 +593,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 child: devicesAsync.when(
                   data: (loadedDevices) => DropdownButtonFormField<int>(
                     initialValue: _deviceId,
-                    dropdownColor: const Color(0xFF112138),
                     style: const TextStyle(color: titleColor),
                     decoration: darkInput(labelText: 'Equipamento'),
                     items: [
@@ -666,7 +665,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                   child: DataTable(
                                     dividerThickness: 0.45,
                                     headingRowColor: WidgetStatePropertyAll(
-                                      const Color(0xFF162B45),
+                                      const Color(0xCCF8FBFF),
                                     ),
                                     headingTextStyle: const TextStyle(
                                       color: titleColor,
@@ -800,14 +799,14 @@ class _HistoryLogRow {
   }
 
   String get speedLabel {
-    if (speedKmh == null) return 'Nao informado';
+    if (speedKmh == null) return 'Não informado';
     return '${speedKmh!.toStringAsFixed(0)} km/h';
   }
 
   String get latLabel =>
-      lat == null ? 'Nao informado' : lat!.toStringAsFixed(6);
+      lat == null ? 'Não informado' : lat!.toStringAsFixed(6);
   String get lngLabel =>
-      lng == null ? 'Nao informado' : lng!.toStringAsFixed(6);
+      lng == null ? 'Não informado' : lng!.toStringAsFixed(6);
 }
 
 Map<String, dynamic> _asMap(dynamic value) {
@@ -835,7 +834,7 @@ double? _asDouble(dynamic value) {
 }
 
 String _normalizeBooleanLabel(dynamic value) {
-  if (value == null) return 'Nao informado';
+  if (value == null) return 'Não informado';
   if (value is bool) return value ? 'Ligada' : 'Desligada';
   if (value is num) return value > 0 ? 'Ligada' : 'Desligada';
   if (value is String) {
@@ -847,7 +846,7 @@ String _normalizeBooleanLabel(dynamic value) {
       return 'Desligada';
     }
   }
-  return 'Nao informado';
+  return 'Não informado';
 }
 
 String _resolveBattery(Map<String, dynamic> raw, Map<String, dynamic> attrs) {
@@ -856,17 +855,17 @@ String _resolveBattery(Map<String, dynamic> raw, Map<String, dynamic> attrs) {
       attrs['batteryLevel'] ??
       attrs['power'] ??
       attrs['batteryVoltage'];
-  if (value == null) return 'Nao informado';
+  if (value == null) return 'Não informado';
   if (value is num) {
     if (value > 20) return '${value.toStringAsFixed(0)}%';
     return '${value.toStringAsFixed(2)} V';
   }
   final text = value.toString().trim();
-  return text.isEmpty ? 'Nao informado' : text;
+  return text.isEmpty ? 'Não informado' : text;
 }
 
 String _attributesSummary(Map<String, dynamic> attrs) {
-  if (attrs.isEmpty) return 'Nao informado';
+  if (attrs.isEmpty) return 'Não informado';
   final pairs = <String>[];
   for (final entry in attrs.entries) {
     final key = entry.key.trim();
@@ -877,7 +876,7 @@ String _attributesSummary(Map<String, dynamic> attrs) {
     pairs.add('$key=$val');
     if (pairs.length >= 3) break;
   }
-  if (pairs.isEmpty) return 'Nao informado';
+  if (pairs.isEmpty) return 'Não informado';
   return pairs.join(' | ');
 }
 
@@ -996,7 +995,7 @@ String _humanize(String value) {
 }
 
 String _formatDateTime(DateTime? value) {
-  if (value == null) return 'Nao informado';
+  if (value == null) return 'Não informado';
   final dd = value.day.toString().padLeft(2, '0');
   final mm = value.month.toString().padLeft(2, '0');
   final yyyy = value.year.toString().padLeft(4, '0');

@@ -39,7 +39,7 @@ class MockAlertsRepository implements AlertsRepository {
       AlertRecord(
         id: 'ALT-003',
         severity: AlertSeverity.medium,
-        type: 'Ignicao ligada parada',
+        type: 'Ignição ligada parada',
         vehicle: 'TYU8I90',
         description: 'Motor ligado sem deslocamento',
         dateTime: now.subtract(const Duration(hours: 1, minutes: 4)),
@@ -84,7 +84,7 @@ class MockAlertsRepository implements AlertsRepository {
       AlertRecord(
         id: 'ALT-008',
         severity: AlertSeverity.low,
-        type: 'Manutencao preventiva',
+        type: 'Manutenção preventiva',
         vehicle: 'TYU8I90',
         description: 'Lembrete de manutencao preventiva',
         dateTime: now.subtract(const Duration(days: 2, hours: 1)),

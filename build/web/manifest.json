@@ -1,6 +1,6 @@
 {
-    "name": "Sou Fleet",
-    "short_name": "Sou Fleet",
+    "name": "SouTracking",
+    "short_name": "SouTracking",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

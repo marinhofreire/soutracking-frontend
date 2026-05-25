@@ -245,7 +245,7 @@ class _RoutesScreenState extends ConsumerState<RoutesScreen> {
     final parsed = _toDateTime(value);
     if (parsed == null) {
       final raw = '$value'.trim();
-      return raw.isEmpty ? 'Nao informado' : raw;
+      return raw.isEmpty ? 'Não informado' : raw;
     }
     final local = parsed.isUtc ? parsed.toLocal() : parsed;
     final day = local.day.toString().padLeft(2, '0');
@@ -270,7 +270,7 @@ class _RoutesScreenState extends ConsumerState<RoutesScreen> {
 
   String _formatSpeedKmh(double? speedKnots) {
     if (speedKnots == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     final kmh = speedKnots * 1.852;
     return '${kmh.toStringAsFixed(1)} km/h';
@@ -278,7 +278,7 @@ class _RoutesScreenState extends ConsumerState<RoutesScreen> {
 
   String _formatDistance(double? meters) {
     if (meters == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     if (meters >= 1000) {
       return '${(meters / 1000).toStringAsFixed(2)} km';
@@ -625,7 +625,7 @@ class _RoutesScreenState extends ConsumerState<RoutesScreen> {
                   value: point.batteryLabel,
                 ),
                 _ReplayDetailLine(
-                  label: 'Ignicao',
+                  label: 'Ignição',
                   value: point.ignitionLabel,
                 ),
                 _ReplayDetailLine(
@@ -860,7 +860,7 @@ class _RoutePoint {
   String get addressLabel {
     final value = address ?? attributes['address'];
     final text = value?.toString().trim() ?? '';
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   bool? get ignition {
@@ -871,7 +871,7 @@ class _RoutePoint {
   String get ignitionLabel {
     final value = ignition;
     if (value == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     return value ? 'Ligada' : 'Desligada';
   }
@@ -882,12 +882,12 @@ class _RoutePoint {
         attributes['power'] ??
         attributes['batteryVoltage'];
     if (raw == null) {
-      return 'Nao informado';
+      return 'Não informado';
     }
     if (raw is num) {
       final value = raw.toDouble();
       if (!value.isFinite) {
-        return 'Nao informado';
+        return 'Não informado';
       }
       if (value > 20) {
         return '${value.toStringAsFixed(0)}%';
@@ -895,7 +895,7 @@ class _RoutePoint {
       return '${value.toStringAsFixed(2)} V';
     }
     final text = raw.toString().trim();
-    return text.isEmpty ? 'Nao informado' : text;
+    return text.isEmpty ? 'Não informado' : text;
   }
 
   static _RoutePoint? fromMap(Map<String, dynamic> json) {

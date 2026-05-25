@@ -23,125 +23,127 @@ class ReportsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Relatórios recentes',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6FAFF),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Expanded(flex: 3, child: _HeaderCell('Nome do relatório')),
+                Expanded(flex: 2, child: _HeaderCell('Tipo')),
+                Expanded(flex: 2, child: _HeaderCell('Período')),
+                Expanded(flex: 2, child: _HeaderCell('Gerado em')),
+                Expanded(flex: 1, child: _HeaderCell('Status')),
+                SizedBox(width: 110),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
           if (records.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.84),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDDE5F0)),
-              ),
-              child: const Text(
-                'Nenhum relatório encontrado para o período selecionado',
-                style: TextStyle(
-                  color: Color(0xFF25344A),
-                  fontWeight: FontWeight.w600,
+            const Expanded(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Nenhum relatório encontrado para o período selecionado.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF60718D),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             )
-          else ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                children: [
-                  Expanded(flex: 3, child: _HeaderCell('Nome do relatório')),
-                  Expanded(flex: 2, child: _HeaderCell('Tipo')),
-                  Expanded(flex: 2, child: _HeaderCell('Veículo/Motorista')),
-                  Expanded(flex: 2, child: _HeaderCell('Período')),
-                  Expanded(flex: 1, child: _HeaderCell('Status')),
-                  Expanded(flex: 2, child: _HeaderCell('Criado em')),
-                  Expanded(flex: 2, child: _HeaderCell('Ações')),
-                ],
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: records.length,
+                separatorBuilder: (_, __) => Divider(
+                  color: const Color(0xFFD6E0EE).withValues(alpha: 0.85),
+                  height: 1,
+                ),
+                itemBuilder: (context, index) {
+                  final record = records[index];
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _NameCell(
+                            name: record.name,
+                            details:
+                                '${record.vehicle} - ${record.totalRecords} registros',
+                          ),
+                        ),
+                        Expanded(flex: 2, child: _ValueCell(record.type.label)),
+                        Expanded(flex: 2, child: _ValueCell(record.period)),
+                        Expanded(
+                          flex: 2,
+                          child: _ValueCell(_formatDateTime(record.createdAt)),
+                        ),
+                        Expanded(
+                          flex: 1,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: AdminStatusChip(
+                              label: record.status.label,
+                              color: _statusColor(record.status),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: Row(
+                            children: [
+                              _ActionButton(
+                                icon: Icons.visibility_outlined,
+                                color: const Color(0xFF176EEB),
+                                onTap: () => onView(record),
+                              ),
+                              const SizedBox(width: 6),
+                              _ActionButton(
+                                icon: Icons.picture_as_pdf_outlined,
+                                color: const Color(0xFFE74B4B),
+                                enabled: pdfEnabled,
+                                onTap: () => onExportPdf(record),
+                              ),
+                              const SizedBox(width: 6),
+                              _ActionButton(
+                                icon: Icons.grid_on_outlined,
+                                color: const Color(0xFF10B981),
+                                enabled: canExportRow,
+                                onTap: () => onExportExcel(record),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
-            const SizedBox(height: 8),
-            for (final record in records)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.84),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFDDE5F0)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: _NameCell(
-                        name: record.name,
-                        details:
-                            '${record.totalRecords} registros • ${record.format.label}',
-                      ),
-                    ),
-                    Expanded(flex: 2, child: _ValueCell(record.type.label)),
-                    Expanded(
-                      flex: 2,
-                      child: _ValueCell('${record.vehicle} / ${record.driver}'),
-                    ),
-                    Expanded(flex: 2, child: _ValueCell(record.period)),
-                    Expanded(
-                      flex: 1,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: AdminStatusChip(
-                          label: record.status.label,
-                          color: _statusColor(record.status),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: _ValueCell(_formatDateTime(record.createdAt)),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Wrap(
-                        spacing: 6,
-                        children: [
-                          _ActionButton(
-                            icon: Icons.visibility_outlined,
-                            color: const Color(0xFF3B82F6),
-                            onTap: () => onView(record),
-                          ),
-                          _ActionButton(
-                            icon: Icons.picture_as_pdf_outlined,
-                            color: const Color(0xFFE74B4B),
-                            enabled: pdfEnabled,
-                            onTap: () => onExportPdf(record),
-                          ),
-                          _ActionButton(
-                            icon: Icons.grid_on_outlined,
-                            color: const Color(0xFF10B981),
-                            enabled: canExportRow,
-                            onTap: () => onExportExcel(record),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
         ],
       ),
     );
@@ -179,7 +181,7 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFB8C5D9),
+        color: Color(0xFF5F738F),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),
@@ -199,8 +201,8 @@ class _ValueCell extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
-        color: Color(0xFF25344A),
-        fontWeight: FontWeight.w700,
+        color: Color(0xFF334155),
+        fontWeight: FontWeight.w600,
         fontSize: 12,
       ),
     );
@@ -223,9 +225,9 @@ class _NameCell extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Color(0xFF1F2A44),
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
+            color: Color(0xFF25344A),
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
           ),
         ),
         const SizedBox(height: 2),
@@ -234,7 +236,7 @@ class _NameCell extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Color(0xFF60718D),
+            color: Color(0xFF5F738F),
             fontWeight: FontWeight.w600,
             fontSize: 11,
           ),
@@ -263,8 +265,8 @@ class _ActionButton extends StatelessWidget {
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 30,
-        height: 30,
+        width: 28,
+        height: 28,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
@@ -272,14 +274,13 @@ class _ActionButton extends StatelessWidget {
                 ? color.withValues(alpha: 0.35)
                 : const Color(0xFFA3B1C6).withValues(alpha: 0.55),
           ),
-          color: enabled
-              ? color.withValues(alpha: 0.10)
-              : const Color(0xFFE2E8F0).withValues(alpha: 0.50),
+          color:
+              enabled ? color.withValues(alpha: 0.1) : const Color(0xFFEFF3F9),
         ),
         child: Icon(
           icon,
           color: enabled ? color : const Color(0xFF94A3B8),
-          size: 16,
+          size: 14,
         ),
       ),
     );
