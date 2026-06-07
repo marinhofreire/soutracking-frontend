@@ -46,6 +46,7 @@ class TraccarPosition {
     required this.longitude,
     required this.fixTime,
     this.speed,
+    this.course,
     this.address,
     this.attributes,
   });
@@ -56,6 +57,7 @@ class TraccarPosition {
   final double longitude;
   final String fixTime;
   final double? speed;
+  final double? course;
   final String? address;
   final Map<String, dynamic>? attributes;
 
@@ -67,12 +69,26 @@ class TraccarPosition {
       longitude: (json['longitude'] as num).toDouble(),
       fixTime: (json['fixTime'] ?? '') as String,
       speed: json['speed'] == null ? null : (json['speed'] as num).toDouble(),
+      course: _readOptionalDouble(
+        json['course'] ?? json['heading'] ?? json['bearing'],
+      ),
       address: json['address'] as String?,
       attributes: json['attributes'] is Map
           ? (json['attributes'] as Map).cast<String, dynamic>()
           : null,
     );
   }
+}
+
+double? _readOptionalDouble(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final normalized = value.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+  return null;
 }
 
 class TraccarSession {

@@ -63,7 +63,7 @@ class SessionState {
 enum SessionStatus { idle, loading, authenticated, error }
 
 final traccarClientProvider = Provider<TraccarClient>((ref) {
-  if (presentationMode || kUseMockApi) {
+  if (presentationMode) {
     return MockTraccarClient();
   }
   return TraccarClient(
@@ -614,6 +614,56 @@ final sessionProvider = StateNotifierProvider<SessionController, SessionState>((
 final tenantConfigProvider = Provider<TenantConfig>((ref) {
   return ref.watch(sessionProvider).tenantConfig;
 });
+
+class ReportRouteMapPoint {
+  const ReportRouteMapPoint({
+    required this.latitude,
+    required this.longitude,
+    this.effectiveTime,
+    this.course,
+    this.address,
+  });
+
+  final double latitude;
+  final double longitude;
+  final DateTime? effectiveTime;
+  final double? course;
+  final String? address;
+}
+
+class ReportRouteMapSelection {
+  const ReportRouteMapSelection({
+    required this.deviceId,
+    required this.vehicleName,
+    required this.from,
+    required this.to,
+    required this.points,
+    required this.requestNonce,
+  });
+
+  final int deviceId;
+  final String vehicleName;
+  final DateTime from;
+  final DateTime to;
+  final List<ReportRouteMapPoint> points;
+  final String requestNonce;
+
+  String get requestKey {
+    final first = points.isEmpty
+        ? 'empty'
+        : '${points.first.latitude.toStringAsFixed(6)}:'
+            '${points.first.longitude.toStringAsFixed(6)}';
+    final last = points.isEmpty
+        ? 'empty'
+        : '${points.last.latitude.toStringAsFixed(6)}:'
+            '${points.last.longitude.toStringAsFixed(6)}';
+    return '$requestNonce|$deviceId|${from.toIso8601String()}|${to.toIso8601String()}|'
+        '${points.length}|$first|$last';
+  }
+}
+
+final reportRouteMapSelectionProvider =
+    StateProvider<ReportRouteMapSelection?>((ref) => null);
 
 final devicesProvider = FutureProvider<List<TraccarDevice>>((ref) async {
   final session = ref.watch(sessionProvider);

@@ -1,9 +1,13 @@
-﻿import 'dart:convert';
-import 'dart:ui';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:ui' hide Image;
+import 'dart:ui' as ui show Image;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
@@ -48,6 +52,163 @@ import '../users/users_screen.dart';
 import '../vehicles/vehicles_screen.dart';
 import 'visual_settings_controller.dart';
 
+class _ReplayQuery {
+  const _ReplayQuery({
+    required this.deviceId,
+    required this.from,
+    required this.to,
+  });
+
+  final int deviceId;
+  final DateTime from;
+  final DateTime to;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ReplayQuery &&
+        other.deviceId == deviceId &&
+        other.from == from &&
+        other.to == to;
+  }
+
+  @override
+  int get hashCode => Object.hash(deviceId, from, to);
+}
+
+class _ReplayPoint {
+  const _ReplayPoint({
+    required this.latitude,
+    required this.longitude,
+    required this.effectiveTime,
+    required this.rawTime,
+    required this.speedKph,
+    required this.course,
+    required this.address,
+  });
+
+  final double latitude;
+  final double longitude;
+  final DateTime? effectiveTime;
+  final String? rawTime;
+  final double? speedKph;
+  final double? course;
+  final String address;
+
+  gmaps.LatLng get latLng => gmaps.LatLng(latitude, longitude);
+
+  String get timeLabel {
+    final parsed = effectiveTime;
+    if (parsed == null)
+      return rawTime?.trim().isNotEmpty == true ? rawTime! : '--';
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month $hour:$minute';
+  }
+
+  String get speedLabel {
+    final value = speedKph;
+    if (value == null || !value.isFinite) return '0 km/h';
+    return '${value.toStringAsFixed(0)} km/h';
+  }
+
+  static _ReplayPoint? fromReportRow(Map<String, dynamic> row) {
+    final latitude = _readReportDouble(
+      row['latitude'] ?? row['lat'] ?? row['startLatitude'],
+    );
+    final longitude = _readReportDouble(
+      row['longitude'] ?? row['lon'] ?? row['lng'] ?? row['startLongitude'],
+    );
+    if (latitude == null || longitude == null) return null;
+
+    final rawTime = [
+      row['fixTime'],
+      row['deviceTime'],
+      row['serverTime'],
+      row['eventTime'],
+    ].whereType<Object>().map((it) => it.toString().trim()).firstWhere(
+          (it) => it.isNotEmpty,
+          orElse: () => '',
+        );
+    final parsedTime = rawTime.isEmpty ? null : DateTime.tryParse(rawTime);
+    final speedKnots = _readReportDouble(
+      row['speed'] ?? row['speedKnots'] ?? row['maxSpeed'],
+    );
+    final course = _readReportDouble(
+      row['course'] ?? row['heading'] ?? row['bearing'],
+    );
+    final address =
+        (row['address'] ?? row['formattedAddress'] ?? '').toString().trim();
+
+    return _ReplayPoint(
+      latitude: latitude,
+      longitude: longitude,
+      effectiveTime: parsedTime,
+      rawTime: rawTime.isEmpty ? null : rawTime,
+      speedKph: speedKnots == null ? null : speedKnots * 1.852,
+      course: course,
+      address: address.isEmpty ? 'Nao informado' : address,
+    );
+  }
+}
+
+class _ReportRouteReplayFrame {
+  const _ReportRouteReplayFrame({
+    required this.point,
+    required this.bearing,
+  });
+
+  final ReportRouteMapPoint? point;
+  final double? bearing;
+}
+
+double? _readReportDouble(Object? raw) {
+  if (raw == null) return null;
+  if (raw is num) return raw.toDouble();
+  if (raw is String) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+  return null;
+}
+
+final vehicleReplayProvider =
+    FutureProvider.family<List<_ReplayPoint>, _ReplayQuery>((ref, query) async {
+  final session = ref.watch(sessionProvider);
+  if (!session.isAuthenticated) {
+    return const <_ReplayPoint>[];
+  }
+
+  final client = ref.watch(traccarClientProvider);
+  final rows = await client.getList(
+    path: '/reports/route',
+    cookie: session.cookie,
+    authHeader: session.authHeader,
+    query: {
+      'deviceId': '${query.deviceId}',
+      'from': query.from.toUtc().toIso8601String(),
+      'to': query.to.toUtc().toIso8601String(),
+    },
+  );
+
+  final points = rows
+      .map(_ReplayPoint.fromReportRow)
+      .whereType<_ReplayPoint>()
+      .toList(growable: false);
+  points.sort((a, b) {
+    final at = a.effectiveTime;
+    final bt = b.effectiveTime;
+    if (at == null && bt == null) return 0;
+    if (at == null) return -1;
+    if (bt == null) return 1;
+    return at.compareTo(bt);
+  });
+  return points;
+});
+
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -56,7 +217,25 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  static const Duration _replayTick = Duration(milliseconds: 80);
+  static const Duration _replaySegment = Duration(milliseconds: 720);
+
   gmaps.GoogleMapController? _googleMapController;
+  final Map<int, List<gmaps.LatLng>> _positionTrailByDeviceId = {};
+  String? _lastFollowedSelectedPositionKey;
+  Timer? _replayTimer;
+  int _selectedReplayIndex = 0;
+  double _routeReplaySegmentProgress = 0;
+  int _replayDebugLinesEmitted = 0;
+  Duration _replayWindow = const Duration(hours: 24);
+  int? _replayDeviceId;
+  String? _lastFollowedReplayKey;
+  String? _lastFollowedReportRouteReplayKey;
+  double? _lastResolvedReportRouteBearing;
+  ReportRouteMapSelection? _reportRouteSelection;
+  bool _reportRouteReplay3dEnabled = false;
+  String? _lastAppliedReportRouteKey;
+  String? _lastFocusedReportRouteKey;
 
   final bool _showHighlightsRail = false;
 
@@ -81,6 +260,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void initState() {
     super.initState();
     _applyInitialPanelFromUrl();
+  }
+
+  @override
+  void dispose() {
+    _replayTimer?.cancel();
+    super.dispose();
   }
 
   void _applyInitialPanelFromUrl() {
@@ -108,14 +293,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'dispositivos':
       case 'devices':
         return 'devices';
-      case 'veículos':
+      case 'veÃ­culos':
       case 've\u00EDculos':
       case 'vehicles':
         return 'vehicles';
       case 'alertas':
       case 'alerts':
         return 'alerts';
-      case 'relatórios':
+      case 'relatÃ³rios':
       case 'relat\u00F3rios':
       case 'reports':
         return 'reports';
@@ -133,13 +318,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'fences':
       case 'geofences':
         return 'geofences';
-      case 'manutenção':
+      case 'manutenÃ§Ã£o':
       case 'manutencao':
-      case 'ManutenÃƒÂ§ÃƒÂ£o':
-      case 'manutenÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o':
+      case 'ManutenÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o':
+      case 'manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
       case 'maintenance':
         return 'maintenance';
-      case 'comunicação':
+      case 'comunicaÃ§Ã£o':
       case 'comunica\u00E7\u00E3o':
       case 'communication':
         return 'communication';
@@ -147,7 +332,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'tickets':
       case 'calls':
         return 'tickets';
-      case 'configurações':
+      case 'configuraÃ§Ãµes':
       case 'configura\u00E7\u00F5es':
       case 'settings':
         return 'settings';
@@ -241,9 +426,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   void _openKpi(_KpiFilter filter) {
     setState(() {
+      _reportRouteSelection = null;
+      _lastFocusedReportRouteKey = null;
+      _lastFollowedReportRouteReplayKey = null;
+      _routeReplaySegmentProgress = 0;
       _activeKpiFilter = filter;
       _kpiListOpen = true;
       _showBottomVehiclePanel = false;
+      _replayTimer?.cancel();
+      _replayTimer = null;
       if (!_sidebarHidden) _menuOpen = false;
       _selectedVehicle = null;
       _vehiclePanelMode = _VehiclePanelMode.summary;
@@ -267,6 +458,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         _showBottomVehiclePanel = true;
         _activePanelId = null;
         _activePanelTitle = null;
+        _replayTimer?.cancel();
+        _replayTimer = null;
+        _routeReplaySegmentProgress = 0;
         _sidebarHidden = false;
         _menuOpen = true;
         _kpiListOpen = false;
@@ -280,7 +474,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       const Duration(milliseconds: 700),
     );
     setState(() {
+      _reportRouteSelection = null;
+      _lastFocusedReportRouteKey = null;
+      _lastFollowedReportRouteReplayKey = null;
+      _routeReplaySegmentProgress = 0;
       _showBottomVehiclePanel = false;
+      _replayTimer?.cancel();
+      _replayTimer = null;
       _activePanelId = item.id;
       _activePanelTitle = formatDisplayText(item.label);
       _sidebarHidden = false;
@@ -300,9 +500,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       const Duration(milliseconds: 1200),
     );
     setState(() {
+      _reportRouteSelection = null;
+      _lastFocusedReportRouteKey = null;
+      _lastFollowedReportRouteReplayKey = null;
+      _replayTimer?.cancel();
+      _replayTimer = null;
+      _routeReplaySegmentProgress = 0;
       _showBottomVehiclePanel = true;
       _selectedVehicle = snapshot.device;
       _activeBottomTab = initialTab;
+      _selectedReplayIndex = 0;
+      _replayDeviceId = snapshot.device.id;
       _vehiclePanelMode = _VehiclePanelMode.summary;
       _sidebarHidden = false;
       _menuOpen = true;
@@ -329,6 +537,567 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
       ),
     );
+  }
+
+  void _applyReportRouteSelection(
+    ReportRouteMapSelection selection,
+  ) {
+    setState(() {
+      _reportRouteSelection = selection;
+      _showBottomVehiclePanel = false;
+      _selectedVehicle = null;
+      _activeBottomTab = _VehicleBottomTab.overview;
+      _activePanelId = null;
+      _activePanelTitle = null;
+      _kpiListOpen = false;
+      _sidebarHidden = false;
+      _menuOpen = true;
+      _vehiclePanelMode = _VehiclePanelMode.summary;
+      _replayTimer?.cancel();
+      _replayTimer = null;
+      _selectedReplayIndex = 0;
+      _routeReplaySegmentProgress = 0;
+      _replayDeviceId = selection.deviceId;
+      _reportRouteReplay3dEnabled = false;
+      _lastFollowedReplayKey = null;
+      _lastFollowedSelectedPositionKey = null;
+      _lastFollowedReportRouteReplayKey = null;
+      _lastResolvedReportRouteBearing = null;
+    });
+
+    _focusReportRoute(selection);
+  }
+
+  void _focusReportRoute(ReportRouteMapSelection selection) {
+    final controller = _googleMapController;
+    final points = selection.points;
+    if (controller == null || points.isEmpty) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        if (points.length == 1) {
+          await controller.animateCamera(
+            gmaps.CameraUpdate.newLatLngZoom(
+              gmaps.LatLng(points.first.latitude, points.first.longitude),
+              15,
+            ),
+          );
+          return;
+        }
+
+        var minLat = points.first.latitude;
+        var maxLat = points.first.latitude;
+        var minLng = points.first.longitude;
+        var maxLng = points.first.longitude;
+        for (final point in points) {
+          minLat = math.min(minLat, point.latitude);
+          maxLat = math.max(maxLat, point.latitude);
+          minLng = math.min(minLng, point.longitude);
+          maxLng = math.max(maxLng, point.longitude);
+        }
+
+        await controller.animateCamera(
+          gmaps.CameraUpdate.newLatLngBounds(
+            gmaps.LatLngBounds(
+              southwest: gmaps.LatLng(minLat, minLng),
+              northeast: gmaps.LatLng(maxLat, maxLng),
+            ),
+            72,
+          ),
+        );
+      } catch (_) {
+        // Mantem o mapa estavel caso o provedor web rejeite o ajuste de bounds.
+      }
+    });
+  }
+
+  void _focusReportRouteIfNeeded(ReportRouteMapSelection? selection) {
+    if (selection == null || selection.points.isEmpty) {
+      _lastFocusedReportRouteKey = null;
+      return;
+    }
+    if (_lastFocusedReportRouteKey == selection.requestKey) {
+      return;
+    }
+    _lastFocusedReportRouteKey = selection.requestKey;
+    _focusReportRoute(selection);
+  }
+
+  _ReplayQuery? _buildReplayQuery(int? deviceId) {
+    if (deviceId == null) return null;
+    final to = DateTime.now();
+    final from = to.subtract(_replayWindow);
+    return _ReplayQuery(deviceId: deviceId, from: from, to: to);
+  }
+
+  void _setReplayWindow(Duration window) {
+    _replayTimer?.cancel();
+    setState(() {
+      _replayWindow = window;
+      _selectedReplayIndex = 0;
+      _routeReplaySegmentProgress = 0;
+    });
+  }
+
+  void _setReplayIndex(int next, int total) {
+    if (total <= 0) return;
+    final bounded = next.clamp(0, total - 1).toInt();
+    setState(() {
+      _selectedReplayIndex = bounded;
+      _routeReplaySegmentProgress = 0;
+    });
+  }
+
+  double? _normalizeBearing(double? raw) {
+    if (raw == null || !raw.isFinite) return null;
+    final normalized = raw % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+  }
+
+  double? _bearingBetweenRoutePoints(
+    ReportRouteMapPoint from,
+    ReportRouteMapPoint to,
+  ) {
+    final startLat = from.latitude;
+    final startLng = from.longitude;
+    final endLat = to.latitude;
+    final endLng = to.longitude;
+    if ((startLat - endLat).abs() < 0.0000001 &&
+        (startLng - endLng).abs() < 0.0000001) {
+      return null;
+    }
+
+    final startLatRad = startLat * math.pi / 180.0;
+    final endLatRad = endLat * math.pi / 180.0;
+    final deltaLngRad = (endLng - startLng) * math.pi / 180.0;
+    final y = math.sin(deltaLngRad) * math.cos(endLatRad);
+    final x = math.cos(startLatRad) * math.sin(endLatRad) -
+        math.sin(startLatRad) * math.cos(endLatRad) * math.cos(deltaLngRad);
+    final bearingRad = math.atan2(y, x);
+    return _normalizeBearing((bearingRad * 180.0 / math.pi + 360.0) % 360.0);
+  }
+
+  double? _resolveReportRouteBearing(
+    List<ReportRouteMapPoint> points,
+    int? index, {
+    bool lockToCurrentSegment = false,
+  }) {
+    if (index == null ||
+        points.isEmpty ||
+        index < 0 ||
+        index >= points.length) {
+      return _lastResolvedReportRouteBearing;
+    }
+
+    final current = points[index];
+    if (lockToCurrentSegment) {
+      if (index + 1 < points.length) {
+        final segmentBearing =
+            _bearingBetweenRoutePoints(current, points[index + 1]);
+        if (segmentBearing != null) {
+          _lastResolvedReportRouteBearing = segmentBearing;
+          return segmentBearing;
+        }
+
+        final segmentCourse = _normalizeBearing(current.course);
+        if (segmentCourse != null) {
+          _lastResolvedReportRouteBearing = segmentCourse;
+          return segmentCourse;
+        }
+
+        return _lastResolvedReportRouteBearing;
+      }
+
+      if (index > 0) {
+        final previousSegmentBearing = _bearingBetweenRoutePoints(
+          points[index - 1],
+          current,
+        );
+        if (previousSegmentBearing != null) {
+          _lastResolvedReportRouteBearing = previousSegmentBearing;
+          return previousSegmentBearing;
+        }
+      }
+
+      final segmentCourse = _normalizeBearing(current.course);
+      if (segmentCourse != null) {
+        _lastResolvedReportRouteBearing = segmentCourse;
+        return segmentCourse;
+      }
+
+      return _lastResolvedReportRouteBearing;
+    }
+
+    final directCourse = _normalizeBearing(current.course);
+    if (directCourse != null) {
+      _lastResolvedReportRouteBearing = directCourse;
+      return directCourse;
+    }
+
+    if (index + 1 < points.length) {
+      final forward = _bearingBetweenRoutePoints(current, points[index + 1]);
+      if (forward != null) {
+        _lastResolvedReportRouteBearing = forward;
+        return forward;
+      }
+    }
+
+    if (index > 0) {
+      final backward = _bearingBetweenRoutePoints(points[index - 1], current);
+      if (backward != null) {
+        _lastResolvedReportRouteBearing = backward;
+        return backward;
+      }
+    }
+
+    return _lastResolvedReportRouteBearing;
+  }
+
+  DateTime? _interpolateDateTime(
+    DateTime? start,
+    DateTime? end,
+    double t,
+  ) {
+    if (start == null) return end;
+    if (end == null) return start;
+    final safeT = t.clamp(0.0, 1.0);
+    final deltaMs = end.millisecondsSinceEpoch - start.millisecondsSinceEpoch;
+    return DateTime.fromMillisecondsSinceEpoch(
+      start.millisecondsSinceEpoch + (deltaMs * safeT).round(),
+      isUtc: start.isUtc,
+    );
+  }
+
+  ReportRouteMapPoint _interpolateReportRoutePoint(
+    ReportRouteMapPoint from,
+    ReportRouteMapPoint to,
+    double t,
+    double? bearing,
+  ) {
+    final safeT = t.clamp(0.0, 1.0);
+    return ReportRouteMapPoint(
+      latitude: from.latitude + ((to.latitude - from.latitude) * safeT),
+      longitude: from.longitude + ((to.longitude - from.longitude) * safeT),
+      effectiveTime:
+          _interpolateDateTime(from.effectiveTime, to.effectiveTime, safeT),
+      course: bearing ?? from.course ?? to.course,
+      address: from.address ?? to.address,
+    );
+  }
+
+  double _distanceBetweenReportRoutePointsKm(
+    ReportRouteMapPoint a,
+    ReportRouteMapPoint b,
+  ) {
+    const earthRadiusKm = 6371.0;
+    final lat1 = a.latitude * (math.pi / 180.0);
+    final lat2 = b.latitude * (math.pi / 180.0);
+    final deltaLat = (b.latitude - a.latitude) * (math.pi / 180.0);
+    final deltaLng = (b.longitude - a.longitude) * (math.pi / 180.0);
+    final haversine = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(deltaLng / 2) *
+            math.sin(deltaLng / 2);
+    final arc = 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+    return earthRadiusKm * arc;
+  }
+
+  double _reportRouteDisplayProgress(
+    double rawProgress,
+    double segmentDistanceKm,
+  ) {
+    const longSegmentThresholdKm = 1.0;
+    if (segmentDistanceKm < longSegmentThresholdKm) {
+      return rawProgress.clamp(0.0, 1.0);
+    }
+    final safeProgress = rawProgress.clamp(0.0, 1.0);
+    if (safeProgress <= 0.35) {
+      return 0.0;
+    }
+    if (safeProgress >= 0.65) {
+      return 1.0;
+    }
+    return ((safeProgress - 0.35) / 0.30).clamp(0.0, 1.0);
+  }
+
+  int? _resolveReportRouteSegmentIndex(
+    List<ReportRouteMapPoint> points,
+    int? pointIndex,
+  ) {
+    if (points.length < 2) {
+      return pointIndex == null || points.isEmpty ? null : 0;
+    }
+    final rawIndex = pointIndex ?? 0;
+    return rawIndex.clamp(0, points.length - 2).toInt();
+  }
+
+  _ReportRouteReplayFrame _buildReportRouteReplayFrame(
+    List<ReportRouteMapPoint> points,
+    int? index,
+    bool playing,
+  ) {
+    if (points.isEmpty ||
+        index == null ||
+        index < 0 ||
+        index >= points.length) {
+      return const _ReportRouteReplayFrame(point: null, bearing: null);
+    }
+
+    if (points.length == 1) {
+      return _ReportRouteReplayFrame(
+        point: points.first,
+        bearing: _lastResolvedReportRouteBearing,
+      );
+    }
+
+    final isLastPoint = index >= points.length - 1;
+    final segmentIndex = _resolveReportRouteSegmentIndex(points, index);
+    if (segmentIndex == null) {
+      return const _ReportRouteReplayFrame(point: null, bearing: null);
+    }
+
+    final current = points[segmentIndex];
+    final next = points[segmentIndex + 1];
+    final segmentDistanceKm =
+        _distanceBetweenReportRoutePointsKm(current, next);
+    final displayProgress = _reportRouteDisplayProgress(
+      _routeReplaySegmentProgress,
+      segmentDistanceKm,
+    );
+    final segmentBearing = _resolveReportRouteBearing(
+      points,
+      segmentIndex,
+      lockToCurrentSegment: true,
+    );
+    final segmentBearingDirect = _bearingBetweenRoutePoints(current, next);
+    const debugBucketSize = 15;
+    final normalizedBearing = ((segmentBearing ?? 0) % 360 + 360) % 360;
+    final segmentBucket =
+        ((normalizedBearing / debugBucketSize).round() * debugBucketSize) % 360;
+    final finalAngle = segmentBucket.toDouble();
+
+    if (!playing || isLastPoint) {
+      final bearing = _resolveReportRouteBearing(
+        points,
+        segmentIndex,
+        lockToCurrentSegment: true,
+      );
+      return _ReportRouteReplayFrame(
+        point: isLastPoint ? points.last : current,
+        bearing: bearing,
+      );
+    }
+
+    final interpolated = _interpolateReportRoutePoint(
+      current,
+      next,
+      displayProgress,
+      segmentBearing,
+    );
+    if (playing && _replayDebugLinesEmitted < 10) {
+      debugPrint(
+        't=${_routeReplaySegmentProgress.toStringAsFixed(3)} '
+        'REPLAY_DEBUG '
+        'segment=$segmentIndex '
+        'A=(${current.latitude.toStringAsFixed(6)},${current.longitude.toStringAsFixed(6)}) '
+        'B=(${next.latitude.toStringAsFixed(6)},${next.longitude.toStringAsFixed(6)}) '
+        'P=(${interpolated.latitude.toStringAsFixed(6)},${interpolated.longitude.toStringAsFixed(6)}) '
+        'bearing=${segmentBearing?.toStringAsFixed(2) ?? 'null'} '
+        'angle=${finalAngle.toStringAsFixed(2)} '
+        'bucket=$segmentBucket '
+        'distanceKm=${segmentDistanceKm.toStringAsFixed(3)} '
+        'displayT=${displayProgress.toStringAsFixed(3)}',
+      );
+      _replayDebugLinesEmitted += 1;
+    }
+    return _ReportRouteReplayFrame(
+      point: interpolated,
+      bearing: segmentBearing,
+    );
+  }
+
+  void _toggleReportRouteReplay(
+      List<ReportRouteMapPoint> points, int deviceId) {
+    if (points.length < 2) return;
+    if (_replayTimer != null) {
+      _replayTimer?.cancel();
+      setState(() {
+        _replayTimer = null;
+        _routeReplaySegmentProgress = 0;
+      });
+      return;
+    }
+
+    if (_replayDeviceId != deviceId || _selectedReplayIndex >= points.length) {
+      _selectedReplayIndex = 0;
+      _replayDeviceId = deviceId;
+      _routeReplaySegmentProgress = 0;
+      _replayDebugLinesEmitted = 0;
+    }
+
+    final timer = Timer.periodic(_replayTick, (_) {
+      if (!mounted) return;
+      setState(() {
+        _routeReplaySegmentProgress +=
+            _replayTick.inMilliseconds / _replaySegment.inMilliseconds;
+
+        while (_routeReplaySegmentProgress >= 1) {
+          if (_selectedReplayIndex >= points.length - 2) {
+            _selectedReplayIndex = 0;
+            _routeReplaySegmentProgress = 0;
+            break;
+          }
+          _selectedReplayIndex += 1;
+          _routeReplaySegmentProgress -= 1;
+        }
+      });
+    });
+
+    setState(() => _replayTimer = timer);
+  }
+
+  void _toggleReplay(
+    List<_ReplayPoint> points,
+    int? deviceId,
+  ) {
+    if (points.length < 2 || deviceId == null) return;
+    if (_replayTimer != null) {
+      _replayTimer?.cancel();
+      setState(() => _replayTimer = null);
+      return;
+    }
+
+    if (_replayDeviceId != deviceId || _selectedReplayIndex >= points.length) {
+      _selectedReplayIndex = 0;
+      _replayDeviceId = deviceId;
+      _routeReplaySegmentProgress = 0;
+    }
+
+    final timer = Timer.periodic(const Duration(milliseconds: 900), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_selectedReplayIndex >= points.length - 1) {
+          _selectedReplayIndex = 0;
+        } else {
+          _selectedReplayIndex += 1;
+        }
+      });
+    });
+
+    setState(() => _replayTimer = timer);
+  }
+
+  void _followReplayPointIfNeeded(_ReplayPoint? point, int? deviceId) {
+    if (point == null || deviceId == null) {
+      _lastFollowedReplayKey = null;
+      return;
+    }
+    final key = '$deviceId:${point.latitude.toStringAsFixed(6)}:'
+        '${point.longitude.toStringAsFixed(6)}:${point.rawTime ?? ''}';
+    if (_lastFollowedReplayKey == key) return;
+    _lastFollowedReplayKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _googleMapController?.animateCamera(
+        gmaps.CameraUpdate.newCameraPosition(
+          gmaps.CameraPosition(
+            target: point.latLng,
+            zoom: 16,
+            tilt: 45,
+            bearing: point.course ?? 0,
+          ),
+        ),
+      );
+    });
+  }
+
+  void _followReportRoutePointIfNeeded(
+    ReportRouteMapPoint? point,
+    int? deviceId,
+    bool active,
+    double? bearing,
+    bool camera3dEnabled,
+  ) {
+    if (!active || point == null || deviceId == null) {
+      _lastFollowedReportRouteReplayKey = null;
+      return;
+    }
+    final key = '$deviceId:${point.latitude.toStringAsFixed(6)}:'
+        '${point.longitude.toStringAsFixed(6)}:${point.effectiveTime?.toIso8601String() ?? ''}';
+    if (_lastFollowedReportRouteReplayKey == key) return;
+    _lastFollowedReportRouteReplayKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _googleMapController?.moveCamera(
+        gmaps.CameraUpdate.newCameraPosition(
+          gmaps.CameraPosition(
+            target: gmaps.LatLng(point.latitude, point.longitude),
+            zoom: camera3dEnabled ? 15.5 : 14.6,
+            tilt: camera3dEnabled ? 45 : 0,
+            bearing: camera3dEnabled ? (bearing ?? 0) : 0,
+          ),
+        ),
+      );
+    });
+  }
+
+  void _recordPositionTrails(List<_VehicleSnapshot> snapshots) {
+    final activeIds = <int>{};
+    for (final snapshot in snapshots) {
+      final point = snapshot.latLngOrNull;
+      if (point == null) continue;
+      activeIds.add(snapshot.device.id);
+      final trail = _positionTrailByDeviceId.putIfAbsent(
+        snapshot.device.id,
+        () => <gmaps.LatLng>[],
+      );
+      if (trail.isEmpty || !_isSameTrailPoint(trail.last, point)) {
+        trail.add(point);
+        if (trail.length > 24) {
+          trail.removeRange(0, trail.length - 24);
+        }
+      }
+    }
+    _positionTrailByDeviceId.removeWhere((id, _) => !activeIds.contains(id));
+  }
+
+  bool _isSameTrailPoint(gmaps.LatLng a, gmaps.LatLng b) {
+    return (a.latitude - b.latitude).abs() < 0.00001 &&
+        (a.longitude - b.longitude).abs() < 0.00001;
+  }
+
+  List<gmaps.LatLng> _selectedTrail() {
+    final id = _selectedVehicle?.id;
+    if (id == null) return const <gmaps.LatLng>[];
+    final trail = _positionTrailByDeviceId[id];
+    if (trail == null) return const <gmaps.LatLng>[];
+    return List<gmaps.LatLng>.unmodifiable(trail);
+  }
+
+  void _followSelectedVehicleIfNeeded(_VehicleSnapshot? snapshot) {
+    if (snapshot == null || !snapshot.hasValidGps) {
+      _lastFollowedSelectedPositionKey = null;
+      return;
+    }
+
+    final point = snapshot.latLng;
+    final key = '${snapshot.device.id}:'
+        '${point.latitude.toStringAsFixed(6)}:'
+        '${point.longitude.toStringAsFixed(6)}:'
+        '${snapshot.position?.fixTime ?? ''}';
+    if (_lastFollowedSelectedPositionKey == key) return;
+    _lastFollowedSelectedPositionKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedVehicle?.id != snapshot.device.id) return;
+      _focusVehicle(snapshot);
+    });
   }
 
   void _zoomBy(double delta) {
@@ -369,6 +1138,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _showBottomVehiclePanel = true;
       _activePanelId = null;
       _activePanelTitle = null;
+      _replayTimer?.cancel();
+      _replayTimer = null;
     });
   }
 
@@ -418,10 +1189,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final visualController = ref.read(visualSettingsProvider.notifier);
 
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
+    final pendingReportRoute = ref.watch(reportRouteMapSelectionProvider);
+    if (pendingReportRoute != null &&
+        pendingReportRoute.requestKey != _lastAppliedReportRouteKey) {
+      _lastAppliedReportRouteKey = pendingReportRoute.requestKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _applyReportRouteSelection(pendingReportRoute);
+        ref.read(reportRouteMapSelectionProvider.notifier).state = null;
+      });
+    }
     final positions = positionsAsync.valueOrNull ?? const <TraccarPosition>[];
     final latestEvents =
         latestEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final snapshots = _buildSnapshots(devices, positions);
+    _recordPositionTrails(snapshots);
     _VehicleSnapshot? enrichSnapshot(_VehicleSnapshot? snapshot) {
       if (snapshot == null) return null;
       final geocodeKey = _geocodeKey(snapshot);
@@ -452,8 +1234,62 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         (_showBottomVehiclePanel && !_activePanelVisible && !_kpiListOpen
             ? defaultMapSnapshot
             : null);
+    _followSelectedVehicleIfNeeded(selectedSnapshot);
+    final reportRouteSelection = _reportRouteSelection;
+    final reportRoutePoints =
+        reportRouteSelection?.points ?? const <ReportRouteMapPoint>[];
+    final reportRoutePath = reportRoutePoints
+        .map((point) => gmaps.LatLng(point.latitude, point.longitude))
+        .toList(growable: false);
+    final reportRouteReplayIndex = reportRoutePoints.isEmpty
+        ? null
+        : _selectedReplayIndex.clamp(0, reportRoutePoints.length - 1).toInt();
+    final reportRouteReplayPlaying =
+        reportRouteSelection != null && _replayTimer != null;
+    final reportRouteFrame = _buildReportRouteReplayFrame(
+      reportRoutePoints,
+      reportRouteReplayIndex,
+      reportRouteReplayPlaying,
+    );
+    final reportRouteActivePoint = reportRouteFrame.point;
+    final reportRouteActiveBearing = reportRouteFrame.bearing;
+    final reportRouteStart =
+        reportRoutePoints.isEmpty ? null : reportRoutePoints.first;
+    final reportRouteEnd =
+        reportRoutePoints.isEmpty ? null : reportRoutePoints.last;
     final selectedMapDevice = _selectedVehicle;
     final selectedMapDeviceId = selectedMapDevice?.id;
+    final effectiveSelectedDeviceId =
+        reportRouteSelection?.deviceId ?? selectedMapDeviceId;
+    final replayQuery = reportRouteSelection == null
+        ? _buildReplayQuery(effectiveSelectedDeviceId)
+        : null;
+    final replayAsync = replayQuery == null
+        ? const AsyncData<List<_ReplayPoint>>(<_ReplayPoint>[])
+        : ref.watch(vehicleReplayProvider(replayQuery));
+    final replayPoints = replayAsync.valueOrNull ?? const <_ReplayPoint>[];
+    final replayIndex = replayPoints.isEmpty
+        ? null
+        : _selectedReplayIndex.clamp(0, replayPoints.length - 1).toInt();
+    final replayModeActive = reportRouteSelection == null &&
+        effectiveSelectedDeviceId != null &&
+        _activeBottomTab == _VehicleBottomTab.chart &&
+        replayPoints.isNotEmpty;
+    final selectedReplayPoint = replayModeActive && replayIndex != null
+        ? replayPoints[replayIndex]
+        : null;
+    final selectedReplayPath = replayModeActive
+        ? replayPoints.map((point) => point.latLng).toList(growable: false)
+        : const <gmaps.LatLng>[];
+    _followReplayPointIfNeeded(selectedReplayPoint, effectiveSelectedDeviceId);
+    _followReportRoutePointIfNeeded(
+      reportRouteActivePoint,
+      reportRouteSelection?.deviceId,
+      reportRouteReplayPlaying,
+      reportRouteActiveBearing,
+      _reportRouteReplay3dEnabled,
+    );
+    _focusReportRouteIfNeeded(reportRouteSelection);
     final snapshotKpis = _FleetKpis.fromSnapshots(snapshots);
     final realAlertCount =
         latestEvents.isNotEmpty ? latestEvents.length : snapshotKpis.alerts;
@@ -498,13 +1334,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               Positioned.fill(
                 child: _OperationalMap(
                   snapshots: snapshots,
-                  selectedDeviceId: selectedMapDeviceId,
+                  selectedDeviceId: effectiveSelectedDeviceId,
+                  selectedTrail: _selectedTrail(),
+                  selectedReplayPath: selectedReplayPath,
+                  selectedReplayPoint: selectedReplayPoint,
+                  reportRoutePath: reportRoutePath,
+                  reportRouteStart: reportRouteStart,
+                  reportRouteEnd: reportRouteEnd,
+                  reportRouteActivePoint: reportRouteActivePoint,
+                  reportRouteActiveBearing: reportRouteActiveBearing,
                   mapMode: visualSettings.mapMode,
                   mapType: _mapViewType,
+                  mapZoom: _currentZoom,
                   trafficEnabled: _mapTrafficEnabled,
                   onMapCreated: (controller) =>
                       _googleMapController = controller,
-                  onCameraMove: (position) => _currentZoom = position.zoom,
+                  onCameraMove: (position) {
+                    final nextZoom = position.zoom;
+                    final clusterModeChanged =
+                        (_currentZoom < _OperationalMap.clusterZoomThreshold) !=
+                            (nextZoom < _OperationalMap.clusterZoomThreshold);
+                    if (clusterModeChanged ||
+                        (nextZoom - _currentZoom).abs() >= 0.5) {
+                      setState(() => _currentZoom = nextZoom);
+                    } else {
+                      _currentZoom = nextZoom;
+                    }
+                  },
                   onMapTap: _clearOperationalSurface,
                   onVehicleTap: _openVehicleDetails,
                 ),
@@ -588,6 +1444,44 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               if (_showHighlightsRail)
                 _HighlightsRail(open: !_activePanelVisible),
               if (!pixelTelemetryMode)
+                _RouteReplayControls(
+                  visible: reportRouteSelection != null,
+                  sidebarOpen: _menuOpen,
+                  sidebarVisible: sidebarVisible,
+                  playing: reportRouteReplayPlaying,
+                  camera3dEnabled: _reportRouteReplay3dEnabled,
+                  total: reportRoutePoints.length,
+                  index: reportRouteReplayIndex ?? 0,
+                  vehicleName: reportRouteSelection?.vehicleName ?? '',
+                  onToggle3d: () {
+                    setState(() {
+                      _reportRouteReplay3dEnabled =
+                          !_reportRouteReplay3dEnabled;
+                      _lastFollowedReportRouteReplayKey = null;
+                    });
+                  },
+                  onPrevious: () => _setReplayIndex(
+                    (reportRouteReplayIndex ?? 0) - 1,
+                    reportRoutePoints.length,
+                  ),
+                  onToggle: () {
+                    final selection = reportRouteSelection;
+                    if (selection == null) return;
+                    _toggleReportRouteReplay(
+                      reportRoutePoints,
+                      selection.deviceId,
+                    );
+                  },
+                  onNext: () => _setReplayIndex(
+                    (reportRouteReplayIndex ?? 0) + 1,
+                    reportRoutePoints.length,
+                  ),
+                  onChanged: (value) => _setReplayIndex(
+                    value.round(),
+                    reportRoutePoints.length,
+                  ),
+                ),
+              if (!pixelTelemetryMode)
                 _KpiVehicleList(
                   open: _kpiListOpen,
                   cardDensity: visualSettings.cardDensity,
@@ -624,15 +1518,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               if (!pixelTelemetryMode)
                 _VehicleBottomBar(
                   snapshot: bottomSnapshot,
+                  replayAsync: replayAsync,
+                  replayPoints: replayPoints,
+                  replayIndex: replayIndex,
+                  replayWindow: _replayWindow,
+                  replayPlaying: _replayTimer != null,
                   cardDensity: visualSettings.cardDensity,
                   sidebarOpen: _menuOpen,
                   sidebarVisible: sidebarVisible,
                   activeTab: _activeBottomTab,
                   panelMode: _vehiclePanelMode,
-                  onTabChanged: (tab) => setState(() => _activeBottomTab = tab),
+                  onTabChanged: (tab) => setState(() {
+                    if (tab != _VehicleBottomTab.chart) {
+                      _replayTimer?.cancel();
+                      _replayTimer = null;
+                    }
+                    _activeBottomTab = tab;
+                  }),
+                  onReplayWindowChanged: _setReplayWindow,
+                  onReplayIndexChanged: (next) =>
+                      _setReplayIndex(next, replayPoints.length),
+                  onReplayToggle: () =>
+                      _toggleReplay(replayPoints, selectedMapDeviceId),
                   onModeChanged: (mode) =>
                       setState(() => _vehiclePanelMode = mode),
                   onClose: () => setState(() {
+                    _replayTimer?.cancel();
+                    _replayTimer = null;
                     _selectedVehicle = null;
                     _showBottomVehiclePanel = false;
                     _vehiclePanelMode = _VehiclePanelMode.summary;
@@ -676,19 +1588,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String _panelSubtitle(String? id) {
     switch (id) {
       case 'dashboard':
-        return 'Visão geral da Operação';
+        return 'VisÃ£o geral da OperaÃ§Ã£o';
       case 'map':
         return 'Monitoramento em tempo real';
       case 'vehicles':
         return 'Cadastro e ciclo de vida da frota';
       case 'devices':
-        return 'Gestão operacional de rastreadores';
+        return 'GestÃ£o operacional de rastreadores';
       case 'telemetry':
         return 'Sensores e dados operacionais';
       case 'routes':
         return 'Hist\u00F3rico, replay e quilometragem';
       case 'alerts':
-        return 'Eventos, regras e notificações';
+        return 'Eventos, regras e notificaÃ§Ãµes';
       case 'maintenance':
         return 'Planos e hist\u00F3rico de manuten\u00E7\u00E3o';
       case 'geofences':
@@ -698,25 +1610,25 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'communication':
         return 'Atendimento e mensagens operacionais';
       case 'ai-operations':
-        return 'Assistente inteligente da Operação';
+        return 'Assistente inteligente da OperaÃ§Ã£o';
       case 'finance':
-        return 'Gestão financeira e cobranças';
+        return 'GestÃ£o financeira e cobranÃ§as';
       case 'inventory':
         return 'Estoque e equipamentos vinculados';
       case 'mdvr':
-        return 'Monitoramento de câmeras e evidências';
+        return 'Monitoramento de cÃ¢meras e evidÃªncias';
       case 'telemetry-demo':
         return 'Sensores e dados operacionais';
       case 'logs':
-        return 'Data log por comunicação do dispositivo';
+        return 'Data log por comunicaÃ§Ã£o do dispositivo';
       case 'reports':
-        return 'Relatórios operacionais e executivos';
+        return 'RelatÃ³rios operacionais e executivos';
       case 'commands':
         return 'Comandos remotos e a\u00E7\u00F5es operacionais';
       case 'automations':
-        return 'Regras e gatilhos automáticos';
+        return 'Regras e gatilhos automÃ¡ticos';
       case 'settings':
-        return 'Governança e parâmetros do ambiente';
+        return 'GovernanÃ§a e parÃ¢metros do ambiente';
       default:
         return 'Painel integrado';
     }
@@ -1072,7 +1984,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: RoutesScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatórios',
+          moduleTitle: 'relatÃ³rios',
           items: const [
             (
               label: 'Paradas',
@@ -1087,7 +1999,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             (
               label: 'Quilometragem',
               icon: Icons.speed_outlined,
-              description: 'Consolidado de quilometragem rodada por veículo.',
+              description: 'Consolidado de quilometragem rodada por veÃ­culo.',
             ),
             (
               label: 'Rota obrigatoria',
@@ -1141,7 +2053,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: CallsScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatórios',
+          moduleTitle: 'relatÃ³rios',
           items: const [
             (
               label: 'Guincho',
@@ -1165,7 +2077,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             ),
             (
               label:
-                  'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                  'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
               icon: Icons.build_outlined,
               description: 'Controle visual de manutencoes em aberto.',
             ),
@@ -1180,9 +2092,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Fluxo para ocorrencias de sinistro.',
             ),
             (
-              label: 'Suporte técnico',
+              label: 'Suporte tÃ©cnico',
               icon: Icons.support_agent_outlined,
-              description: 'Canal dedicado de suporte técnico.',
+              description: 'Canal dedicado de suporte tÃ©cnico.',
             ),
           ],
         ),
@@ -1218,18 +2130,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             operationId: 'cerca',
             title: 'Criar cerca por IA',
             description:
-                'Sugere parâmetros de cerca e registra a criação no fluxo operacional.',
+                'Sugere parÃ¢metros de cerca e registra a criaÃ§Ã£o no fluxo operacional.',
           ),
         ),
         _PanelToolEntry(
-          label: 'Criar relatório por IA',
+          label: 'Criar relatÃ³rio por IA',
           icon: Icons.analytics_outlined,
-          detail: 'Assistente ativo para relatórios',
+          detail: 'Assistente ativo para relatÃ³rios',
           child: _AiOperationAssistantScreen(
             operationId: 'relatorio',
-            title: 'Criar relatório por IA',
+            title: 'Criar relatÃ³rio por IA',
             description:
-                'Monta e dispara uma solicitação de relatório assistida por prompt.',
+                'Monta e dispara uma solicitaÃ§Ã£o de relatÃ³rio assistida por prompt.',
           ),
         ),
         _PanelToolEntry(
@@ -1239,26 +2151,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: _BridgeTicketCreateScreen(),
         ),
         _PanelToolEntry(
-          label: 'Resumo diário',
+          label: 'Resumo diÃ¡rio',
           icon: Icons.calendar_view_day_outlined,
-          detail: 'Visão consolidada da Operação',
+          detail: 'VisÃ£o consolidada da OperaÃ§Ã£o',
           child: StatisticsScreen(),
         ),
         _PanelToolEntry(
-          label: 'Diagnóstico de risco',
+          label: 'DiagnÃ³stico de risco',
           icon: Icons.monitor_heart_outlined,
           detail: 'Eventos criticos em tempo real',
           child: AlertsScreen(),
         ),
         _PanelToolEntry(
-          label: 'SuGestão de acao',
+          label: 'SuGestÃ£o de acao',
           icon: Icons.tips_and_updates_outlined,
           detail: 'Recomendacao operacional',
           child: _AiOperationAssistantScreen(
             operationId: 'acao',
-            title: 'SuGestão de acao',
+            title: 'SuGestÃ£o de acao',
             description:
-                'Registra recomendações de acao priorizadas para o operador.',
+                'Registra recomendaÃ§Ãµes de acao priorizadas para o operador.',
           ),
         ),
         _PanelToolEntry(
@@ -1289,28 +2201,28 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: ClientsScreen(),
         ),
         const _PanelToolEntry(
-          label: 'cobranças',
+          label: 'cobranÃ§as',
           icon: Icons.receipt_long_outlined,
           detail: 'Painel financeiro atual',
           child: FinanceScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatórios',
+          moduleTitle: 'relatÃ³rios',
           items: const [
             (
               label: 'Pix',
               icon: Icons.pix_outlined,
-              description: 'Estrutura visual de cobranças por Pix.',
+              description: 'Estrutura visual de cobranÃ§as por Pix.',
             ),
             (
               label: 'Boleto',
               icon: Icons.description_outlined,
-              description: 'Estrutura visual de cobranças por boleto.',
+              description: 'Estrutura visual de cobranÃ§as por boleto.',
             ),
             (
               label: 'Cartao',
               icon: Icons.credit_card_outlined,
-              description: 'Estrutura visual de cobranças por cartao.',
+              description: 'Estrutura visual de cobranÃ§as por cartao.',
             ),
             (
               label: 'Recorrencias',
@@ -1328,9 +2240,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Agenda visual de vencimentos financeiros.',
             ),
             (
-              label: 'relatórios financeiros',
+              label: 'relatÃ³rios financeiros',
               icon: Icons.bar_chart_outlined,
-              description: 'Conjunto de relatórios financeiros.',
+              description: 'Conjunto de relatÃ³rios financeiros.',
             ),
             (
               label: 'Split/comissoes',
@@ -1364,19 +2276,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Frota em tempo real',
           icon: Icons.directions_car_outlined,
-          detail: 'Visão operacional',
+          detail: 'VisÃ£o operacional',
           child: VehiclesScreen(),
         ),
         const _PanelToolEntry(
           label: 'Dispositivos',
           icon: Icons.gps_fixed_outlined,
-          detail: 'Visão operacional em tempo real',
+          detail: 'VisÃ£o operacional em tempo real',
           child: DevicesScreen(),
         ),
         const _PanelToolEntry(
           label: 'Comandos',
           icon: Icons.terminal_outlined,
-          detail: 'ações remotas no equipamento',
+          detail: 'aÃ§Ãµes remotas no equipamento',
           child: CommandsScreen(),
         ),
         const _PanelToolEntry(
@@ -1411,7 +2323,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget _buildAutomationsPanel() {
     return _TraccarToolsPanel(
       key: const ValueKey('automations-tools'),
-      title: 'Automações',
+      title: 'AutomaÃ§Ãµes',
       entries: const [
         _PanelToolEntry(
           label: 'Regras automaticas',
@@ -1436,12 +2348,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ),
         _PanelToolEntry(
-          label: 'ações',
+          label: 'aÃ§Ãµes',
           icon: Icons.playlist_add_check_outlined,
-          detail: 'Catálogo ativo de ações',
+          detail: 'CatÃ¡logo ativo de aÃ§Ãµes',
           child: _AutomationWorkbenchScreen(
-            title: 'ações',
-            description: 'Configura a resposta automática após cada gatilho.',
+            title: 'aÃ§Ãµes',
+            description: 'Configura a resposta automÃ¡tica apÃ³s cada gatilho.',
             scope: 'actions',
             actionType: 'evento',
           ),
@@ -1453,64 +2365,65 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: _AutomationWorkbenchScreen(
             title: 'Webhooks',
             description:
-                'Configura e testa callbacks para integrações externas.',
+                'Configura e testa callbacks para integraÃ§Ãµes externas.',
             scope: 'webhooks',
             actionType: 'webhook',
           ),
         ),
         _PanelToolEntry(
-          label: 'Alertas automáticos',
+          label: 'Alertas automÃ¡ticos',
           icon: Icons.notification_important_outlined,
-          detail: 'Automação ativa de alertas',
+          detail: 'AutomaÃ§Ã£o ativa de alertas',
           child: _AutomationWorkbenchScreen(
-            title: 'Alertas automáticos',
+            title: 'Alertas automÃ¡ticos',
             description:
-                'Dispara alertas automáticos quando o gatilho ocorrer.',
+                'Dispara alertas automÃ¡ticos quando o gatilho ocorrer.',
             scope: 'alerts',
             actionType: 'alerta',
           ),
         ),
         _PanelToolEntry(
-          label: 'WhatsApp automático',
+          label: 'WhatsApp automÃ¡tico',
           icon: Icons.forum_outlined,
-          detail: 'Automação ativa de WhatsApp',
+          detail: 'AutomaÃ§Ã£o ativa de WhatsApp',
           child: _AutomationWorkbenchScreen(
-            title: 'WhatsApp automático',
+            title: 'WhatsApp automÃ¡tico',
             description:
-                'Envia mensagem automática para o destino configurado.',
+                'Envia mensagem automÃ¡tica para o destino configurado.',
             scope: 'whatsapp',
             actionType: 'whatsapp',
           ),
         ),
         _PanelToolEntry(
-          label: 'Criação automática de chamado',
+          label: 'CriaÃ§Ã£o automÃ¡tica de chamado',
           icon: Icons.add_box_outlined,
-          detail: 'Abertura automática ativa',
+          detail: 'Abertura automÃ¡tica ativa',
           child: _AutomationWorkbenchScreen(
-            title: 'Criação automática de chamado',
+            title: 'CriaÃ§Ã£o automÃ¡tica de chamado',
             description: 'Abre chamado automaticamente com dados do evento.',
             scope: 'tickets',
             actionType: 'ticket',
           ),
         ),
         _PanelToolEntry(
-          label: 'Relatórios automáticos',
+          label: 'RelatÃ³rios automÃ¡ticos',
           icon: Icons.description_outlined,
-          detail: 'Agendamento ativo de relatórios',
+          detail: 'Agendamento ativo de relatÃ³rios',
           child: _AutomationWorkbenchScreen(
-            title: 'Relatórios automáticos',
-            description: 'Agenda e testa geração automática de relatórios.',
+            title: 'RelatÃ³rios automÃ¡ticos',
+            description: 'Agenda e testa geraÃ§Ã£o automÃ¡tica de relatÃ³rios.',
             scope: 'reports',
             actionType: 'relatorio',
           ),
         ),
         _PanelToolEntry(
-          label: 'Integração MackFlow/Bridge',
+          label: 'IntegraÃ§Ã£o MackFlow/Bridge',
           icon: Icons.link_outlined,
-          detail: 'Registro ativo de integração',
+          detail: 'Registro ativo de integraÃ§Ã£o',
           child: _AutomationWorkbenchScreen(
-            title: 'Integração MackFlow/Bridge',
-            description: 'Registra payloads de integração para uso do Bridge.',
+            title: 'IntegraÃ§Ã£o MackFlow/Bridge',
+            description:
+                'Registra payloads de integraÃ§Ã£o para uso do Bridge.',
             scope: 'bridge',
             actionType: 'evento',
           ),
@@ -1532,8 +2445,17 @@ class _OperationalMap extends StatelessWidget {
   const _OperationalMap({
     required this.snapshots,
     required this.selectedDeviceId,
+    required this.selectedTrail,
+    required this.selectedReplayPath,
+    required this.selectedReplayPoint,
+    required this.reportRoutePath,
+    required this.reportRouteStart,
+    required this.reportRouteEnd,
+    required this.reportRouteActivePoint,
+    required this.reportRouteActiveBearing,
     required this.mapMode,
     required this.mapType,
+    required this.mapZoom,
     required this.trafficEnabled,
     required this.onMapCreated,
     required this.onCameraMove,
@@ -1543,13 +2465,24 @@ class _OperationalMap extends StatelessWidget {
 
   final List<_VehicleSnapshot> snapshots;
   final int? selectedDeviceId;
+  final List<gmaps.LatLng> selectedTrail;
+  final List<gmaps.LatLng> selectedReplayPath;
+  final _ReplayPoint? selectedReplayPoint;
+  final List<gmaps.LatLng> reportRoutePath;
+  final ReportRouteMapPoint? reportRouteStart;
+  final ReportRouteMapPoint? reportRouteEnd;
+  final ReportRouteMapPoint? reportRouteActivePoint;
+  final double? reportRouteActiveBearing;
   final VisualMapMode mapMode;
   final gmaps.MapType mapType;
+  final double mapZoom;
   final bool trafficEnabled;
   final ValueChanged<gmaps.GoogleMapController> onMapCreated;
   final ValueChanged<gmaps.CameraPosition> onCameraMove;
   final VoidCallback onMapTap;
   final ValueChanged<_VehicleSnapshot> onVehicleTap;
+  static const double clusterZoomThreshold = 11.0;
+  static const double _clusterGridSize = 0.035;
 
   static const String _cleanMapStyle = '''
 [
@@ -1580,10 +2513,14 @@ class _OperationalMap extends StatelessWidget {
 ]
 ''';
 
-  static Future<Map<_VehicleOperationalStatus, gmaps.BitmapDescriptor>>?
+  static Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>?
       _vehicleMarkerIconsFuture;
+  static final Map<int, Future<gmaps.BitmapDescriptor>>
+      _replayRouteMarkerFutureByBucket =
+      <int, Future<gmaps.BitmapDescriptor>>{};
+  static const double _replayRouteMarkerRotationOffset = 0;
 
-  static Future<Map<_VehicleOperationalStatus, gmaps.BitmapDescriptor>>
+  static Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>
       _loadVehicleMarkerIcons() async {
     final entries = <_VehicleOperationalStatus, Color>{
       _VehicleOperationalStatus.online: const Color(0xFF22C55E),
@@ -1592,18 +2529,42 @@ class _OperationalMap extends StatelessWidget {
       _VehicleOperationalStatus.offline: const Color(0xFF9CA3AF),
       _VehicleOperationalStatus.noCommunication: const Color(0xFFF59E0B),
     };
-    final icons = <_VehicleOperationalStatus, gmaps.BitmapDescriptor>{};
-    for (final entry in entries.entries) {
-      final bytes = await _buildVehicleMarkerIconBytes(entry.value);
-      icons[entry.key] = gmaps.BitmapDescriptor.bytes(bytes);
+    final vehicleImages = <_VehicleMarkerType, ui.Image?>{};
+    for (final type in _VehicleMarkerType.values) {
+      vehicleImages[type] = await _loadMarkerAsset(type.assetPath);
+    }
+
+    final icons = <_VehicleMarkerIconKey, gmaps.BitmapDescriptor>{};
+    for (final statusEntry in entries.entries) {
+      for (final type in _VehicleMarkerType.values) {
+        final key = _VehicleMarkerIconKey(type, statusEntry.key);
+        final bytes = await _buildVehicleMarkerIconBytes(
+          statusColor: statusEntry.value,
+          vehicleImage: vehicleImages[type],
+        );
+        icons[key] = gmaps.BitmapDescriptor.bytes(bytes);
+      }
     }
     return icons;
   }
 
+  static Future<ui.Image?> _loadMarkerAsset(String assetPath) async {
+    try {
+      final data = await rootBundle.load(assetPath);
+      final codec = await instantiateImageCodec(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      );
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Uint8List> _buildVehicleMarkerIconBytes(
-      Color statusColor) async {
-    const iconSize = 86.0;
-    const iconRadius = 26.0;
+      {required Color statusColor, required ui.Image? vehicleImage}) async {
+    const iconSize = 92.0;
+    const iconRadius = 29.0;
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
     const center = Offset(iconSize / 2, iconSize / 2);
@@ -1613,36 +2574,66 @@ class _OperationalMap extends StatelessWidget {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     canvas.drawCircle(center, iconRadius, shadowPaint);
 
-    final fillPaint = Paint()..color = statusColor;
+    final fillPaint = Paint()
+      ..color = statusColor.withValues(alpha: vehicleImage == null ? 1 : 0.16);
     canvas.drawCircle(center, iconRadius, fillPaint);
 
     final borderPaint = Paint()
-      ..color = Colors.white
+      ..color = vehicleImage == null ? Colors.white : statusColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = vehicleImage == null ? 4 : 3;
     canvas.drawCircle(center, iconRadius, borderPaint);
 
-    const carIcon = Icons.directions_car_filled_rounded;
-    final carPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-      text: TextSpan(
-        text: String.fromCharCode(carIcon.codePoint),
-        style: TextStyle(
-          fontSize: 31,
-          fontFamily: carIcon.fontFamily,
-          package: carIcon.fontPackage,
-          color: Colors.white,
+    if (vehicleImage == null) {
+      const carIcon = Icons.directions_car_filled_rounded;
+      final carPainter = TextPainter(
+        textDirection: TextDirection.ltr,
+        text: TextSpan(
+          text: String.fromCharCode(carIcon.codePoint),
+          style: TextStyle(
+            fontSize: 31,
+            fontFamily: carIcon.fontFamily,
+            package: carIcon.fontPackage,
+            color: Colors.white,
+          ),
         ),
-      ),
-    )..layout();
+      )..layout();
 
-    carPainter.paint(
-      canvas,
-      Offset(
-        center.dx - (carPainter.width / 2),
-        center.dy - (carPainter.height / 2),
-      ),
-    );
+      carPainter.paint(
+        canvas,
+        Offset(
+          center.dx - (carPainter.width / 2),
+          center.dy - (carPainter.height / 2),
+        ),
+      );
+    } else {
+      final scale = 54 /
+          (vehicleImage.height > vehicleImage.width
+              ? vehicleImage.height
+              : vehicleImage.width);
+      final width = vehicleImage.width * scale;
+      final height = vehicleImage.height * scale;
+      final destination = Rect.fromCenter(
+        center: center,
+        width: width,
+        height: height,
+      );
+      canvas.drawImageRect(
+        vehicleImage,
+        Rect.fromLTWH(
+          0,
+          0,
+          vehicleImage.width.toDouble(),
+          vehicleImage.height.toDouble(),
+        ),
+        destination,
+        Paint()..isAntiAlias = true,
+      );
+    }
+
+    final statusDotCenter = Offset(iconSize - 25, iconSize - 25);
+    canvas.drawCircle(statusDotCenter, 8, Paint()..color = Colors.white);
+    canvas.drawCircle(statusDotCenter, 5.5, Paint()..color = statusColor);
 
     final image = await recorder
         .endRecording()
@@ -1654,17 +2645,134 @@ class _OperationalMap extends StatelessWidget {
     return byteData.buffer.asUint8List();
   }
 
+  static int _replayRotationBucket(double? bearing) {
+    const bucketSize = 15;
+    final normalized = ((bearing ?? 0) % 360 + 360) % 360;
+    final bucket = ((normalized / bucketSize).round() * bucketSize) % 360;
+    return bucket.toInt();
+  }
+
+  static Future<gmaps.BitmapDescriptor> _loadReplayRouteMarkerIcon(
+    double? bearing,
+  ) async {
+    final bytes = await _buildReplayRouteMarkerBytes(
+      rotationDegrees: _replayRotationBucket(bearing).toDouble() +
+          _replayRouteMarkerRotationOffset,
+    );
+    return gmaps.BitmapDescriptor.bytes(bytes);
+  }
+
+  static Future<Uint8List> _buildReplayRouteMarkerBytes({
+    required double rotationDegrees,
+  }) async {
+    const iconSize = 96.0;
+    const center = Offset(iconSize / 2, iconSize / 2);
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final shadowPaint = Paint()
+      ..color = const Color(0xFF0F172A).withValues(alpha: 0.22)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    final bodyPaint = Paint()..color = const Color(0xFF0F172A);
+    final strokePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..color = Colors.white;
+    final accentPaint = Paint()..color = const Color(0xFF2F80FF);
+    final accentSoftPaint = Paint()..color = const Color(0xFF7DD3FC);
+    final whiteSoftPaint = Paint()..color = Colors.white.withAlpha(235);
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(rotationDegrees * math.pi / 180.0);
+
+    final arrowPath = Path()
+      ..moveTo(0, -34)
+      ..lineTo(18, 12)
+      ..lineTo(6, 12)
+      ..lineTo(6, 30)
+      ..lineTo(-6, 30)
+      ..lineTo(-6, 12)
+      ..lineTo(-18, 12)
+      ..close();
+    canvas.drawPath(arrowPath.shift(const Offset(0, 3)), shadowPaint);
+    canvas.drawPath(arrowPath, bodyPaint);
+    canvas.drawPath(arrowPath, strokePaint);
+
+    final centerStripe = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: const Offset(0, 10), width: 8, height: 34),
+      const Radius.circular(4),
+    );
+    canvas.drawRRect(centerStripe, accentPaint);
+
+    final noseChevron = Path()
+      ..moveTo(0, -26)
+      ..lineTo(8, -6)
+      ..lineTo(0, -11)
+      ..lineTo(-8, -6)
+      ..close();
+    canvas.drawPath(noseChevron, accentSoftPaint);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: const Offset(0, 24), width: 20, height: 8),
+        const Radius.circular(4),
+      ),
+      whiteSoftPaint,
+    );
+    canvas.restore();
+
+    final image = await recorder
+        .endRecording()
+        .toImage(iconSize.toInt(), iconSize.toInt());
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
+    if (byteData == null) {
+      return Uint8List(0);
+    }
+    return byteData.buffer.asUint8List();
+  }
+
+  String _clusterKey(gmaps.LatLng point) {
+    final lat = (point.latitude / _clusterGridSize).floor();
+    final lng = (point.longitude / _clusterGridSize).floor();
+    return '$lat:$lng';
+  }
+
+  gmaps.LatLng _clusterCenter(List<_VehicleSnapshot> cluster) {
+    var lat = 0.0;
+    var lng = 0.0;
+    for (final snapshot in cluster) {
+      lat += snapshot.latLng.latitude;
+      lng += snapshot.latLng.longitude;
+    }
+    return gmaps.LatLng(lat / cluster.length, lng / cluster.length);
+  }
+
   @override
   Widget build(BuildContext context) {
     final markerIconsFuture =
         _vehicleMarkerIconsFuture ??= _loadVehicleMarkerIcons();
+    final replayRouteBucket = _replayRotationBucket(reportRouteActiveBearing);
+    final replayRouteMarkerFuture =
+        _replayRouteMarkerFutureByBucket.putIfAbsent(
+      replayRouteBucket,
+      () => _loadReplayRouteMarkerIcon(reportRouteActiveBearing),
+    );
 
-    return FutureBuilder<
-        Map<_VehicleOperationalStatus, gmaps.BitmapDescriptor>>(
-      future: markerIconsFuture,
-      builder: (context, markerIconsSnapshot) {
-        final markerIcons = markerIconsSnapshot.data ??
-            const <_VehicleOperationalStatus, gmaps.BitmapDescriptor>{};
+    return FutureBuilder<List<Object>>(
+      future: Future.wait<Object>([
+        markerIconsFuture,
+        replayRouteMarkerFuture,
+      ]),
+      builder: (context, assetsSnapshot) {
+        final markerIcons = assetsSnapshot.hasData
+            ? (assetsSnapshot.data![0]
+                as Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>)
+            : const <_VehicleMarkerIconKey, gmaps.BitmapDescriptor>{};
+        final replayRouteMarkerIcon = assetsSnapshot.hasData
+            ? assetsSnapshot.data![1] as gmaps.BitmapDescriptor
+            : gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                gmaps.BitmapDescriptor.hueAzure,
+              );
         final snapshotsWithPosition = snapshots
             .where((snapshot) => snapshot.hasValidGps)
             .toList(growable: false);
@@ -1681,40 +2789,161 @@ class _OperationalMap extends StatelessWidget {
           VisualMapMode.dark => _darkMapStyle,
           VisualMapMode.normal || VisualMapMode.premium => _cleanMapStyle,
         };
+        final reportRouteMode = reportRoutePath.length > 1;
         final markers = <gmaps.Marker>{};
         final circles = <gmaps.Circle>{};
+        final polylines = <gmaps.Polyline>{};
+        final reportRouteActiveLatLng = reportRouteActivePoint == null
+            ? null
+            : gmaps.LatLng(
+                reportRouteActivePoint!.latitude,
+                reportRouteActivePoint!.longitude,
+              );
 
-        for (final snapshot in snapshotsWithPosition) {
-          final markerPosition = snapshot.latLng;
+        void addVehicleMarker(_VehicleSnapshot snapshot) {
+          final isSelectedRouteVehicle = snapshot.device.id == selectedDeviceId;
+          final markerPosition = isSelectedRouteVehicle
+              ? (selectedReplayPoint?.latLng ??
+                  reportRouteActiveLatLng ??
+                  snapshot.latLng)
+              : snapshot.latLng;
           final statusSummary = snapshot.speed != null
               ? '${snapshot.statusLabel} - ${snapshot.speedLabel}'
               : snapshot.statusLabel;
-          final markerIcon = markerIcons[snapshot.operationalStatus] ??
+          final markerIcon = markerIcons[snapshot.markerIconKey] ??
               gmaps.BitmapDescriptor.defaultMarkerWithHue(snapshot.markerHue);
+          final markerRotation = selectedReplayPoint?.course ??
+              reportRouteActiveBearing ??
+              snapshot.markerRotation;
           markers.add(
             gmaps.Marker(
               markerId: gmaps.MarkerId('vehicle-${snapshot.device.id}'),
               position: markerPosition,
               anchor: const Offset(0.5, 0.5),
               consumeTapEvents: true,
+              flat: markerRotation != null,
               icon: markerIcon,
               infoWindow: gmaps.InfoWindow(
                 title: '${snapshot.device.name} • $statusSummary',
               ),
               onTap: () => onVehicleTap(snapshot),
+              rotation: markerRotation ?? 0,
             ),
           );
         }
 
-        if (selectedCenter != null) {
+        if (!reportRouteMode && mapZoom < clusterZoomThreshold) {
+          final clusters = <String, List<_VehicleSnapshot>>{};
+          for (final snapshot in snapshotsWithPosition) {
+            if (snapshot.device.id == selectedDeviceId) {
+              addVehicleMarker(snapshot);
+              continue;
+            }
+            final key = _clusterKey(snapshot.latLng);
+            clusters.putIfAbsent(key, () => <_VehicleSnapshot>[]).add(snapshot);
+          }
+          for (final entry in clusters.entries) {
+            final cluster = entry.value;
+            if (cluster.length == 1) {
+              addVehicleMarker(cluster.first);
+              continue;
+            }
+            markers.add(
+              gmaps.Marker(
+                markerId: gmaps.MarkerId('cluster-${entry.key}'),
+                position: _clusterCenter(cluster),
+                icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                  gmaps.BitmapDescriptor.hueAzure,
+                ),
+                infoWindow: gmaps.InfoWindow(
+                  title: '${cluster.length} ve\u00EDculos pr\u00F3ximos',
+                ),
+              ),
+            );
+          }
+        } else if (!reportRouteMode) {
+          for (final snapshot in snapshotsWithPosition) {
+            addVehicleMarker(snapshot);
+          }
+        }
+
+        final highlightedCenter = selectedReplayPoint?.latLng ??
+            reportRouteActiveLatLng ??
+            selectedCenter;
+        if (!reportRouteMode &&
+            highlightedCenter != null &&
+            (selected != null || selectedDeviceId != null)) {
           circles.add(
             gmaps.Circle(
-              circleId: gmaps.CircleId('selected-${selected!.device.id}'),
-              center: selectedCenter,
+              circleId: gmaps.CircleId('selected-${selectedDeviceId ?? 0}'),
+              center: highlightedCenter,
               radius: 120,
               fillColor: const Color(0xFF2F80FF).withValues(alpha: 0.14),
               strokeColor: const Color(0xFF2F80FF).withValues(alpha: 0.36),
               strokeWidth: 2,
+            ),
+          );
+        }
+
+        final routePoints = reportRoutePath.length > 1
+            ? reportRoutePath
+            : (selectedReplayPath.length > 1
+                ? selectedReplayPath
+                : selectedTrail);
+        if (selectedDeviceId != null && routePoints.length > 1) {
+          polylines.add(
+            gmaps.Polyline(
+              polylineId: gmaps.PolylineId('trail-$selectedDeviceId'),
+              points: routePoints,
+              color: const Color(0xFF2F80FF).withValues(alpha: 0.62),
+              width: 4,
+            ),
+          );
+        }
+
+        if (reportRouteStart != null) {
+          markers.add(
+            gmaps.Marker(
+              markerId: gmaps.MarkerId('route-start-${selectedDeviceId ?? 0}'),
+              position: gmaps.LatLng(
+                reportRouteStart!.latitude,
+                reportRouteStart!.longitude,
+              ),
+              icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                gmaps.BitmapDescriptor.hueGreen,
+              ),
+              infoWindow: const gmaps.InfoWindow(title: 'Inicio da rota'),
+            ),
+          );
+        }
+
+        if (reportRouteEnd != null) {
+          markers.add(
+            gmaps.Marker(
+              markerId: gmaps.MarkerId('route-end-${selectedDeviceId ?? 0}'),
+              position: gmaps.LatLng(
+                reportRouteEnd!.latitude,
+                reportRouteEnd!.longitude,
+              ),
+              icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                gmaps.BitmapDescriptor.hueRed,
+              ),
+              infoWindow: const gmaps.InfoWindow(title: 'Fim da rota'),
+            ),
+          );
+        }
+
+        if (reportRouteMode &&
+            selectedDeviceId != null &&
+            reportRouteActiveLatLng != null) {
+          markers.add(
+            gmaps.Marker(
+              markerId: gmaps.MarkerId('route-active-$selectedDeviceId'),
+              position: reportRouteActiveLatLng,
+              anchor: const Offset(0.5, 0.5),
+              icon: replayRouteMarkerIcon,
+              zIndexInt: 1000,
+              infoWindow: const gmaps.InfoWindow(title: 'Ponto ativo da rota'),
             ),
           );
         }
@@ -1742,6 +2971,7 @@ class _OperationalMap extends StatelessWidget {
           onTap: (_) => onMapTap(),
           markers: markers,
           circles: circles,
+          polylines: polylines,
         );
       },
     );
@@ -2118,6 +3348,231 @@ ThemeData _panelLightTheme(BuildContext context) {
   );
 }
 
+class _RouteReplayControls extends StatelessWidget {
+  const _RouteReplayControls({
+    required this.visible,
+    required this.sidebarOpen,
+    required this.sidebarVisible,
+    required this.playing,
+    required this.camera3dEnabled,
+    required this.total,
+    required this.index,
+    required this.vehicleName,
+    required this.onToggle3d,
+    required this.onPrevious,
+    required this.onToggle,
+    required this.onNext,
+    required this.onChanged,
+  });
+
+  final bool visible;
+  final bool sidebarOpen;
+  final bool sidebarVisible;
+  final bool playing;
+  final bool camera3dEnabled;
+  final int total;
+  final int index;
+  final String vehicleName;
+  final VoidCallback onToggle3d;
+  final VoidCallback onPrevious;
+  final VoidCallback onToggle;
+  final VoidCallback onNext;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeTotal = total <= 0 ? 1 : total;
+    final boundedIndex = index.clamp(0, safeTotal - 1).toInt();
+    final leftInset = sidebarVisible ? (sidebarOpen ? 252.0 : 92.0) : 20.0;
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      left: leftInset,
+      right: 20,
+      bottom: visible ? 20 : -180,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: visible ? 1 : 0,
+          child: PointerInterceptor(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFD6E0EE)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF111827).withValues(alpha: 0.08),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              vehicleName.isEmpty
+                                  ? 'Replay da rota'
+                                  : 'Replay da rota • $vehicleName',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1F2A44),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${boundedIndex + 1}/$safeTotal',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF667792),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          InkWell(
+                            onTap: onToggle3d,
+                            borderRadius: BorderRadius.circular(999),
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: camera3dEnabled
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFFF4F7FB),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: camera3dEnabled
+                                      ? const Color(0xFF2563EB)
+                                      : const Color(0xFFD6E0EE),
+                                ),
+                              ),
+                              child: Text(
+                                '3D',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: camera3dEnabled
+                                      ? Colors.white
+                                      : const Color(0xFF5B6B84),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _ReplayControlButton(
+                            icon: Icons.skip_previous_rounded,
+                            onTap: total > 0 ? onPrevious : null,
+                          ),
+                          const SizedBox(width: 8),
+                          _ReplayControlButton(
+                            icon: playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            onTap: total > 1 ? onToggle : null,
+                            highlighted: true,
+                          ),
+                          const SizedBox(width: 8),
+                          _ReplayControlButton(
+                            icon: Icons.skip_next_rounded,
+                            onTap: total > 0 ? onNext : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 4,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14,
+                                ),
+                              ),
+                              child: Slider(
+                                value: boundedIndex.toDouble(),
+                                min: 0,
+                                max: math.max(0, safeTotal - 1).toDouble(),
+                                onChanged: total > 1 ? onChanged : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReplayControlButton extends StatelessWidget {
+  const _ReplayControlButton({
+    required this.icon,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Ink(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color:
+              highlighted ? const Color(0xFF2F80FF) : const Color(0xFFF3F6FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                highlighted ? const Color(0xFF2F80FF) : const Color(0xFFD6E0EE),
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 22,
+          color: !enabled
+              ? const Color(0xFFB5C1D2)
+              : (highlighted ? Colors.white : const Color(0xFF1F2A44)),
+        ),
+      ),
+    );
+  }
+}
+
 class _TopSearchBar extends StatelessWidget {
   const _TopSearchBar({
     required this.brand,
@@ -2210,7 +3665,7 @@ class _TopSearchBar extends StatelessWidget {
     }
     final title = activeTitle?.trim().isNotEmpty == true
         ? activeTitle!.trim()
-        : 'Operação';
+        : 'OperaÃ§Ã£o';
     final compactDensity = cardDensity == VisualCardDensity.compact;
     final sideWidth = !sidebarVisible
         ? 0.0
@@ -2787,7 +4242,7 @@ class _ProfileMenuButton extends StatelessWidget {
                   color: Color(0xFF52627C),
                 ),
                 SizedBox(width: 10),
-                Expanded(child: Text('Configurações rápidas')),
+                Expanded(child: Text('ConfiguraÃ§Ãµes rÃ¡pidas')),
               ],
             ),
           ),
@@ -2823,7 +4278,7 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
             const PopupMenuItem<String>(
               value: _filterNoComKey,
-              child: Text('Sem comunicação'),
+              child: Text('Sem comunicaÃ§Ã£o'),
             ),
             const PopupMenuItem<String>(
               value: _filterClearKey,
@@ -2834,7 +4289,7 @@ class _ProfileMenuButton extends StatelessWidget {
               enabled: false,
               height: 28,
               child: Text(
-                'Opções de mapa',
+                'OpÃ§Ãµes de mapa',
                 style: TextStyle(
                   color: Color(0xFF60718D),
                   fontWeight: FontWeight.w800,
@@ -2868,7 +4323,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('Satélite'),
+                  const Text('SatÃ©lite'),
                 ],
               ),
             ),
@@ -2883,7 +4338,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('Híbrido'),
+                  const Text('HÃ­brido'),
                 ],
               ),
             ),
@@ -2898,7 +4353,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('Trânsito on/off'),
+                  const Text('TrÃ¢nsito on/off'),
                 ],
               ),
             ),
@@ -2908,7 +4363,7 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
             const PopupMenuItem<String>(
               value: _mapRefreshKey,
-              child: Text('Atualizar posições'),
+              child: Text('Atualizar posiÃ§Ãµes'),
             ),
           ],
           const PopupMenuDivider(),
@@ -3173,6 +4628,15 @@ class _SideMenu extends StatelessWidget {
                         IconButton(
                           tooltip: 'Sair',
                           onPressed: onLogout,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 30,
+                            minHeight: 30,
+                          ),
+                          style: IconButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
                           icon: const Icon(
                             Icons.logout_rounded,
                             color: Color(0xFF71819B),
@@ -3470,7 +4934,7 @@ class _NoVehiclesMapHint extends StatelessWidget {
               ),
               SizedBox(height: 8),
               Text(
-                'Nenhum equipamento com posição válida no momento',
+                'Nenhum equipamento com posiÃ§Ã£o vÃ¡lida no momento',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
@@ -3571,7 +5035,7 @@ class _KpiVehicleList extends StatelessWidget {
                     child: snapshots.isEmpty
                         ? const Center(
                             child: Text(
-                              'Nenhum veículo disponivel no momento',
+                              'Nenhum veÃ­culo disponivel no momento',
                               style: TextStyle(color: Color(0xFF52627C)),
                             ),
                           )
@@ -4146,19 +5610,19 @@ class _PixelTelemetrySidebar extends StatelessWidget {
       ),
       (
         id: 'reports',
-        label: 'relatórios',
+        label: 'relatÃ³rios',
         icon: Icons.insert_chart_outlined,
         selected: false
       ),
       (
         id: 'communication',
-        label: 'comunicação',
+        label: 'comunicaÃ§Ã£o',
         icon: Icons.chat_bubble_outline,
         selected: false
       ),
       (
         id: 'settings',
-        label: 'Configurações',
+        label: 'ConfiguraÃ§Ãµes',
         icon: Icons.settings_outlined,
         selected: false
       ),
@@ -4363,7 +5827,7 @@ class _PixelTelemetryContent extends StatelessWidget {
                           ),
                           SizedBox(height: 3),
                           Text(
-                            'Visão geral dos equipamentos da Operação',
+                            'VisÃ£o geral dos equipamentos da OperaÃ§Ã£o',
                             style: TextStyle(
                               color: Color(0xFF8DA7CC),
                               fontWeight: FontWeight.w500,
@@ -4440,7 +5904,7 @@ class _PixelTelemetryContent extends StatelessWidget {
                         icon: Icons.wifi_off_rounded,
                       ),
                       _PixelKpiCard(
-                        title: 'Sem comunicação',
+                        title: 'Sem comunicaÃ§Ã£o',
                         value: '$noSignal',
                         hint: total > 0
                             ? '${((noSignal / total) * 100).round()}% do total'
@@ -4756,14 +6220,14 @@ class _PixelDevicesTable extends StatelessWidget {
               DataColumn(label: Text('Status')),
               DataColumn(label: Text('Equipamento')),
               DataColumn(label: Text('IMEI / ID')),
-              DataColumn(label: Text('veículo / Ativo')),
+              DataColumn(label: Text('veÃ­culo / Ativo')),
               DataColumn(label: Text('Grupo')),
               DataColumn(label: Text('Ultima Conexao')),
               DataColumn(label: Text('Velocidade')),
               DataColumn(label: Text('Ignição')),
               DataColumn(label: Text('Bateria')),
               DataColumn(label: Text('Sinal GSM')),
-              DataColumn(label: Text('ações')),
+              DataColumn(label: Text('aÃ§Ãµes')),
             ],
             rows: [
               for (final row in rows) _deviceRow(row),
@@ -4795,7 +6259,8 @@ class _PixelDevicesTable extends StatelessWidget {
   DataRow _deviceRow(_VehicleSnapshot row) {
     final statusText = _statusLabel(row);
     final statusColor = _statusColor(row);
-    final model = (row.modelLabel == 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â' ||
+    final model = (row.modelLabel ==
+                'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â' ||
             row.modelLabel == 'Não informado')
         ? row.device.name
         : row.modelLabel;
@@ -5418,21 +6883,21 @@ class _HighlightsRail extends StatelessWidget {
                     icon: Icons.map_outlined,
                     title: 'Mapa como plano de fundo',
                     text:
-                        'Google Maps hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­brido sempre visÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel.',
+                        'Google Maps hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­brido sempre visÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel.',
                   ),
                   _HighlightItem(
                     icon: Icons.layers_outlined,
                     title:
-                        'Menus translÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºcidos',
+                        'Menus translÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºcidos',
                     text:
-                        'PainÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©is claros sobre o mapa.',
+                        'PainÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©is claros sobre o mapa.',
                   ),
                   _HighlightItem(
                     icon: Icons.speed_rounded,
                     title:
-                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego e velocidade',
+                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego e velocidade',
                     text:
-                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego Google + telemetria do veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culo.',
+                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego Google + telemetria do veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culo.',
                   ),
                 ],
               ),
@@ -5672,10 +7137,18 @@ class _VehicleCompactPopup extends StatelessWidget {
 class _VehicleBottomBar extends StatelessWidget {
   const _VehicleBottomBar({
     required this.snapshot,
+    required this.replayAsync,
+    required this.replayPoints,
+    required this.replayIndex,
+    required this.replayWindow,
+    required this.replayPlaying,
     required this.cardDensity,
     required this.sidebarOpen,
     required this.sidebarVisible,
     required this.activeTab,
+    required this.onReplayWindowChanged,
+    required this.onReplayIndexChanged,
+    required this.onReplayToggle,
     required this.panelMode,
     required this.onTabChanged,
     required this.onModeChanged,
@@ -5683,10 +7156,18 @@ class _VehicleBottomBar extends StatelessWidget {
   });
 
   final _VehicleSnapshot? snapshot;
+  final AsyncValue<List<_ReplayPoint>> replayAsync;
+  final List<_ReplayPoint> replayPoints;
+  final int? replayIndex;
+  final Duration replayWindow;
+  final bool replayPlaying;
   final VisualCardDensity cardDensity;
   final bool sidebarOpen;
   final bool sidebarVisible;
   final _VehicleBottomTab activeTab;
+  final ValueChanged<Duration> onReplayWindowChanged;
+  final ValueChanged<int> onReplayIndexChanged;
+  final VoidCallback onReplayToggle;
   final _VehiclePanelMode panelMode;
   final ValueChanged<_VehicleBottomTab> onTabChanged;
   final ValueChanged<_VehiclePanelMode> onModeChanged;
@@ -5697,19 +7178,18 @@ class _VehicleBottomBar extends StatelessWidget {
     final visible = snapshot != null;
     final width = MediaQuery.sizeOf(context).width;
     final compactDensity = cardDensity == VisualCardDensity.compact;
+    final effectivePanelMode = activeTab == _VehicleBottomTab.chart
+        ? _VehiclePanelMode.full
+        : panelMode;
     final sidebarWidth = !sidebarVisible
         ? 0.0
         : (sidebarOpen
             ? (compactDensity ? 208.0 : 224.0)
             : (compactDensity ? 68.0 : 72.0));
-    final height = switch (panelMode) {
+    final height = switch (effectivePanelMode) {
       _VehiclePanelMode.collapsed => compactDensity ? 62.0 : 68.0,
-      _VehiclePanelMode.summary => width >= 980
-          ? (compactDensity ? 164.0 : 186.0)
-          : (compactDensity ? 214.0 : 236.0),
-      _VehiclePanelMode.full => width >= 980
-          ? (compactDensity ? 332.0 : 372.0)
-          : (compactDensity ? 442.0 : 486.0),
+      _VehiclePanelMode.summary => compactDensity ? 214.0 : 236.0,
+      _VehiclePanelMode.full => compactDensity ? 442.0 : 486.0,
     };
 
     return AnimatedPositioned(
@@ -5732,8 +7212,16 @@ class _VehicleBottomBar extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: _VehicleBottomContent(
                       snapshot: snapshot!,
+                      replayAsync: replayAsync,
+                      replayPoints: replayPoints,
+                      replayIndex: replayIndex,
+                      replayWindow: replayWindow,
+                      replayPlaying: replayPlaying,
                       activeTab: activeTab,
-                      panelMode: panelMode,
+                      onReplayWindowChanged: onReplayWindowChanged,
+                      onReplayIndexChanged: onReplayIndexChanged,
+                      onReplayToggle: onReplayToggle,
+                      panelMode: effectivePanelMode,
                       onTabChanged: onTabChanged,
                       onModeChanged: onModeChanged,
                       onClose: onClose,
@@ -5749,7 +7237,15 @@ class _VehicleBottomBar extends StatelessWidget {
 class _VehicleBottomContent extends StatelessWidget {
   const _VehicleBottomContent({
     required this.snapshot,
+    required this.replayAsync,
+    required this.replayPoints,
+    required this.replayIndex,
+    required this.replayWindow,
+    required this.replayPlaying,
     required this.activeTab,
+    required this.onReplayWindowChanged,
+    required this.onReplayIndexChanged,
+    required this.onReplayToggle,
     required this.panelMode,
     required this.onTabChanged,
     required this.onModeChanged,
@@ -5757,7 +7253,15 @@ class _VehicleBottomContent extends StatelessWidget {
   });
 
   final _VehicleSnapshot snapshot;
+  final AsyncValue<List<_ReplayPoint>> replayAsync;
+  final List<_ReplayPoint> replayPoints;
+  final int? replayIndex;
+  final Duration replayWindow;
+  final bool replayPlaying;
   final _VehicleBottomTab activeTab;
+  final ValueChanged<Duration> onReplayWindowChanged;
+  final ValueChanged<int> onReplayIndexChanged;
+  final VoidCallback onReplayToggle;
   final _VehiclePanelMode panelMode;
   final ValueChanged<_VehicleBottomTab> onTabChanged;
   final ValueChanged<_VehiclePanelMode> onModeChanged;
@@ -5793,7 +7297,8 @@ class _VehicleBottomContent extends StatelessWidget {
       ({IconData icon, String label, _VehicleBottomTab tab}) action,
     ) {
       onTabChanged(action.tab);
-      if (action.tab == _VehicleBottomTab.overview) {
+      if (action.tab == _VehicleBottomTab.overview ||
+          action.tab == _VehicleBottomTab.chart) {
         onModeChanged(_VehiclePanelMode.full);
       }
     }
@@ -6015,6 +7520,20 @@ class _VehicleBottomContent extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                             fontSize: 10.8,
                           ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final action in quickActions.take(3))
+                              _VehicleMapQuickActionButton(
+                                icon: action.icon,
+                                label: action.label,
+                                selected: activeTab == action.tab,
+                                onTap: () => handleQuickAction(action),
+                              ),
+                          ],
                         ),
                       ],
                     ),
@@ -6246,7 +7765,7 @@ class _VehicleBottomContent extends StatelessWidget {
                 ),
         );
 
-        final lowerContent = compact
+        final overviewContent = compact
             ? ListView(
                 padding: EdgeInsets.zero,
                 children: [
@@ -6286,15 +7805,47 @@ class _VehicleBottomContent extends StatelessWidget {
                 ],
               );
 
+        Widget activeFullContent() {
+          switch (activeTab) {
+            case _VehicleBottomTab.overview:
+              return overviewContent;
+            case _VehicleBottomTab.chart:
+              return _VehicleReplayPanel(
+                snapshot: snapshot,
+                replayAsync: replayAsync,
+                replayPoints: replayPoints,
+                replayIndex: replayIndex,
+                replayWindow: replayWindow,
+                replayPlaying: replayPlaying,
+                onReplayWindowChanged: onReplayWindowChanged,
+                onReplayIndexChanged: onReplayIndexChanged,
+                onReplayToggle: onReplayToggle,
+              );
+            case _VehicleBottomTab.commands:
+              return _VehicleCommandsTab(snapshot: snapshot);
+            case _VehicleBottomTab.info:
+              return _VehicleInfoTab(snapshot: snapshot);
+            case _VehicleBottomTab.photos:
+              return _VehicleEmptyTab(
+                icon: Icons.image_outlined,
+                title: 'Fotos',
+                detail:
+                    'Espaco pronto para fotos, MDVR e evidencias do dispositivo.',
+              );
+          }
+        }
+
         final fullBody = Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-          child: Column(
-            children: [
-              infoStrip,
-              const SizedBox(height: 8),
-              Expanded(child: lowerContent),
-            ],
-          ),
+          child: activeTab == _VehicleBottomTab.chart
+              ? activeFullContent()
+              : Column(
+                  children: [
+                    infoStrip,
+                    const SizedBox(height: 8),
+                    Expanded(child: activeFullContent()),
+                  ],
+                ),
         );
 
         return Column(
@@ -6575,6 +8126,355 @@ class _VehicleBottomSpeedPanel extends StatelessWidget {
   }
 }
 
+class _VehicleReplayPanel extends StatelessWidget {
+  const _VehicleReplayPanel({
+    required this.snapshot,
+    required this.replayAsync,
+    required this.replayPoints,
+    required this.replayIndex,
+    required this.replayWindow,
+    required this.replayPlaying,
+    required this.onReplayWindowChanged,
+    required this.onReplayIndexChanged,
+    required this.onReplayToggle,
+  });
+
+  final _VehicleSnapshot snapshot;
+  final AsyncValue<List<_ReplayPoint>> replayAsync;
+  final List<_ReplayPoint> replayPoints;
+  final int? replayIndex;
+  final Duration replayWindow;
+  final bool replayPlaying;
+  final ValueChanged<Duration> onReplayWindowChanged;
+  final ValueChanged<int> onReplayIndexChanged;
+  final VoidCallback onReplayToggle;
+
+  String _windowLabel(Duration duration) {
+    if (duration.inHours >= 24) {
+      return '${duration.inHours}h';
+    }
+    return '${duration.inHours}h';
+  }
+
+  String _distanceLabel() {
+    if (replayPoints.length < 2) return '0 km';
+    var totalKm = 0.0;
+    for (var index = 1; index < replayPoints.length; index++) {
+      totalKm += _distanceBetweenKm(
+        replayPoints[index - 1],
+        replayPoints[index],
+      );
+    }
+    return '${totalKm.toStringAsFixed(1)} km';
+  }
+
+  double _distanceBetweenKm(_ReplayPoint a, _ReplayPoint b) {
+    const earthRadiusKm = 6371.0;
+    final dLat = (b.latitude - a.latitude) * (3.141592653589793 / 180);
+    final dLng = (b.longitude - a.longitude) * (3.141592653589793 / 180);
+    final lat1 = a.latitude * (3.141592653589793 / 180);
+    final lat2 = b.latitude * (3.141592653589793 / 180);
+    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
+    return earthRadiusKm * c;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedPoint =
+        replayIndex == null || replayIndex! >= replayPoints.length
+            ? null
+            : replayPoints[replayIndex!];
+    final rangeOptions = [
+      const Duration(hours: 6),
+      const Duration(hours: 24),
+      const Duration(hours: 48),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: replayAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(
+          child: Text(
+            'Falha ao carregar replay real: $error',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFB42318),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        data: (_) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Replay visual da rota',
+                      style: TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  for (final option in rangeOptions) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: ChoiceChip(
+                        label: Text(_windowLabel(option)),
+                        selected: replayWindow == option,
+                        onSelected: (_) => onReplayWindowChanged(option),
+                        labelStyle: TextStyle(
+                          color: replayWindow == option
+                              ? const Color(0xFF176EEB)
+                              : const Color(0xFF52627C),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  _ReplayMetricPill(
+                    label: 'Veiculo',
+                    value: snapshot.device.name,
+                  ),
+                  _ReplayMetricPill(
+                    label: 'Pontos',
+                    value: '${replayPoints.length}',
+                  ),
+                  _ReplayMetricPill(
+                    label: 'Distancia',
+                    value: _distanceLabel(),
+                  ),
+                  _ReplayMetricPill(
+                    label: 'Status',
+                    value: replayPlaying ? 'Reproduzindo' : 'Pronto',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Anterior',
+                    onPressed: replayIndex == null || replayIndex! <= 0
+                        ? null
+                        : () => onReplayIndexChanged(replayIndex! - 1),
+                    icon: const Icon(Icons.skip_previous_rounded),
+                  ),
+                  FilledButton.icon(
+                    onPressed: replayPoints.length < 2 ? null : onReplayToggle,
+                    icon: Icon(
+                      replayPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                    ),
+                    label: Text(replayPlaying ? 'Pausar' : 'Reproduzir'),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Proximo',
+                    onPressed: replayIndex == null ||
+                            replayIndex! >= replayPoints.length - 1
+                        ? null
+                        : () => onReplayIndexChanged(replayIndex! + 1),
+                    icon: const Icon(Icons.skip_next_rounded),
+                  ),
+                  const Spacer(),
+                  Text(
+                    selectedPoint == null
+                        ? '--/--'
+                        : '${(replayIndex ?? 0) + 1}/${replayPoints.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF52627C),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 7),
+                ),
+                child: Slider(
+                  value: (replayIndex ?? 0).toDouble(),
+                  min: 0,
+                  max: math.max(replayPoints.length - 1, 0).toDouble(),
+                  divisions:
+                      replayPoints.length > 1 ? replayPoints.length - 1 : null,
+                  onChanged: replayPoints.isEmpty
+                      ? null
+                      : (value) => onReplayIndexChanged(value.round()),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: selectedPoint == null
+                    ? const Center(
+                        child: Text(
+                          'Nenhum ponto real encontrado para o periodo selecionado.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF52627C),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFF),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFDDE5F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    selectedPoint.timeLabel,
+                                    style: const TextStyle(
+                                      color: Color(0xFF1F2A44),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${selectedPoint.speedLabel} • '
+                                    '${selectedPoint.latitude.toStringAsFixed(5)}, '
+                                    '${selectedPoint.longitude.toStringAsFixed(5)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF52627C),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    selectedPoint.address,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF60718D),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F1FF),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                selectedPoint.course == null
+                                    ? 'Sem rumo'
+                                    : 'Rumo ${selectedPoint.course!.toStringAsFixed(0)}°',
+                                style: const TextStyle(
+                                  color: Color(0xFF176EEB),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'A rota esta sincronizada com o mapa principal. O veiculo selecionado '
+                'permanece em foco durante o replay, preparando a base para full screen '
+                'e camera 3D depois.',
+                style: TextStyle(
+                  color: Color(0xFF52627C),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ReplayMetricPill extends StatelessWidget {
+  const _ReplayMetricPill({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF60718D),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF1F2A44),
+              fontWeight: FontWeight.w900,
+              fontSize: 12.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VehicleBottomEventItem {
   const _VehicleBottomEventItem({
     required this.time,
@@ -6669,6 +8569,7 @@ class _VehicleBottomEventsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = _resolveEvents();
+    final visibleEvents = events.take(3).toList(growable: false);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       decoration: BoxDecoration(
@@ -6691,40 +8592,47 @@ class _VehicleBottomEventsPanel extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                for (final event in events) ...[
-                  Row(
-                    children: [
-                      Icon(event.icon, color: event.color, size: 14),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 58,
-                        child: Text(
-                          event.time,
-                          style: const TextStyle(
-                            color: Color(0xFF60718D),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                Expanded(
+                  child: ListView.separated(
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    itemCount: visibleEvents.length,
+                    itemBuilder: (context, index) {
+                      final event = visibleEvents[index];
+                      return Row(
+                        children: [
+                          Icon(event.icon, color: event.color, size: 14),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 58,
+                            child: Text(
+                              event.time,
+                              style: const TextStyle(
+                                color: Color(0xFF60718D),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          event.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF334155),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12.5,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              event.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF334155),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
+                        ],
+                      );
+                    },
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
                   ),
-                  const SizedBox(height: 8),
-                ],
-                const Spacer(),
+                ),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -7195,11 +9103,7 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
   @override
   Widget build(BuildContext context) {
     final commands = [
-      (
-        'positionSingle',
-        Icons.my_location_outlined,
-        'Posição'
-      ),
+      ('positionSingle', Icons.my_location_outlined, 'PosiÃ§Ã£o'),
       ('engineStop', Icons.lock_outline_rounded, 'Bloquear'),
       ('engineResume', Icons.lock_open_rounded, 'Desbloquear'),
       ('alarm', Icons.notifications_active_outlined, 'Alarme'),
@@ -7414,11 +9318,11 @@ class _VehicleTabChip extends StatelessWidget {
 }
 
 enum _VehicleBottomTab {
-  overview('Visão geral', Icons.dashboard_customize_outlined),
+  overview('VisÃ£o geral', Icons.dashboard_customize_outlined),
   photos('Fotos', Icons.image_outlined),
   commands('Comandos', Icons.terminal_rounded),
   chart('Grafico', Icons.show_chart_outlined),
-  info('Informações', Icons.info_outline_rounded);
+  info('InformaÃ§Ãµes', Icons.info_outline_rounded);
 
   const _VehicleBottomTab(this.label, this.icon);
 
@@ -8317,7 +10221,7 @@ class _CopilotOperationalPanel extends StatelessWidget {
                             ),
                             const SizedBox(height: 12),
                             _CopilotChoiceGroup<VisualBalloonSize>(
-                              title: 'Tamanho dos balões',
+                              title: 'Tamanho dos balÃµes',
                               selected: settings.balloonSize,
                               options: const [
                                 _CopilotOption(
@@ -8463,7 +10367,7 @@ class _CopilotOperationalPanel extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 8),
                                     _CopilotDiagnosisRow(
-                                      label: 'SuGestão de ajuste',
+                                      label: 'SuGestÃ£o de ajuste',
                                       value: diagnosis!.adjustmentSuggestion,
                                     ),
                                     const SizedBox(height: 8),
@@ -8686,30 +10590,30 @@ class _CopilotInlineChatState extends State<_CopilotInlineChat> {
           'Se precisar de contraste maior, combine mapa escuro com transparencia baixa.';
     }
     if (text.contains('logo')) {
-      return 'Você pode manter o logo normal, compacto ou ocultar no mapa cheio. '
+      return 'VocÃª pode manter o logo normal, compacto ou ocultar no mapa cheio. '
           'Para foco operacional, recomendo ocultar no mapa cheio.';
     }
     if (text.contains('fonte') || text.contains('texto')) {
-      return 'Ative fonte grande para leitura em operação. '
-          'Se a tela ficar densa, combine com cards confortáveis.';
+      return 'Ative fonte grande para leitura em operaÃ§Ã£o. '
+          'Se a tela ficar densa, combine com cards confortÃ¡veis.';
     }
     if (text.contains('transparen') || text.contains('vidro')) {
       return 'Transparencia baixa melhora leitura; alta destaca mapa. '
-          'Para uso diário, médio costuma equilibrar visual e legibilidade.';
+          'Para uso diÃ¡rio, mÃ©dio costuma equilibrar visual e legibilidade.';
     }
     if (text.contains('card') || text.contains('compact')) {
-      return 'Cards compactos aumentam área útil; confortável melhora leitura. '
-          'Você pode alternar instantaneamente para comparar.';
+      return 'Cards compactos aumentam Ã¡rea Ãºtil; confortÃ¡vel melhora leitura. '
+          'VocÃª pode alternar instantaneamente para comparar.';
     }
     if (text.contains('resumo') || text.contains('status')) {
       return summary();
     }
     if (text.contains('balao') || text.contains('popup')) {
-      return 'Tamanho dos balões ajusta o popup rápido do veículo no mapa. '
-          'Grande favorece toque, pequeno reduz obstrução.';
+      return 'Tamanho dos balÃµes ajusta o popup rÃ¡pido do veÃ­culo no mapa. '
+          'Grande favorece toque, pequeno reduz obstruÃ§Ã£o.';
     }
 
-    return 'Entendi. Posso te guiar em ajustes de mapa, cards, transparência, fonte e logo. ${summary()}';
+    return 'Entendi. Posso te guiar em ajustes de mapa, cards, transparÃªncia, fonte e logo. ${summary()}';
   }
 
   @override
@@ -9050,7 +10954,7 @@ class _AiOperationAssistantScreenState
   @override
   void initState() {
     super.initState();
-    _contextController.text = 'Operação monitorada pelo painel SouTracking';
+    _contextController.text = 'OperaÃ§Ã£o monitorada pelo painel SouTracking';
   }
 
   @override
@@ -9073,7 +10977,7 @@ class _AiOperationAssistantScreenState
     final payload = <String, dynamic>{
       'origem': 'SouTracking',
       'modulo': 'ia_operacional',
-      'Operação': widget.operationId,
+      'OperaÃ§Ã£o': widget.operationId,
       'alvo': _targetController.text.trim(),
       'prompt': prompt,
       'contexto': _contextController.text.trim(),
@@ -9153,7 +11057,7 @@ class _AiOperationAssistantScreenState
               TextField(
                 controller: _targetController,
                 decoration: const InputDecoration(
-                  labelText: 'Alvo (veículo, grupo ou regra)',
+                  labelText: 'Alvo (veÃ­culo, grupo ou regra)',
                   hintText: 'Ex.: AB12, Frota Escolar, Regra de risco',
                   border: OutlineInputBorder(),
                 ),
@@ -9165,7 +11069,7 @@ class _AiOperationAssistantScreenState
                 maxLines: 5,
                 decoration: const InputDecoration(
                   labelText: 'Prompt operacional',
-                  hintText: 'Descreva o que a IA deve gerar para a Operação.',
+                  hintText: 'Descreva o que a IA deve gerar para a OperaÃ§Ã£o.',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -9567,10 +11471,10 @@ class _BridgeTicketCreateScreen extends StatefulWidget {
 
 class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
   static const List<String> _tipos = [
-    'Suporte técnico',
+    'Suporte tÃ©cnico',
     'Sem comunica\u00E7\u00E3o',
     'Instalacao',
-    'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     'Guincho',
     'Vistoria',
     'Sinistro',
@@ -9618,7 +11522,7 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
     return 'Chamado criado no SouTracking.\n'
         'Tipo: $tipo\n'
         'Prioridade: $prioridade\n'
-        'veículo: $vehicleId\n'
+        'veÃ­culo: $vehicleId\n'
         'Status: aguardando envio para SouFind.';
   }
 
@@ -9627,7 +11531,7 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
     final descricao = _descricaoController.text.trim();
     if (vehicleId.isEmpty || descricao.isEmpty) {
       setState(() {
-        _erro = 'Preencha veículo e descricao para criar o chamado.';
+        _erro = 'Preencha veÃ­culo e descricao para criar o chamado.';
       });
       return;
     }
@@ -9777,8 +11681,8 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
               TextField(
                 controller: _vehicleIdController,
                 decoration: const InputDecoration(
-                  labelText: 'veículo',
-                  hintText: 'Ex.: ABC-1234 ou ID do veículo',
+                  labelText: 'veÃ­culo',
+                  hintText: 'Ex.: ABC-1234 ou ID do veÃ­culo',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -10036,7 +11940,7 @@ class _InventoryDemoScreen extends StatelessWidget {
     ),
     _InventorySummaryData(
       title:
-          'Em manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'Em manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
       value: '6',
       icon: Icons.build_circle_outlined,
       color: Color(0xFFD97706),
@@ -10096,7 +12000,7 @@ class _InventoryDemoScreen extends StatelessWidget {
       idNumber: '-',
       carrier: '-',
       status:
-          'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
       technician: 'Carlos Tecnico',
       vehicle: 'XYZ-9876',
       movement: 'Retorno tecnico',
@@ -10106,19 +12010,19 @@ class _InventoryDemoScreen extends StatelessWidget {
   static const _history = <String>[
     '23:10 Entrada de rastreador 4G',
     '22:45 Saida de chip Vivo para tecnico',
-    '21:30 Instalacao no veículo ABC-1234',
-    '20:10 RelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© enviado para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    '21:30 Instalacao no veÃ­culo ABC-1234',
+    '20:10 RelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© enviado para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
   ];
 
   static const _actions = <String>[
     'Entrada',
     'Saida para tecnico',
-    'Instalar no veículo',
+    'Instalar no veÃ­culo',
     'Trocar chip',
-    'Enviar para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Enviar para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     'Devolver ao estoque',
     'Dar baixa',
-    'Ver histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico',
+    'Ver histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico',
   ];
 
   void _showAction(BuildContext context, String action) {
@@ -10145,7 +12049,7 @@ class _InventoryDemoScreen extends StatelessWidget {
               ),
               SizedBox(height: 6),
               Text(
-                'Controle de rastreadores, chips, acessorios e movimentações operacionais.',
+                'Controle de rastreadores, chips, acessorios e movimentaÃ§Ãµes operacionais.',
                 style: TextStyle(
                   color: Color(0xFF526684),
                   fontWeight: FontWeight.w600,
@@ -10244,7 +12148,7 @@ class _InventoryDemoScreen extends StatelessWidget {
                       DataColumn(label: Text('Operadora')),
                       DataColumn(label: Text('Status')),
                       DataColumn(label: Text('Tecnico')),
-                      DataColumn(label: Text('veículo')),
+                      DataColumn(label: Text('veÃ­culo')),
                       DataColumn(label: Text('Ultima movimentacao')),
                     ],
                     rows: [
@@ -10274,7 +12178,7 @@ class _InventoryDemoScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Movimentações (demo)',
+                'MovimentaÃ§Ãµes (demo)',
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
                   fontWeight: FontWeight.w900,
@@ -10351,7 +12255,8 @@ class _InventoryDemoScreen extends StatelessWidget {
               _InventoryFlowLine(text: 'Bridge'),
               _InventoryFlowLine(text: 'Google Sheets'),
               _InventoryFlowLine(text: 'Aba Itens atualiza status'),
-              _InventoryFlowLine(text: 'Aba Movimentações registra Histórico'),
+              _InventoryFlowLine(
+                  text: 'Aba MovimentaÃ§Ãµes registra Histórico'),
             ],
           ),
         ),
@@ -10466,7 +12371,7 @@ class _InventoryStatusChip extends StatelessWidget {
           bg: const Color(0xFFECFDF3),
           border: const Color(0xFFBBF7D0),
         );
-      case 'ManutenÃƒÂ§ÃƒÂ£o':
+      case 'ManutenÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o':
         return (
           fg: const Color(0xFFD97706),
           bg: const Color(0xFFFFF7ED),
@@ -10636,7 +12541,7 @@ class _MdvrDemoScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'MDVR / Câmeras',
+                'MDVR / CÃ¢meras',
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
                   fontWeight: FontWeight.w900,
@@ -10823,7 +12728,7 @@ class _MdvrCameraCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'veículo vinculado: ABC-1234',
+            'veÃ­culo vinculado: ABC-1234',
             style: TextStyle(
               color: Color(0xFF60718D),
               fontWeight: FontWeight.w700,
@@ -11066,14 +12971,14 @@ class _TelemetryRaceShowcaseScreenState
     extends State<_TelemetryRaceShowcaseScreen> {
   static const _seasonOptions = ['Temporada atual demo'];
   static const _raceOptions = [
-    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
     'China',
-    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     'Bahrein'
   ];
   static const _sessionOptions = [
     'Treino',
-    'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     'Corrida'
   ];
   static const _driverOptions = [
@@ -11091,10 +12996,12 @@ class _TelemetryRaceShowcaseScreenState
   ];
 
   final Map<String, _RaceTelemetryCircuit> _circuits = {
-    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia': _RaceTelemetryCircuit(
-      raceName: 'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
+        _RaceTelemetryCircuit(
+      raceName:
+          'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
       trackSubtitle:
-          'Albert Park ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Albert Park ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.13, 0.62),
         Offset(0.22, 0.79),
@@ -11124,21 +13031,23 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'aus-3',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.76, 0.43),
           accent: Color(0xFF22C55E),
         ),
         _RaceTelemetryEvent(
           id: 'aus-4',
-          label: 'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
+          label:
+              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
           sector: 'Setor 1',
           position: Offset(0.34, 0.24),
           accent: Color(0xFFA855F7),
         ),
         _RaceTelemetryEvent(
           id: 'aus-5',
-          label: 'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.63, 0.30),
           accent: Color(0xFF3B82F6),
@@ -11148,7 +13057,7 @@ class _TelemetryRaceShowcaseScreenState
     'China': _RaceTelemetryCircuit(
       raceName: 'China',
       trackSubtitle:
-          'Shanghai ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Shanghai ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.15, 0.70),
         Offset(0.25, 0.82),
@@ -11185,17 +13094,19 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'chi-4',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.69, 0.27),
           accent: Color(0xFF3B82F6),
         ),
       ],
     ),
-    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o': _RaceTelemetryCircuit(
-      raceName: 'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+        _RaceTelemetryCircuit(
+      raceName:
+          'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
       trackSubtitle:
-          'Suzuka ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Suzuka ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.16, 0.67),
         Offset(0.23, 0.82),
@@ -11210,7 +13121,8 @@ class _TelemetryRaceShowcaseScreenState
       events: const [
         _RaceTelemetryEvent(
           id: 'jpn-1',
-          label: 'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
+          label:
+              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
           sector: 'Setor 1',
           position: Offset(0.25, 0.81),
           accent: Color(0xFFEF4444),
@@ -11231,7 +13143,8 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'jpn-4',
-          label: 'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.46, 0.22),
           accent: Color(0xFF3B82F6),
@@ -11241,7 +13154,7 @@ class _TelemetryRaceShowcaseScreenState
     'Bahrein': _RaceTelemetryCircuit(
       raceName: 'Bahrein',
       trackSubtitle:
-          'Sakhir ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Sakhir ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
       pathPoints: const [
         Offset(0.14, 0.72),
         Offset(0.29, 0.83),
@@ -11278,14 +13191,15 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'bah-4',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
           sector: 'Setor 3',
           position: Offset(0.63, 0.24),
           accent: Color(0xFF3B82F6),
         ),
         _RaceTelemetryEvent(
           id: 'bah-5',
-          label: 'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+          label:
+              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
           sector: 'Setor 2',
           position: Offset(0.36, 0.25),
           accent: Color(0xFFA855F7),
@@ -11309,7 +13223,8 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 92,
       gsmSignal: 88,
-      lastCommunication: 'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 9 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 9 s',
       fuelOrLoad: 54,
       trackerTemperature: 39,
       behavior: 'normal',
@@ -11328,14 +13243,16 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 94,
       gsmSignal: 86,
-      lastCommunication: 'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 7 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 7 s',
       fuelOrLoad: 49,
       trackerTemperature: 40,
       behavior:
-          'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
     ),
     'Norris': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dio',
+      tireCompound:
+          'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dio',
       tireLife: 66,
       speedKmh: 301,
       rpm: 11910,
@@ -11348,13 +13265,15 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 89,
       gsmSignal: 85,
-      lastCommunication: 'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 11 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 11 s',
       fuelOrLoad: 56,
       trackerTemperature: 38,
       behavior: 'normal',
     ),
     'Leclerc': const _RaceTelemetryDriverSnapshot(
-      tireCompound: 'IntermediÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rio',
+      tireCompound:
+          'IntermediÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rio',
       tireLife: 60,
       speedKmh: 300,
       rpm: 11760,
@@ -11367,7 +13286,8 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 87,
       gsmSignal: 82,
-      lastCommunication: 'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 13 s',
+      lastCommunication:
+          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 13 s',
       fuelOrLoad: 52,
       trackerTemperature: 41,
       behavior: 'risco',
@@ -11387,7 +13307,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -9;
-      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 6;
       case 'Corrida':
         return 0;
@@ -11399,7 +13319,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -300;
-      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 210;
       case 'Corrida':
         return 0;
@@ -11409,11 +13329,11 @@ class _TelemetryRaceShowcaseScreenState
 
   int _raceAdjust(String race) {
     switch (race) {
-      case 'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
+      case 'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
         return 2;
       case 'China':
         return -1;
-      case 'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
         return 4;
       case 'Bahrein':
         return 1;
@@ -11430,7 +13350,7 @@ class _TelemetryRaceShowcaseScreenState
     final tireLifeShift = _selectedSession == 'Corrida'
         ? -5
         : (_selectedSession ==
-                'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+                'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
             ? -2
             : 4);
 
@@ -11446,8 +13366,8 @@ class _TelemetryRaceShowcaseScreenState
       behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
           ? 'risco'
           : (_selectedSession ==
-                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
-              ? 'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+              ? 'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
               : 'normal'),
     );
   }
@@ -11546,7 +13466,7 @@ class _TelemetryRaceShowcaseScreenState
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/simulados. Sem uso de marca oficial.',
+                    'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/simulados. Sem uso de marca oficial.',
                     style: TextStyle(
                       color: Color(0xFF9DB6D8),
                       fontWeight: FontWeight.w600,
@@ -11590,7 +13510,8 @@ class _TelemetryRaceShowcaseScreenState
                     },
                   ),
                   _RaceTelemetryFilterDropdown(
-                    label: 'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                    label:
+                        'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
                     value: _selectedSession,
                     options: _sessionOptions,
                     onChanged: (value) {
@@ -11903,7 +13824,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tricas de corrida',
+            'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tricas de corrida',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -11914,7 +13835,8 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(label: 'Piloto', value: _selectedDriver),
           _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
           _RaceTelemetryInfoLine(
-              label: 'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+              label:
+                  'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
               value: _selectedSession),
           _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
           _RaceTelemetryInfoLine(
@@ -11935,16 +13857,16 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(
             label: 'Temperatura do pneu',
             value:
-                '${snapshot.tireTempC}ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.tireTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do motor',
             value:
-                '${snapshot.engineTempC}ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.engineTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
             label:
-                'Gap para comparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'Gap para comparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: comparison == null
                 ? 'n/a'
                 : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
@@ -11980,7 +13902,7 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
           ),
           _RaceTelemetryInfoLine(
@@ -11993,18 +13915,18 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ltima comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ltima comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: snapshot.lastCommunication,
           ),
           _RaceTelemetryInfoLine(
             label:
-                'Temperatura do baÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº/motor',
+                'Temperatura do baÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº/motor',
             value:
-                '${snapshot.trackerTemperature}ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.trackerTemperature}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
           ),
           _RaceTelemetryInfoLine(
             label:
-                'NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel de combustÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel/carga',
+                'NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel de combustÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel/carga',
             value: '${snapshot.fuelOrLoad}%',
           ),
           _RaceTelemetryInfoLine(
@@ -12036,7 +13958,7 @@ class _TelemetryRaceShowcaseScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'A mesma lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culos de frota, guinchos, caminhÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes, mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡quinas e operaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ticas.',
+            'A mesma lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culos de frota, guinchos, caminhÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes, mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡quinas e operaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ticas.',
             style: TextStyle(
               color: Color(0xFFBCD3F3),
               fontWeight: FontWeight.w600,
@@ -12045,13 +13967,13 @@ class _TelemetryRaceShowcaseScreenState
           const SizedBox(height: 8),
           const _RaceTelemetryBullet(
               text:
-                  'detectar conduÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o agressiva;'),
+                  'detectar conduÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o agressiva;'),
           const _RaceTelemetryBullet(
               text:
-                  'prever manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
+                  'prever manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
           const _RaceTelemetryBullet(
               text:
-                  'monitorar bateria e comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
+                  'monitorar bateria e comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
           const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
           const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
           const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
@@ -12079,7 +14001,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'ComparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+            'ComparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -12097,22 +14019,22 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de velocidade',
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de velocidade',
             value: formatDelta(comparison.speedDelta, ' km/h'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de frenagem',
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de frenagem',
             value: formatDelta(comparison.brakingDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de aceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de aceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
             value: formatDelta(comparison.throttleDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de desgaste de pneu',
+                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de desgaste de pneu',
             value: formatDelta(comparison.tireWearDelta, '%'),
           ),
         ],
@@ -12967,7 +14889,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
                       ),
                     ),
                     Text(
-                      'Acelerador ${selectedEvent.throttle}% • Freio ${selectedEvent.brake}% • Temp ${selectedEvent.temperatureC}°C',
+                      'Acelerador ${selectedEvent.throttle}% • Freio ${selectedEvent.brake}% • Temp ${selectedEvent.temperatureC}Â°C',
                       style: const TextStyle(
                         color: Color(0xFFDCEAFE),
                         fontWeight: FontWeight.w700,
@@ -13081,7 +15003,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/snapshot. Sem uso de marca oficial.',
+                'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/snapshot. Sem uso de marca oficial.',
                 style: TextStyle(
                   color: Color(0xFF8FAED6),
                   fontWeight: FontWeight.w600,
@@ -13209,7 +15131,7 @@ class _TelemetryTopHeader extends StatelessWidget {
       children: [
         if (compact) ...[
           const Text(
-            'Operação > Demo Telemetria',
+            'OperaÃ§Ã£o > Demo Telemetria',
             style: TextStyle(
               color: Color(0xFF6F8CB5),
               fontWeight: FontWeight.w700,
@@ -13255,7 +15177,7 @@ class _TelemetryTopHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Operação > Demo Telemetria',
+                      'OperaÃ§Ã£o > Demo Telemetria',
                       style: TextStyle(
                         color: Color(0xFF6F8CB5),
                         fontWeight: FontWeight.w700,
@@ -13351,7 +15273,7 @@ class _TelemetryTopHeader extends StatelessWidget {
             _TelemetryActionChip(
               icon: Icons.more_horiz,
               label: 'Mais',
-              onTap: () => onAction('Mais ações'),
+              onTap: () => onAction('Mais aÃ§Ãµes'),
             ),
           ],
         ),
@@ -13915,7 +15837,7 @@ class _TelemetryLivePanel extends StatelessWidget {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'GPS 23ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°42\'45.8"S   46ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°41\'19.6"W',
+                  'GPS 23ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°42\'45.8"S   46ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°41\'19.6"W',
                   style: TextStyle(
                     color: Color(0xFFD3E4FF),
                     fontWeight: FontWeight.w700,
@@ -14671,7 +16593,7 @@ final _serverPanelSnapshotProvider = FutureProvider<_ServerPanelSnapshot>((
         communicationLevel: 'Não informado',
         defaultCoordinates: 'Não informado',
         message:
-            'Seu usuario nao tem permissao para consultar essas configurações.',
+            'Seu usuario nao tem permissao para consultar essas configuraÃ§Ãµes.',
       );
     }
     if (code != null && code >= 500) {
@@ -14873,13 +16795,13 @@ class _ServerStatusPanel extends ConsumerWidget {
             const SizedBox(height: 8),
             _SimpleToolRow(
               icon: Icons.settings_suggest_outlined,
-              title: 'Configurações operacionais',
+              title: 'ConfiguraÃ§Ãµes operacionais',
               detail: status.operationalConfig,
             ),
             const SizedBox(height: 8),
             _SimpleToolRow(
               icon: Icons.wifi_tethering_outlined,
-              title: 'Nivel de comunicação',
+              title: 'Nivel de comunicaÃ§Ã£o',
               detail: status.communicationLevel,
             ),
             const SizedBox(height: 8),
@@ -15188,7 +17110,7 @@ class _FleetKpis {
       if (snapshot.isOperationalOnline) {
         online++;
       } else {
-        // Status offline/unknown ou atualizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o antiga entram no offline operacional.
+        // Status offline/unknown ou atualizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o antiga entram no offline operacional.
         offline++;
       }
 
@@ -15232,6 +17154,107 @@ enum _VehicleOperationalStatus {
   alert,
   offline,
   noCommunication,
+}
+
+enum _VehicleMarkerType {
+  animal('animal.png'),
+  car('car.png'),
+  motorcycle('motorcycle.png'),
+  truck('truck.png'),
+  bus('bus.png'),
+  camper('camper.png'),
+  person('person.png'),
+  generic('default.png'),
+  pickup('pickup.png'),
+  van('van.png'),
+  tractor('tractor.png'),
+  crane('crane.png'),
+  helicopter('helicopter.png'),
+  offroad('offroad.png'),
+  bicycle('bicycle.png'),
+  boat('boat.png'),
+  plane('plane.png'),
+  ship('ship.png'),
+  scooter('scooter.png'),
+  train('train.png'),
+  tram('tram.png'),
+  trolleybus('trolleybus.png');
+
+  const _VehicleMarkerType(this.fileName);
+
+  final String fileName;
+  String get assetPath => 'assets/icons/map/$fileName';
+
+  static _VehicleMarkerType? fromStoredKey(String? raw) {
+    final value = raw?.trim().toLowerCase() ?? '';
+    if (value.isEmpty) return null;
+    switch (value) {
+      case 'animal':
+        return _VehicleMarkerType.animal;
+      case 'car':
+        return _VehicleMarkerType.car;
+      case 'motorcycle':
+        return _VehicleMarkerType.motorcycle;
+      case 'truck':
+        return _VehicleMarkerType.truck;
+      case 'bus':
+        return _VehicleMarkerType.bus;
+      case 'camper':
+        return _VehicleMarkerType.camper;
+      case 'person':
+        return _VehicleMarkerType.person;
+      case 'pickup':
+        return _VehicleMarkerType.pickup;
+      case 'van':
+        return _VehicleMarkerType.van;
+      case 'tractor':
+        return _VehicleMarkerType.tractor;
+      case 'crane':
+        return _VehicleMarkerType.crane;
+      case 'helicopter':
+        return _VehicleMarkerType.helicopter;
+      case 'offroad':
+        return _VehicleMarkerType.offroad;
+      case 'bicycle':
+        return _VehicleMarkerType.bicycle;
+      case 'boat':
+        return _VehicleMarkerType.boat;
+      case 'plane':
+        return _VehicleMarkerType.plane;
+      case 'ship':
+        return _VehicleMarkerType.ship;
+      case 'scooter':
+        return _VehicleMarkerType.scooter;
+      case 'train':
+        return _VehicleMarkerType.train;
+      case 'tram':
+        return _VehicleMarkerType.tram;
+      case 'trolleybus':
+        return _VehicleMarkerType.trolleybus;
+      case 'default':
+      case 'generic':
+        return _VehicleMarkerType.generic;
+      default:
+        return _VehicleMarkerType.generic;
+    }
+  }
+}
+
+class _VehicleMarkerIconKey {
+  const _VehicleMarkerIconKey(this.type, this.status);
+
+  final _VehicleMarkerType type;
+  final _VehicleOperationalStatus status;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _VehicleMarkerIconKey &&
+        other.type == type &&
+        other.status == status;
+  }
+
+  @override
+  int get hashCode => Object.hash(type, status);
 }
 
 class _VehicleSnapshot {
@@ -15319,7 +17342,7 @@ class _VehicleSnapshot {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
         normalizedStatus == 'nao informado' ||
-        normalizedStatus == 'não informado' ||
+        normalizedStatus == 'nÃ£o informado' ||
         normalizedStatus == 'n/a';
   }
 
@@ -15490,6 +17513,111 @@ class _VehicleSnapshot {
       case _VehicleOperationalStatus.noCommunication:
         return gmaps.BitmapDescriptor.hueOrange;
     }
+  }
+
+  _VehicleMarkerType get markerType {
+    final storedIcon = device.attributes?['souMapIcon']?.toString();
+    final hasStoredIcon = storedIcon != null && storedIcon.trim().isNotEmpty;
+    if (hasStoredIcon) {
+      return _VehicleMarkerType.fromStoredKey(storedIcon) ??
+          _VehicleMarkerType.generic;
+    }
+
+    final raw = [
+      device.category,
+      device.attributes?['category'],
+      device.attributes?['type'],
+      device.attributes?['vehicleType'],
+      device.attributes?['model'],
+      device.attributes?['vehicleModel'],
+      device.name,
+    ].whereType<Object>().join(' ').toLowerCase();
+
+    if (raw.contains('scooter')) return _VehicleMarkerType.scooter;
+    if (raw.contains('moto') || raw.contains('motorcycle')) {
+      return _VehicleMarkerType.motorcycle;
+    }
+    if (raw.contains('caminh') || raw.contains('truck')) {
+      return _VehicleMarkerType.truck;
+    }
+    if (raw.contains('onibus') ||
+        raw.contains('\u00F4nibus') ||
+        raw.contains('bus')) {
+      return _VehicleMarkerType.bus;
+    }
+    if (raw.contains('pickup') || raw.contains('pick-up')) {
+      return _VehicleMarkerType.pickup;
+    }
+    if (raw.contains('van')) return _VehicleMarkerType.van;
+    if (raw.contains('pessoa') ||
+        raw.contains('person') ||
+        raw.contains('motorista')) {
+      return _VehicleMarkerType.person;
+    }
+    if (raw.contains('bike') || raw.contains('bicic')) {
+      return _VehicleMarkerType.bicycle;
+    }
+    if (raw.contains('barco') || raw.contains('boat')) {
+      return _VehicleMarkerType.boat;
+    }
+    if (raw.contains('navio') || raw.contains('ship')) {
+      return _VehicleMarkerType.ship;
+    }
+    if (raw.contains('guindaste') || raw.contains('crane')) {
+      return _VehicleMarkerType.crane;
+    }
+    if (raw.contains('trator') ||
+        raw.contains('tractor') ||
+        raw.contains('maquina') ||
+        raw.contains('m\u00E1quina')) {
+      return _VehicleMarkerType.tractor;
+    }
+    if (raw.contains('offroad') ||
+        raw.contains('4x4') ||
+        raw.contains('fora de estrada')) {
+      return _VehicleMarkerType.offroad;
+    }
+    if (raw.contains('carro') ||
+        raw.contains('car') ||
+        raw.contains('auto') ||
+        raw.contains('veiculo') ||
+        raw.contains('ve\u00EDculo')) {
+      return _VehicleMarkerType.car;
+    }
+    return _VehicleMarkerType.generic;
+  }
+
+  _VehicleMarkerIconKey get markerIconKey {
+    return _VehicleMarkerIconKey(markerType, operationalStatus);
+  }
+
+  double? get markerRotation {
+    if (operationalStatus == _VehicleOperationalStatus.offline ||
+        operationalStatus == _VehicleOperationalStatus.noCommunication) {
+      return null;
+    }
+    return _normalizeDirection(
+      position?.course ??
+          _mergedAttributes['course'] ??
+          _mergedAttributes['heading'] ??
+          _mergedAttributes['bearing'],
+    );
+  }
+
+  static double? _normalizeDirection(Object? raw) {
+    if (raw == null) return null;
+    double? value;
+    if (raw is num) {
+      value = raw.toDouble();
+    } else if (raw is String) {
+      final normalized = raw.trim().replaceAll(',', '.');
+      if (normalized.isEmpty) return null;
+      value = double.tryParse(normalized);
+    }
+    if (value == null || !value.isFinite) return null;
+    var angle = value % 360;
+    if (angle < 0) angle += 360;
+    return angle.toDouble();
   }
 
   double get mapBearing => (index * 34) % 360;

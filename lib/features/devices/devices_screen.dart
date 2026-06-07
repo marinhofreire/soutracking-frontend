@@ -39,6 +39,30 @@ class DevicesScreen extends ConsumerStatefulWidget {
 class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   static final List<MapEntry<String, String>> _sensorOptions =
       sensorSelectionOptions();
+  static const List<_MapIconChoice> _mapIconChoices = [
+    _MapIconChoice('animal', 'Animal'),
+    _MapIconChoice('car', 'Carro'),
+    _MapIconChoice('motorcycle', 'Moto'),
+    _MapIconChoice('truck', 'Caminhão'),
+    _MapIconChoice('bus', 'Ônibus'),
+    _MapIconChoice('camper', 'Camper'),
+    _MapIconChoice('pickup', 'Pickup'),
+    _MapIconChoice('van', 'Van'),
+    _MapIconChoice('tractor', 'Trator'),
+    _MapIconChoice('crane', 'Guindaste'),
+    _MapIconChoice('helicopter', 'Helicóptero'),
+    _MapIconChoice('offroad', 'Off-road'),
+    _MapIconChoice('bicycle', 'Bicicleta'),
+    _MapIconChoice('boat', 'Barco'),
+    _MapIconChoice('plane', 'Avião'),
+    _MapIconChoice('ship', 'Navio'),
+    _MapIconChoice('scooter', 'Scooter'),
+    _MapIconChoice('train', 'Trem'),
+    _MapIconChoice('tram', 'Tram'),
+    _MapIconChoice('trolleybus', 'Trolleybus'),
+    _MapIconChoice('person', 'Pessoa'),
+    _MapIconChoice('default', 'Genérico'),
+  ];
 
   static const Set<String> _defaultSensorKeys = {
     'ignition',
@@ -62,11 +86,14 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   };
 
   final _nameController = TextEditingController();
+  final _plateController = TextEditingController();
   final _identifierController = TextEditingController();
   final _categoryController = TextEditingController();
   final _phoneController = TextEditingController();
   final _searchController = TextEditingController();
   final Set<String> _selectedSensorKeys = <String>{};
+  bool _isActive = true;
+  String? _selectedMapIconKey;
 
   bool _saving = false;
   _DevicesQuickFilter _activeFilter = _DevicesQuickFilter.all;
@@ -75,6 +102,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _plateController.dispose();
     _identifierController.dispose();
     _categoryController.dispose();
     _phoneController.dispose();
@@ -85,34 +113,46 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   Future<void> _openDeviceDialog({TraccarDevice? editing}) async {
     if (editing == null) {
       _nameController.clear();
+      _plateController.clear();
       _identifierController.clear();
       _categoryController.clear();
       _phoneController.clear();
+      _isActive = true;
+      _selectedMapIconKey = null;
       _selectedSensorKeys
         ..clear()
         ..addAll(_defaultSensorKeys);
     } else {
       _nameController.text = editing.name;
+      _plateController.text = _readPlate(editing);
       _identifierController.text = (editing.uniqueId ?? '').trim();
       _categoryController.text = (editing.category ?? '').trim();
       _phoneController.text = (editing.attributes?['phone'] ?? '').toString();
+      _isActive = _readActiveFlag(editing);
+      _selectedMapIconKey = _normalizeMapIconKey(
+        editing.attributes?['souMapIcon']?.toString(),
+      );
       _setSelectedSensorsFromDevice(editing);
     }
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: StatefulBuilder(
-                builder: (context, setModalState) {
-                  return SingleChildScrollView(
-                    child: Column(
+        return DefaultTabController(
+          length: 3,
+          child: Dialog(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 700,
+                maxHeight: 760,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: StatefulBuilder(
+                  builder: (context, setModalState) {
+                    return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: MainAxisSize.max,
                       children: [
                         Row(
                           children: [
@@ -139,67 +179,278 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        TextField(
-                          controller: _nameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nome',
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F8FD),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFD6E0EE)),
+                          ),
+                          child: const TabBar(
+                            labelColor: Color(0xFF176EEB),
+                            unselectedLabelColor: Color(0xFF5A6B84),
+                            indicatorColor: Color(0xFF176EEB),
+                            tabs: [
+                              Tab(text: 'Informações'),
+                              Tab(text: 'Ícone'),
+                              Tab(text: 'Sensores'),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _identifierController,
-                          decoration: const InputDecoration(
-                            labelText: 'Identificador / IMEI / Unique ID',
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _categoryController,
-                          decoration: const InputDecoration(
-                            labelText: 'Categoria/Modelo (opcional)',
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _phoneController,
-                          decoration: const InputDecoration(
-                            labelText: 'Telefone/chip (opcional)',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Sensores do card',
-                          style: TextStyle(
-                            color: Color(0xFF1F2A44),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final option in _sensorOptions)
-                              FilterChip(
-                                label: Text(option.value),
-                                selected:
-                                    _selectedSensorKeys.contains(option.key),
-                                onSelected: _saving
-                                    ? null
-                                    : (selected) {
-                                        setModalState(() {
-                                          if (selected) {
-                                            _selectedSensorKeys.add(option.key);
-                                          } else {
-                                            _selectedSensorKeys
-                                                .remove(option.key);
-                                          }
-                                        });
-                                      },
+                        const SizedBox(height: 16),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    TextField(
+                                      controller: _nameController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Nome',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: _plateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Placa (opcional)',
+                                      ),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(
+                                          RegExp(r'[A-Za-z0-9-]'),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: _identifierController,
+                                      decoration: const InputDecoration(
+                                        labelText:
+                                            'Identificador / IMEI / Unique ID',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: _phoneController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Telefone/chip (opcional)',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: _categoryController,
+                                      decoration: const InputDecoration(
+                                        labelText:
+                                            'Categoria/Modelo (opcional)',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SwitchListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      value: _isActive,
+                                      onChanged: _saving
+                                          ? null
+                                          : (value) {
+                                              setModalState(
+                                                () => _isActive = value,
+                                              );
+                                            },
+                                      title: const Text('Ativo'),
+                                      subtitle: Text(
+                                        _isActive
+                                            ? 'Equipamento marcado como ativo'
+                                            : 'Equipamento marcado como inativo',
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                          ],
+                              SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Escolha o ícone do mapa',
+                                      style: TextStyle(
+                                        color: Color(0xFF1F2A44),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _MapIconPreview(
+                                      iconKey: _selectedMapIconKey,
+                                      categoryLabel:
+                                          _categoryController.text.trim(),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        _MapIconTile(
+                                          label: 'Automático',
+                                          assetPath:
+                                              'assets/icons/map/default.png',
+                                          selected: _selectedMapIconKey == null,
+                                          onTap: _saving
+                                              ? null
+                                              : () => setModalState(
+                                                    () => _selectedMapIconKey =
+                                                        null,
+                                                  ),
+                                        ),
+                                        for (final choice in _mapIconChoices)
+                                          _MapIconTile(
+                                            label: choice.label,
+                                            assetPath: choice.assetPath,
+                                            selected: _selectedMapIconKey ==
+                                                choice.key,
+                                            onTap: _saving
+                                                ? null
+                                                : () => setModalState(
+                                                      () =>
+                                                          _selectedMapIconKey =
+                                                              choice.key,
+                                                    ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Expanded(
+                                          child: Text(
+                                            'Sensores do card',
+                                            style: TextStyle(
+                                              color: Color(0xFF1F2A44),
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: _saving
+                                              ? null
+                                              : () async {
+                                                  final created =
+                                                      await _openSensorInputDialog();
+                                                  if (created == null) return;
+                                                  setModalState(() {
+                                                    _selectedSensorKeys.add(
+                                                      _normalizeSensorKey(
+                                                        created,
+                                                      ),
+                                                    );
+                                                  });
+                                                },
+                                          icon: const Icon(
+                                            Icons.add_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Cadastrar sensor'),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        for (final option in _sensorOptions)
+                                          FilterChip(
+                                            label: Text(option.value),
+                                            selected: _selectedSensorKeys
+                                                .contains(option.key),
+                                            onSelected: _saving
+                                                ? null
+                                                : (selected) {
+                                                    setModalState(() {
+                                                      if (selected) {
+                                                        _selectedSensorKeys.add(
+                                                          option.key,
+                                                        );
+                                                      } else {
+                                                        _selectedSensorKeys
+                                                            .remove(option.key);
+                                                      }
+                                                    });
+                                                  },
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 14),
+                                    const Text(
+                                      'Sensores selecionados',
+                                      style: TextStyle(
+                                        color: Color(0xFF1F2A44),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (_selectedSensorKeys.isEmpty)
+                                      const Text(
+                                        'Nenhum sensor selecionado.',
+                                        style: TextStyle(
+                                          color: Color(0xFF5A6B84),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      )
+                                    else
+                                      Column(
+                                        children: [
+                                          for (final sensorKey
+                                              in _sortedSelectedSensors())
+                                            _SelectedSensorRow(
+                                              sensorKey: sensorKey,
+                                              label: _sensorLabel(sensorKey),
+                                              onEdit: _saving
+                                                  ? null
+                                                  : () async {
+                                                      final updated =
+                                                          await _openSensorInputDialog(
+                                                        initialValue: sensorKey,
+                                                      );
+                                                      if (updated == null) {
+                                                        return;
+                                                      }
+                                                      final normalizedUpdated =
+                                                          _normalizeSensorKey(
+                                                        updated,
+                                                      );
+                                                      setModalState(() {
+                                                        _selectedSensorKeys
+                                                            .remove(sensorKey);
+                                                        _selectedSensorKeys.add(
+                                                          normalizedUpdated,
+                                                        );
+                                                      });
+                                                    },
+                                              onDelete: _saving
+                                                  ? null
+                                                  : () {
+                                                      setModalState(
+                                                        () =>
+                                                            _selectedSensorKeys
+                                                                .remove(
+                                                                    sensorKey),
+                                                      );
+                                                    },
+                                            ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 16),
                         Align(
                           alignment: Alignment.centerRight,
                           child: FilledButton.icon(
@@ -234,20 +485,55 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                   ? 'Salvando...'
                                   : (editing == null
                                       ? 'Salvar equipamento'
-                                      : 'Salvar alteracoes'),
+                                      : 'Salvar alterações'),
                             ),
                           ),
                         ),
                       ],
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ),
         );
       },
     );
+  }
+
+  String _readPlate(TraccarDevice device) {
+    final raw = device.attributes?['plate'] ??
+        device.attributes?['plateNumber'] ??
+        device.attributes?['licensePlate'] ??
+        device.attributes?['registration'];
+    return raw?.toString().trim() ?? '';
+  }
+
+  bool _readActiveFlag(TraccarDevice device) {
+    final raw = device.attributes?['souActive'];
+    if (raw is bool) return raw;
+    if (raw is num) return raw > 0;
+    if (raw is String) {
+      final normalized = raw.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'sim') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'nao') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String? _normalizeMapIconKey(String? raw) {
+    final value = raw?.trim().toLowerCase() ?? '';
+    if (value.isEmpty) return null;
+    for (final choice in _mapIconChoices) {
+      if (choice.key == value) {
+        return value;
+      }
+    }
+    return value;
   }
 
   void _setSelectedSensorsFromDevice(TraccarDevice device) {
@@ -276,12 +562,69 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       case 'distance':
         return 'odometer';
       default:
-        return key;
+        return normalized;
+    }
+  }
+
+  List<String> _sortedSelectedSensors() {
+    final values = _selectedSensorKeys.toList()..sort();
+    return values;
+  }
+
+  String _sensorLabel(String key) {
+    for (final option in _sensorOptions) {
+      if (option.key == key) {
+        return option.value;
+      }
+    }
+    return key;
+  }
+
+  Future<String?> _openSensorInputDialog({String? initialValue}) async {
+    final controller = TextEditingController(text: initialValue ?? '');
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(
+              initialValue == null ? 'Cadastrar sensor' : 'Editar sensor',
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Chave do sensor',
+                hintText: 'Ex.: temperature, fuelLevel, door',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final value = controller.text.trim();
+                  if (value.isEmpty) {
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(value);
+                },
+                child: const Text('Salvar'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
     }
   }
 
   Future<bool> _createDevice() async {
     final name = _nameController.text.trim();
+    final plate = _plateController.text.trim().toUpperCase();
     final identifier = _identifierController.text.trim();
     final category = _categoryController.text.trim();
     final phone = _phoneController.text.trim();
@@ -315,6 +658,10 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
           if (phone.isNotEmpty) 'phone': phone,
           'attributes': {
             if (phone.isNotEmpty) 'phone': phone,
+            if (plate.isNotEmpty) 'plate': plate,
+            'souActive': _isActive,
+            if ((_selectedMapIconKey ?? '').trim().isNotEmpty)
+              'souMapIcon': _selectedMapIconKey,
             'souSensors': selectedSensors,
           },
         },
@@ -341,6 +688,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
 
   Future<bool> _updateDevice(TraccarDevice device) async {
     final name = _nameController.text.trim();
+    final plate = _plateController.text.trim().toUpperCase();
     final identifier = _identifierController.text.trim();
     final category = _categoryController.text.trim();
     final phone = _phoneController.text.trim();
@@ -361,12 +709,23 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
 
     final attributes = <String, dynamic>{
       ...?device.attributes,
+      'souActive': _isActive,
       'souSensors': selectedSensors,
     };
     if (phone.isNotEmpty) {
       attributes['phone'] = phone;
     } else {
       attributes.remove('phone');
+    }
+    if (plate.isNotEmpty) {
+      attributes['plate'] = plate;
+    } else {
+      attributes.remove('plate');
+    }
+    if ((_selectedMapIconKey ?? '').trim().isNotEmpty) {
+      attributes['souMapIcon'] = _selectedMapIconKey;
+    } else {
+      attributes.remove('souMapIcon');
     }
 
     final session = ref.read(sessionProvider);
@@ -1306,6 +1665,237 @@ class _PanelMessageState extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MapIconChoice {
+  const _MapIconChoice(this.key, this.label);
+
+  final String key;
+  final String label;
+
+  String get assetPath => 'assets/icons/map/$key.png';
+}
+
+class _MapIconPreview extends StatelessWidget {
+  const _MapIconPreview({
+    required this.iconKey,
+    required this.categoryLabel,
+  });
+
+  final String? iconKey;
+  final String categoryLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedKey = (iconKey ?? '').trim();
+    final isAutomatic = normalizedKey.isEmpty;
+    final resolvedKey = isAutomatic ? 'default' : normalizedKey;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD6E0EE)),
+            ),
+            padding: const EdgeInsets.all(10),
+            child: Image.asset(
+              'assets/icons/map/$resolvedKey.png',
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Image.asset(
+                'assets/icons/map/default.png',
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isAutomatic ? 'Modo automático' : 'Ícone selecionado',
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isAutomatic
+                      ? 'Sem ícone salvo. O mapa continua usando a regra automática atual.'
+                      : 'Será salvo em attributes.souMapIcon.',
+                  style: const TextStyle(
+                    color: Color(0xFF5A6B84),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (categoryLabel.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Categoria/modelo atual: $categoryLabel',
+                    style: const TextStyle(
+                      color: Color(0xFF176EEB),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapIconTile extends StatelessWidget {
+  const _MapIconTile({
+    required this.label,
+    required this.assetPath,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String assetPath;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 110,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFEAF2FF) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFF2D8CFF) : const Color(0xFFD6E0EE),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: Image.asset(
+                  assetPath,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.image_not_supported_outlined,
+                    color: Color(0xFF74839B),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? const Color(0xFF176EEB)
+                      : const Color(0xFF394B66),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedSensorRow extends StatelessWidget {
+  const _SelectedSensorRow({
+    required this.sensorKey,
+    required this.label,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final String sensorKey;
+  final String label;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.sensors_outlined,
+            size: 18,
+            color: Color(0xFF2D8CFF),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sensorKey,
+                  style: const TextStyle(
+                    color: Color(0xFF5A6B84),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Editar sensor',
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: 'Remover sensor',
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'models/report_models.dart';
@@ -14,11 +13,13 @@ class _ReportsQueryParams {
   const _ReportsQueryParams({
     required this.period,
     required this.type,
+    required this.vehicle,
     required this.revision,
   });
 
   final String period;
   final String type;
+  final String vehicle;
   final int revision;
 
   @override
@@ -26,11 +27,12 @@ class _ReportsQueryParams {
     return other is _ReportsQueryParams &&
         other.period == period &&
         other.type == type &&
+        other.vehicle == vehicle &&
         other.revision == revision;
   }
 
   @override
-  int get hashCode => Object.hash(period, type, revision);
+  int get hashCode => Object.hash(period, type, vehicle, revision);
 }
 
 final reportsRealDevicesProvider =
@@ -63,6 +65,7 @@ final reportsListProvider =
   final devices = await ref.watch(reportsRealDevicesProvider.future);
   final now = DateTime.now();
   final from = _periodStart(query.period, now);
+  final selectedDeviceId = _resolveSelectedDeviceId(query.vehicle, devices);
 
   try {
     final raw = await client.getReport(
@@ -71,6 +74,7 @@ final reportsListProvider =
       authHeader: session.authHeader,
       from: from,
       to: now,
+      deviceId: selectedDeviceId,
     );
     return _mapReportRecords(
       rawRecords: raw,
@@ -83,6 +87,21 @@ final reportsListProvider =
     return [];
   }
 });
+
+int? _resolveSelectedDeviceId(
+    String vehicleLabel, List<TraccarDevice> devices) {
+  if (vehicleLabel == 'Todos') {
+    return null;
+  }
+
+  for (final device in devices) {
+    if (device.name == vehicleLabel) {
+      return device.id;
+    }
+  }
+
+  return null;
+}
 
 DateTime _periodStart(String period, DateTime now) {
   switch (period) {
@@ -97,6 +116,14 @@ DateTime _periodStart(String period, DateTime now) {
     default:
       return now.subtract(const Duration(days: 30));
   }
+}
+
+String _resolvePeriodLabel(DateTime from, DateTime to) {
+  final startDay = from.day.toString().padLeft(2, '0');
+  final startMonth = from.month.toString().padLeft(2, '0');
+  final endDay = to.day.toString().padLeft(2, '0');
+  final endMonth = to.month.toString().padLeft(2, '0');
+  return '$startDay/$startMonth - $endDay/$endMonth';
 }
 
 String _resolveReportEndpoint(String typeLabel) {
@@ -461,6 +488,88 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   static const bool _pdfEnabled = false;
   int _revision = 0;
 
+  Future<List<ReportRouteMapPoint>> _loadRouteMapPoints(
+    ReportRecord record,
+  ) async {
+    final deviceId = record.deviceId;
+    if (deviceId == null) {
+      return const <ReportRouteMapPoint>[];
+    }
+
+    final session = ref.read(sessionProvider);
+    if (!session.isAuthenticated) {
+      return const <ReportRouteMapPoint>[];
+    }
+
+    final client = ref.read(traccarClientProvider);
+    final now = DateTime.now();
+    final from = _periodStart(_period, now);
+
+    final rows = await client.getReport(
+      path: '/reports/route',
+      cookie: session.cookie,
+      authHeader: session.authHeader,
+      from: from,
+      to: now,
+      deviceId: deviceId,
+    );
+
+    final points = <ReportRouteMapPoint>[];
+    for (final row in rows) {
+      final point = _RouteDetailPoint.fromMap(row);
+      if (point != null) {
+        points.add(
+          ReportRouteMapPoint(
+            latitude: point.latitude,
+            longitude: point.longitude,
+            effectiveTime: point.effectiveTime,
+            course: point.course,
+            address: point.address,
+          ),
+        );
+      }
+    }
+
+    points.sort((a, b) {
+      final at = a.effectiveTime;
+      final bt = b.effectiveTime;
+      if (at == null && bt == null) return 0;
+      if (at == null) return -1;
+      if (bt == null) return 1;
+      return at.compareTo(bt);
+    });
+    return points;
+  }
+
+  Future<void> _openRecordDetail(ReportRecord record) async {
+    if (record.type != ReportType.routes) {
+      _showAction('Visualizando ${record.name}.');
+      return;
+    }
+
+    final now = DateTime.now();
+    final from = _periodStart(_period, now);
+    final deviceId = record.deviceId;
+    if (deviceId == null) {
+      return;
+    }
+
+    final points = await _loadRouteMapPoints(record);
+    if (!mounted) {
+      return;
+    }
+
+    ref.read(reportRouteMapSelectionProvider.notifier).state =
+        ReportRouteMapSelection(
+      deviceId: deviceId,
+      vehicleName: record.vehicle,
+      from: from,
+      to: now,
+      points: points,
+      requestNonce: DateTime.now().microsecondsSinceEpoch.toString(),
+    );
+  }
+
   Future<void> _exportRecords(
     List<ReportRecord> records,
     ReportExportFormat format, {
@@ -505,6 +614,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _ReportsQueryParams(
           period: _period,
           type: _type,
+          vehicle: _vehicle,
           revision: _revision,
         ),
       ),
@@ -630,8 +740,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               Expanded(
                 child: ReportsTable(
                   records: filtered,
-                  onView: (record) =>
-                      _showAction('Visualizando ${record.name}.'),
+                  onView: _openRecordDetail,
                   onExportPdf: (record) => _exportRecords(
                     filtered,
                     ReportExportFormat.pdf,
@@ -728,6 +837,514 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
 void _noopRecordAction(ReportRecord _) {}
 
+class _RouteDetailDialog extends StatefulWidget {
+  const _RouteDetailDialog({
+    required this.vehicleName,
+    required this.periodLabel,
+    required this.pointsFuture,
+  });
+
+  final String vehicleName;
+  final String periodLabel;
+  final Future<List<_RouteDetailPoint>> pointsFuture;
+
+  @override
+  State<_RouteDetailDialog> createState() => _RouteDetailDialogState();
+}
+
+class _RouteDetailDialogState extends State<_RouteDetailDialog> {
+  String _formatDateTime(DateTime? value) {
+    if (value == null) {
+      return 'Nao informado';
+    }
+    final local = value.isUtc ? value.toLocal() : value;
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final year = local.year.toString();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final second = local.second.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute:$second';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      child: SizedBox(
+        width: 1040,
+        height: 720,
+        child: FutureBuilder<List<_RouteDetailPoint>>(
+          future: widget.pointsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return _RouteDetailScaffold(
+                title: 'Detalhe da rota',
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Falha ao carregar a rota real: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF334155),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            final points = snapshot.data ?? const <_RouteDetailPoint>[];
+            final validPoints =
+                points.where((point) => point.hasValidCoordinates).toList();
+            final firstPoint = points.isEmpty ? null : points.first;
+            final lastPoint = points.isEmpty ? null : points.last;
+
+            return _RouteDetailScaffold(
+              title: 'Detalhe da rota',
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _RouteInfoChip(
+                          label: 'Equipamento',
+                          value: widget.vehicleName,
+                        ),
+                        _RouteInfoChip(
+                          label: 'Periodo',
+                          value: widget.periodLabel,
+                        ),
+                        _RouteInfoChip(
+                          label: 'Pontos',
+                          value: '${points.length}',
+                        ),
+                        _RouteInfoChip(
+                          label: 'Coordenadas validas',
+                          value: '${validPoints.length}',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _RouteSummaryBlock(
+                            label: 'Inicio',
+                            value: _formatDateTime(firstPoint?.effectiveTime),
+                            subtitle:
+                                firstPoint?.coordinatesLabel ?? 'Nao informado',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _RouteSummaryBlock(
+                            label: 'Fim',
+                            value: _formatDateTime(lastPoint?.effectiveTime),
+                            subtitle:
+                                lastPoint?.coordinatesLabel ?? 'Nao informado',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFD6E0EE),
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Resumo da rota',
+                                    style: TextStyle(
+                                      color: Color(0xFF25344A),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    validPoints.isEmpty
+                                        ? 'Nenhum ponto no periodo com coordenada valida.'
+                                        : 'A rota possui ${validPoints.length} coordenadas validas para a proxima etapa visual.',
+                                    style: const TextStyle(
+                                      color: Color(0xFF60718D),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _RouteSummaryBlock(
+                                    label: 'Primeira coordenada valida',
+                                    value: validPoints.isEmpty
+                                        ? 'Nao informado'
+                                        : validPoints.first.coordinatesLabel,
+                                    subtitle: validPoints.isEmpty
+                                        ? 'Sem trilha valida para desenhar agora'
+                                        : _formatDateTime(
+                                            validPoints.first.effectiveTime,
+                                          ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  _RouteSummaryBlock(
+                                    label: 'Ultima coordenada valida',
+                                    value: validPoints.isEmpty
+                                        ? 'Nao informado'
+                                        : validPoints.last.coordinatesLabel,
+                                    subtitle: validPoints.isEmpty
+                                        ? 'Mapa visual da rota fica para a proxima etapa'
+                                        : _formatDateTime(
+                                            validPoints.last.effectiveTime,
+                                          ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  const _RouteSummaryBlock(
+                                    label: 'Visualizacao desta etapa',
+                                    value: 'Detalhe real da rota',
+                                    subtitle:
+                                        'Mapa/trilha interativa fica para a proxima correcao minima.',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFD6E0EE),
+                                ),
+                              ),
+                              child: points.isEmpty
+                                  ? const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(24),
+                                        child: Text(
+                                          'Nenhum ponto no periodo.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: Color(0xFF60718D),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      padding: const EdgeInsets.all(12),
+                                      itemCount: points.length > 12
+                                          ? 12
+                                          : points.length,
+                                      separatorBuilder: (_, __) =>
+                                          const Divider(height: 16),
+                                      itemBuilder: (context, index) {
+                                        final point = points[index];
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Ponto ${index + 1}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF25344A),
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _formatDateTime(
+                                                  point.effectiveTime),
+                                              style: const TextStyle(
+                                                color: Color(0xFF60718D),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              point.coordinatesLabel,
+                                              style: const TextStyle(
+                                                color: Color(0xFF334155),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Vel ${point.speedLabel} | Ign ${point.ignitionLabel} | Bat ${point.batteryLabel}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF60718D),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteDetailScaffold extends StatelessWidget {
+  const _RouteDetailScaffold({
+    required this.title,
+    required this.child,
+  });
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF25344A),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 22,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _RouteInfoChip extends StatelessWidget {
+  const _RouteInfoChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF60718D),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF25344A),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSummaryBlock extends StatelessWidget {
+  const _RouteSummaryBlock({
+    required this.label,
+    required this.value,
+    required this.subtitle,
+  });
+
+  final String label;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E0EE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF60718D),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF25344A),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFF60718D),
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteDetailPoint {
+  const _RouteDetailPoint({
+    required this.latitude,
+    required this.longitude,
+    required this.effectiveTime,
+    required this.course,
+    required this.speedKnots,
+    required this.ignition,
+    required this.battery,
+    required this.address,
+  });
+
+  final double latitude;
+  final double longitude;
+  final DateTime? effectiveTime;
+  final double? course;
+  final double? speedKnots;
+  final bool? ignition;
+  final String? battery;
+  final String? address;
+
+  static _RouteDetailPoint? fromMap(Map<String, dynamic> raw) {
+    final attributes = _asMap(raw['attributes']);
+    final latitude =
+        _asDouble(raw['latitude']) ?? _asDouble(attributes['latitude']);
+    final longitude =
+        _asDouble(raw['longitude']) ?? _asDouble(attributes['longitude']);
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+
+    return _RouteDetailPoint(
+      latitude: latitude,
+      longitude: longitude,
+      effectiveTime: _resolveDateTime(raw),
+      course: _asDouble(
+        raw['course'] ??
+            raw['heading'] ??
+            raw['bearing'] ??
+            attributes['course'] ??
+            attributes['heading'] ??
+            attributes['bearing'],
+      ),
+      speedKnots: _asDouble(raw['speed']) ?? _asDouble(attributes['speed']),
+      ignition: _asBool(
+        raw['ignition'] ?? attributes['ignition'] ?? attributes['ignitionOn'],
+      ),
+      battery: _resolveBattery(raw, attributes),
+      address: _resolveAddress(raw, attributes),
+    );
+  }
+
+  bool get hasValidCoordinates => latitude != 0 || longitude != 0;
+
+  String get coordinatesLabel =>
+      '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+
+  String get speedLabel {
+    if (speedKnots == null) {
+      return 'Nao informado';
+    }
+    final kmh = speedKnots! * 1.852;
+    return '${kmh.toStringAsFixed(1)} km/h';
+  }
+
+  String get ignitionLabel {
+    if (ignition == null) {
+      return 'Nao informado';
+    }
+    return ignition! ? 'Ligada' : 'Desligada';
+  }
+
+  String get batteryLabel {
+    final text = battery?.trim() ?? '';
+    return text.isEmpty ? 'Nao informado' : text;
+  }
+
+  String get addressLabel {
+    final text = address?.trim() ?? '';
+    return text.isEmpty ? 'Nao informado' : text;
+  }
+}
+
 class _ReportsPageHeader extends StatelessWidget {
   const _ReportsPageHeader();
 
@@ -762,7 +1379,7 @@ class _ReportsPageHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Relatórios',
+                  'Painel executivo',
                   style: TextStyle(
                     color: Color(0xFF25344A),
                     fontWeight: FontWeight.w800,
