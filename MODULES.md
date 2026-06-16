@@ -88,3 +88,10 @@ Comportamento:
   - Documento técnico consolidando arquitetura e decisões.
 - [MODULES.md](MODULES.md)
   - Catálogo de módulos, rotas e estado atual.
+
+## Atualização operacional - 2026-06-12
+- `Mapa`: segue no `HomeShell` e recebeu polling leve de 10 segundos para `devices`, `positions` e `latestEvents`, sem alteração visual.
+- `Menu/RBAC`: a sidebar operacional continua preservada em `HomeShell`; o catálogo técnico em `lib/features/home/menu/menu_master_config.dart` agora volta a respeitar perfil, feature flag, disponibilidade e backend pendente.
+- `Permissões`: a matriz visual continua sem persistência completa; o botão de salvar foi bloqueado com aviso honesto e o vínculo usuário-dispositivo segue sendo a única escrita real.
+- `Chamados`, `Financeiro` e `Estoque`: continuam em implantação, com repositórios mock explicitados na interface para não parecerem operação produtiva.
+- `Comunicação`, `MDVR` e `Relatórios PDF`: permanecem parciais, com aviso explícito quando dependem de backend/gateway ou implementação dedicada.

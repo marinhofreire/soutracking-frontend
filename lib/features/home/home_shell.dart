@@ -219,11 +219,13 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _replayTick = Duration(milliseconds: 80);
   static const Duration _replaySegment = Duration(milliseconds: 720);
+  static const Duration _operationalRefreshInterval = Duration(seconds: 10);
 
   gmaps.GoogleMapController? _googleMapController;
   final Map<int, List<gmaps.LatLng>> _positionTrailByDeviceId = {};
   String? _lastFollowedSelectedPositionKey;
   Timer? _replayTimer;
+  Timer? _operationalRefreshTimer;
   int _selectedReplayIndex = 0;
   double _routeReplaySegmentProgress = 0;
   int _replayDebugLinesEmitted = 0;
@@ -234,7 +236,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   double? _lastResolvedReportRouteBearing;
   ReportRouteMapSelection? _reportRouteSelection;
   bool _reportRouteReplay3dEnabled = false;
-  String? _lastAppliedReportRouteKey;
   String? _lastFocusedReportRouteKey;
 
   final bool _showHighlightsRail = false;
@@ -265,6 +266,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void dispose() {
     _replayTimer?.cancel();
+    _operationalRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -455,6 +457,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const Duration(milliseconds: 700),
       );
       setState(() {
+        _reportRouteSelection = null;
+        _lastFocusedReportRouteKey = null;
+        _lastFollowedReportRouteReplayKey = null;
+        _routeReplaySegmentProgress = 0;
         _showBottomVehiclePanel = true;
         _activePanelId = null;
         _activePanelTitle = null;
@@ -524,6 +530,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
+  void _selectVehicleOnMap(_VehicleSnapshot snapshot) {
+    _blockSurfaceClearUntil = DateTime.now().add(
+      const Duration(milliseconds: 700),
+    );
+    setState(() {
+      _selectedVehicle = snapshot.device;
+      _showBottomVehiclePanel = false;
+      _activePanelId = null;
+      _activePanelTitle = null;
+      _kpiListOpen = false;
+      _vehiclePanelMode = _VehiclePanelMode.summary;
+    });
+    _focusVehicle(snapshot);
+    _googleMapController?.hideMarkerInfoWindow(
+      gmaps.MarkerId('vehicle-${snapshot.device.id}'),
+    );
+  }
+
   void _focusVehicle(_VehicleSnapshot snapshot) {
     final latLng = snapshot.latLngOrNull;
     if (latLng == null) return;
@@ -537,35 +561,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
       ),
     );
-  }
-
-  void _applyReportRouteSelection(
-    ReportRouteMapSelection selection,
-  ) {
-    setState(() {
-      _reportRouteSelection = selection;
-      _showBottomVehiclePanel = false;
-      _selectedVehicle = null;
-      _activeBottomTab = _VehicleBottomTab.overview;
-      _activePanelId = null;
-      _activePanelTitle = null;
-      _kpiListOpen = false;
-      _sidebarHidden = false;
-      _menuOpen = true;
-      _vehiclePanelMode = _VehiclePanelMode.summary;
-      _replayTimer?.cancel();
-      _replayTimer = null;
-      _selectedReplayIndex = 0;
-      _routeReplaySegmentProgress = 0;
-      _replayDeviceId = selection.deviceId;
-      _reportRouteReplay3dEnabled = false;
-      _lastFollowedReplayKey = null;
-      _lastFollowedSelectedPositionKey = null;
-      _lastFollowedReportRouteReplayKey = null;
-      _lastResolvedReportRouteBearing = null;
-    });
-
-    _focusReportRoute(selection);
   }
 
   void _focusReportRoute(ReportRouteMapSelection selection) {
@@ -1163,6 +1158,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.invalidate(timezonesProvider);
   }
 
+  void _syncOperationalRealtimePolling({
+    required bool enabled,
+    required bool immediateRefresh,
+  }) {
+    if (!enabled) {
+      _operationalRefreshTimer?.cancel();
+      _operationalRefreshTimer = null;
+      return;
+    }
+
+    if (_operationalRefreshTimer != null) {
+      return;
+    }
+
+    if (immediateRefresh) {
+      _refreshOperationalData();
+    }
+
+    _operationalRefreshTimer = Timer.periodic(
+      _operationalRefreshInterval,
+      (_) {
+        if (!mounted) return;
+        _refreshOperationalData();
+      },
+    );
+  }
+
   Future<void> _handleLogout() async {
     await ref.read(sessionProvider.notifier).logout();
     if (!mounted) {
@@ -1176,6 +1198,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final currentSession = ref.watch(sessionProvider);
     final devicesAsync = ref.watch(devicesProvider);
     final positionsAsync = ref.watch(positionsProvider);
     final latestEventsAsync = ref.watch(latestEventsProvider);
@@ -1187,18 +1210,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ? rawVisualSettings
         : rawVisualSettings.copyWith(cardDensity: VisualCardDensity.compact);
     final visualController = ref.read(visualSettingsProvider.notifier);
+    final realtimeMapVisible =
+        currentSession.isAuthenticated && _activePanelId == null;
+    _syncOperationalRealtimePolling(
+      enabled: realtimeMapVisible,
+      immediateRefresh: true,
+    );
 
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
-    final pendingReportRoute = ref.watch(reportRouteMapSelectionProvider);
-    if (pendingReportRoute != null &&
-        pendingReportRoute.requestKey != _lastAppliedReportRouteKey) {
-      _lastAppliedReportRouteKey = pendingReportRoute.requestKey;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _applyReportRouteSelection(pendingReportRoute);
-        ref.read(reportRouteMapSelectionProvider.notifier).state = null;
-      });
-    }
     final positions = positionsAsync.valueOrNull ?? const <TraccarPosition>[];
     final latestEvents =
         latestEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
@@ -1230,10 +1249,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           .cast<_VehicleSnapshot?>()
           .firstOrNull,
     );
-    final bottomSnapshot = selectedSnapshot ??
-        (_showBottomVehiclePanel && !_activePanelVisible && !_kpiListOpen
-            ? defaultMapSnapshot
-            : null);
+    final bottomSnapshot =
+        (_showBottomVehiclePanel ? selectedSnapshot : null) ??
+            (_showBottomVehiclePanel && !_activePanelVisible && !_kpiListOpen
+                ? defaultMapSnapshot
+                : null);
+    final showVehicleCompactPopup = selectedSnapshot != null &&
+        !_showBottomVehiclePanel &&
+        !_activePanelVisible &&
+        !_kpiListOpen;
     _followSelectedVehicleIfNeeded(selectedSnapshot);
     final reportRouteSelection = _reportRouteSelection;
     final reportRoutePoints =
@@ -1299,7 +1323,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final filteredSnapshots = _filterSnapshots(snapshots, _activeKpiFilter);
     final hasValidMapSnapshots =
         snapshots.any((snapshot) => snapshot.hasValidGps);
-    final currentSession = ref.watch(sessionProvider);
     final sessionUsers =
         ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
     final isPixeltiSession = _isPixeltiUser(currentSession);
@@ -1362,7 +1385,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     }
                   },
                   onMapTap: _clearOperationalSurface,
-                  onVehicleTap: _openVehicleDetails,
+                  onVehicleTap: _selectVehicleOnMap,
                 ),
               ),
               Positioned.fill(
@@ -1503,6 +1526,40 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onClose: _closePanel,
                   child: _panelFor(_activePanelId),
                 ),
+              if (!pixelTelemetryMode && showVehicleCompactPopup)
+                _VehicleCompactPopup(
+                  snapshot: selectedSnapshot,
+                  balloonScale: visualSettings.balloonScale,
+                  cardDensity: visualSettings.cardDensity,
+                  sidebarOpen: _menuOpen,
+                  onDetails: () => _openVehicleDetails(selectedSnapshot),
+                  onAlerts: () => _openPanel(
+                    _operationalMenu.firstWhere((item) => item.id == 'alerts'),
+                  ),
+                  onShare: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Compartilhamento rapido segue disponivel apenas na visao detalhada.',
+                        ),
+                      ),
+                    );
+                  },
+                  onMore: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Mais acoes do veiculo continuam concentradas na barra inferior.',
+                        ),
+                      ),
+                    );
+                  },
+                  onClose: () => setState(() {
+                    _selectedVehicle = null;
+                    _showBottomVehiclePanel = false;
+                    _vehiclePanelMode = _VehiclePanelMode.summary;
+                  }),
+                ),
               if (pixelTelemetryMode)
                 Positioned.fill(
                   child: _SurfaceGuard(
@@ -1549,15 +1606,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     _showBottomVehiclePanel = false;
                     _vehiclePanelMode = _VehiclePanelMode.summary;
                   }),
-                ),
-              if (!pixelTelemetryMode &&
-                  (devicesAsync.isLoading ||
-                      positionsAsync.isLoading ||
-                      latestEventsAsync.isLoading))
-                const Positioned(
-                  right: 24,
-                  top: 86,
-                  child: _SyncBadge(),
                 ),
               if (!pixelTelemetryMode &&
                   !isPixeltiSession &&
@@ -1731,21 +1779,175 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     List<_OperationalMenuItem> items,
     SessionState session,
   ) {
-    if (!_isPixelDemoMode(session)) {
-      return items;
+    final baseItems = _isPixelDemoMode(session)
+        ? items
+            .where(
+              (item) => const <String>{
+                'dashboard',
+                'map',
+                'devices',
+                'telemetry',
+                'alerts',
+                'reports',
+              }.contains(item.id),
+            )
+            .toList(growable: false)
+        : items;
+
+    final profile = session.profileCode.trim().toUpperCase();
+    final modules = session.tenantConfig.modules;
+    final preserveDemoModules = _shouldPreserveMenuModulesInFallback(session);
+
+    bool featureEnabledForMenu(String menuId) {
+      if (preserveDemoModules) {
+        return true;
+      }
+
+      String? featureKey;
+      switch (menuId) {
+        case 'dashboard':
+        case 'map':
+        case 'vehicles':
+        case 'devices':
+        case 'alerts':
+        case 'geofences':
+        case 'maintenance':
+        case 'reports':
+        case 'commands':
+        case 'telemetry':
+        case 'logs':
+        case 'settings':
+          featureKey = 'tracking';
+          break;
+        case 'communication':
+          featureKey = 'zpro';
+          break;
+        case 'tickets':
+          featureKey = modules['assist'] == true ? 'assist' : 'demand';
+          break;
+        case 'ai-operations':
+          featureKey = modules['ai_ops'] == true ? 'ai_ops' : 'ai';
+          break;
+        case 'finance':
+          featureKey = 'finance';
+          break;
+        case 'inventory':
+          featureKey = 'inventory';
+          break;
+        case 'mdvr':
+          featureKey = 'mdvr';
+          break;
+        case 'automations':
+          featureKey = modules['automations'] == true ? 'automations' : 'rules';
+          break;
+      }
+
+      if (featureKey == null || featureKey.isEmpty) {
+        return true;
+      }
+      return modules[featureKey] == true;
     }
 
-    const pixelAllowedMenuIds = <String>{
-      'dashboard',
-      'map',
-      'devices',
-      'telemetry',
-      'alerts',
-      'reports',
-    };
+    Set<String> allowedMenuIdsForProfile() {
+      switch (profile) {
+        case 'MA':
+        case 'AE':
+          return baseItems.map((item) => item.id).toSet();
+        case 'SO':
+          return const {
+            'dashboard',
+            'map',
+            'vehicles',
+            'devices',
+            'alerts',
+            'geofences',
+            'maintenance',
+            'reports',
+            'commands',
+            'communication',
+            'tickets',
+            'mdvr',
+            'telemetry',
+            'logs',
+            'settings',
+          };
+        case 'TEC':
+          return const {
+            'dashboard',
+            'map',
+            'vehicles',
+            'devices',
+            'alerts',
+            'maintenance',
+            'tickets',
+            'communication',
+            'mdvr',
+            'telemetry',
+          };
+        case 'GC':
+        case 'CF':
+          return const {
+            'dashboard',
+            'map',
+            'vehicles',
+            'devices',
+            'alerts',
+            'geofences',
+            'reports',
+            'communication',
+            'mdvr',
+          };
+        case 'SAC':
+          return const {
+            'dashboard',
+            'map',
+            'vehicles',
+            'devices',
+            'alerts',
+            'geofences',
+            'reports',
+            'communication',
+            'tickets',
+            'telemetry',
+          };
+        case 'FIN':
+          return const {
+            'dashboard',
+            'reports',
+            'finance',
+          };
+        case 'EST':
+          return const {
+            'dashboard',
+            'devices',
+            'maintenance',
+            'inventory',
+            'reports',
+          };
+        case 'OM':
+        default:
+          return const {
+            'dashboard',
+            'map',
+            'vehicles',
+            'devices',
+            'alerts',
+            'geofences',
+            'maintenance',
+            'reports',
+            'commands',
+            'communication',
+            'tickets',
+            'telemetry',
+            'logs',
+          };
+      }
+    }
 
-    return items
-        .where((item) => pixelAllowedMenuIds.contains(item.id))
+    final allowedMenuIds = allowedMenuIdsForProfile();
+    return baseItems
+        .where((item) => allowedMenuIds.contains(item.id))
+        .where((item) => featureEnabledForMenu(item.id))
         .toList(growable: false);
   }
 
@@ -1836,6 +2038,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   bool _isPilotView(SessionState session) {
     // Legacy pilot branch disabled to keep a single visual pipeline.
     return false;
+  }
+
+  bool _shouldPreserveMenuModulesInFallback(SessionState session) {
+    if (!session.usingLocalTenantFallback) {
+      return false;
+    }
+
+    if (_isAdminSession(session)) {
+      return true;
+    }
+
+    final email = (session.email ?? '').trim().toLowerCase();
+    return email.contains('demo') ||
+        email.contains('homolog') ||
+        email.contains('hml') ||
+        email.contains('sandbox') ||
+        email.contains('teste') ||
+        email.contains('test');
   }
 
   bool _shouldShowDataLogMenu(SessionState session) {
@@ -8636,7 +8856,15 @@ class _VehicleBottomEventsPanel extends StatelessWidget {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Lista completa ainda depende da integracao deste painel com o modulo detalhado.',
+                          ),
+                        ),
+                      );
+                    },
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: Size.zero,
@@ -16109,7 +16337,15 @@ class _TelemetryRecentEventsPanel extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: () {},
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Abertura completa de eventos desta visao ainda segue em implantacao.',
+                    ),
+                  ),
+                );
+              },
               icon: const Icon(
                 Icons.open_in_new,
                 size: 14,
@@ -17013,6 +17249,42 @@ class _FallbackOperationalPanel extends StatelessWidget {
   }
 }
 
+class _FallbackTenantConfigNotice extends StatelessWidget {
+  const _FallbackTenantConfigNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: _GlassSurface(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              color: Color(0xFF9A6700),
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Color(0xFF7A5C00),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SyncBadge extends StatelessWidget {
   const _SyncBadge();
 
@@ -17338,6 +17610,8 @@ class _VehicleSnapshot {
     );
   }
 
+  bool get hasGpsInvalidPacket => hasPosition && !hasValidGps;
+
   bool get isStatusUnknownOrUninformed {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
@@ -17358,6 +17632,12 @@ class _VehicleSnapshot {
     final timestamp = lastCommunicationAt;
     if (timestamp == null) return true;
     return DateTime.now().difference(timestamp) > _offlineStaleThreshold;
+  }
+
+  bool get hasRecentCommunication {
+    final timestamp = lastCommunicationAt;
+    if (timestamp == null) return false;
+    return DateTime.now().difference(timestamp) <= const Duration(minutes: 5);
   }
 
   bool get hasNoCommunication =>
@@ -17467,6 +17747,47 @@ class _VehicleSnapshot {
         return 'Offline';
       case _VehicleOperationalStatus.noCommunication:
         return 'Sem comunica\u00E7\u00E3o';
+    }
+  }
+
+  String get operationalPanelStatusLabel {
+    if (hasGpsInvalidPacket) return 'GPS inválido';
+    if (lastCommunicationAt == null) return 'Sem comunicação';
+    if (hasStaleLastUpdate) return 'Desatualizado';
+    if (hasRecentCommunication && !isMoving) return 'Standby';
+    if (hasRecentCommunication && hasValidGps) return 'Tempo real';
+    return 'Sem comunicação';
+  }
+
+  Color get operationalPanelStatusColor {
+    switch (operationalPanelStatusLabel) {
+      case 'Tempo real':
+        return const Color(0xFF16A34A);
+      case 'Standby':
+        return const Color(0xFF2563EB);
+      case 'Desatualizado':
+        return const Color(0xFFF59E0B);
+      case 'GPS inválido':
+        return const Color(0xFFEF4444);
+      case 'Sem comunicação':
+      default:
+        return const Color(0xFF9CA3AF);
+    }
+  }
+
+  IconData get operationalPanelStatusIcon {
+    switch (operationalPanelStatusLabel) {
+      case 'Tempo real':
+        return Icons.radio_button_checked_rounded;
+      case 'Standby':
+        return Icons.pause_circle_filled_rounded;
+      case 'Desatualizado':
+        return Icons.schedule_rounded;
+      case 'GPS inválido':
+        return Icons.gps_off_rounded;
+      case 'Sem comunicação':
+      default:
+        return Icons.signal_wifi_off_rounded;
     }
   }
 
@@ -17637,6 +17958,13 @@ class _VehicleSnapshot {
     );
   }
 
+  String get locationSummaryLabel {
+    if (hasGpsInvalidPacket) return 'GPS inválido no último pacote';
+    if (hasValidGps && address != 'NÃ£o informado') return address;
+    if (hasValidGps) return latLngLabel;
+    return 'NÃ£o informado';
+  }
+
   String get lastCommunicationLabel {
     final parsed = lastCommunicationAt;
     if (parsed == null) return 'Não informado';
@@ -17720,6 +18048,37 @@ class _VehicleSnapshot {
       final type = '${event['type'] ?? 'evento'}';
       return '$time ${_humanizeEventType(type)}';
     }).join('\n');
+  }
+
+  String get latestEventLabel {
+    if (recentEvents.isEmpty) return 'NÃ£o informado';
+    final type = '${recentEvents.first['type'] ?? 'evento'}';
+    return _humanizeEventType(type);
+  }
+
+  List<String> get recentAlertLabels {
+    final items = <String>[];
+    for (final event in recentEvents) {
+      final type = '${event['type'] ?? ''}'.trim();
+      final normalized = type.toLowerCase();
+      if (normalized.contains('alarm') ||
+          normalized.contains('overspeed') ||
+          normalized.contains('panic') ||
+          normalized.contains('sos') ||
+          normalized.contains('geofence') ||
+          normalized.contains('ignition') ||
+          normalized.contains('offline')) {
+        items.add(_humanizeEventType(type));
+      }
+      if (items.length == 3) break;
+    }
+    return items;
+  }
+
+  String get directionLabel {
+    final bearing = markerRotation;
+    if (bearing == null) return 'NÃ£o informado';
+    return _bearingToCardinalLabel(bearing);
   }
 
   String get relativeLastPoint {
@@ -17830,6 +18189,22 @@ IconData _vehicleIconForSnapshot(_VehicleSnapshot snapshot) {
     return Icons.directions_boat_filled_rounded;
   }
   return Icons.local_shipping_rounded;
+}
+
+String _bearingToCardinalLabel(double bearing) {
+  const directions = [
+    'Norte',
+    'Nordeste',
+    'Leste',
+    'Sudeste',
+    'Sul',
+    'Sudoeste',
+    'Oeste',
+    'Noroeste',
+  ];
+  final normalized = ((bearing % 360) + 360) % 360;
+  final index = ((normalized + 22.5) / 45).floor() % 8;
+  return directions[index];
 }
 
 class _OperationalMenuItem {

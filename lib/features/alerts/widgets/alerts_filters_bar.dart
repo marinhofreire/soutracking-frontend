@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 
@@ -62,7 +62,7 @@ class AlertsFiltersBar extends StatelessWidget {
             width: 170,
           ),
           _FilterField(
-            label: 'Severidade',
+            label: 'Prioridade',
             value: severity,
             options: severityOptions,
             onChanged: onSeverityChanged,
@@ -146,4 +146,3 @@ class _FilterField extends StatelessWidget {
     );
   }
 }
-

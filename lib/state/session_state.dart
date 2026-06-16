@@ -22,6 +22,8 @@ class SessionState {
     this.tenantConfig = TenantConfig.fallback,
     this.profileCode = 'OM',
     this.isAdministrator = false,
+    this.usingLocalTenantFallback = false,
+    this.tenantConfigWarning,
   });
 
   final SessionStatus status;
@@ -32,6 +34,8 @@ class SessionState {
   final TenantConfig tenantConfig;
   final String profileCode;
   final bool isAdministrator;
+  final bool usingLocalTenantFallback;
+  final String? tenantConfigWarning;
 
   bool get isAuthenticated =>
       status == SessionStatus.authenticated &&
@@ -46,6 +50,8 @@ class SessionState {
     TenantConfig? tenantConfig,
     String? profileCode,
     bool? isAdministrator,
+    bool? usingLocalTenantFallback,
+    String? tenantConfigWarning,
   }) {
     return SessionState(
       status: status ?? this.status,
@@ -56,6 +62,9 @@ class SessionState {
       tenantConfig: tenantConfig ?? this.tenantConfig,
       profileCode: profileCode ?? this.profileCode,
       isAdministrator: isAdministrator ?? this.isAdministrator,
+      usingLocalTenantFallback:
+          usingLocalTenantFallback ?? this.usingLocalTenantFallback,
+      tenantConfigWarning: tenantConfigWarning ?? this.tenantConfigWarning,
     );
   }
 }
@@ -355,6 +364,8 @@ class SessionController extends StateNotifier<SessionState> {
       // Hotfix: removida validação manual de /api/server e /api/devices para permitir build.
       // Segue fluxo normal após login.
       TenantConfig tenantConfig = TenantConfig.fallback;
+      var usingLocalTenantFallback = false;
+      String? tenantConfigWarning;
       try {
         final tenantRaw = await _client.getTenantConfig(
           cookie: session.cookie,
@@ -362,6 +373,9 @@ class SessionController extends StateNotifier<SessionState> {
         );
         tenantConfig = TenantConfig.fromJson(tenantRaw);
       } catch (_) {
+        usingLocalTenantFallback = true;
+        tenantConfigWarning =
+            'tenant config nao encontrado, usando fallback local';
         tenantConfig = TenantConfig(
           tenantId: 'default',
           companyName: (session.user['name'] ?? 'Soutracking').toString(),
@@ -411,6 +425,8 @@ class SessionController extends StateNotifier<SessionState> {
         tenantConfig: mergedTenantConfig,
         profileCode: profileCode,
         isAdministrator: session.user['administrator'] == true,
+        usingLocalTenantFallback: usingLocalTenantFallback,
+        tenantConfigWarning: tenantConfigWarning,
       );
       await _persistSession(state);
       _touchActivity();
@@ -506,6 +522,11 @@ class SessionController extends StateNotifier<SessionState> {
         tenantConfig: tenantConfig,
         profileCode: profileCode,
         isAdministrator: isAdministrator,
+        usingLocalTenantFallback: data['usingLocalTenantFallback'] == true,
+        tenantConfigWarning:
+            (data['tenantConfigWarning'] ?? '').toString().trim().isEmpty
+                ? null
+                : data['tenantConfigWarning'].toString(),
       );
 
       _touchActivity(instantPersist: false);
@@ -527,6 +548,8 @@ class SessionController extends StateNotifier<SessionState> {
         'authHeader': currentState.authHeader ?? '',
         'profileCode': currentState.profileCode,
         'isAdministrator': currentState.isAdministrator,
+        'usingLocalTenantFallback': currentState.usingLocalTenantFallback,
+        'tenantConfigWarning': currentState.tenantConfigWarning ?? '',
         'lastActivityMs': _lastActivityAt!.millisecondsSinceEpoch,
         'tenantConfig': {
           'tenantId': currentState.tenantConfig.tenantId,

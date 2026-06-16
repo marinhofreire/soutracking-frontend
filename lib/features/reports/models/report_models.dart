@@ -23,6 +23,16 @@ enum ReportFormat {
   screen,
 }
 
+class ReportFilterOption {
+  const ReportFilterOption({
+    required this.value,
+    required this.label,
+  });
+
+  final String value;
+  final String label;
+}
+
 class ReportKpiSummary {
   const ReportKpiSummary({
     required this.generated,
@@ -161,7 +171,7 @@ extension ReportTypeView on ReportType {
       case ReportType.stops:
         return 'Paradas';
       case ReportType.distance:
-        return 'Resumo';
+        return 'Resumo operacional';
       case ReportType.speed:
         return 'Velocidade';
       case ReportType.alerts:

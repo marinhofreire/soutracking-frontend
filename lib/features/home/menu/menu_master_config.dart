@@ -16,17 +16,6 @@ enum MenuAccessState { hidden, locked, visible, enabled }
 enum MenuAction { view, create, edit, delete, approve, export, command, admin }
 
 const Set<MenuAction> _emptyActionSet = {};
-const Set<MenuAction> _inspectionActionSet = {
-  MenuAction.view,
-  MenuAction.create,
-  MenuAction.edit,
-  MenuAction.delete,
-  MenuAction.approve,
-  MenuAction.export,
-  MenuAction.command,
-  MenuAction.admin,
-};
-
 const List<String> kMenuActionOrder = [
   'view',
   'create',
@@ -281,6 +270,13 @@ class TenantMenuOverride {
       if (value is List) {
         return value.map((it) => it.toString()).toList(growable: false);
       }
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          return const [];
+        }
+        return <String>[trimmed];
+      }
       return const [];
     }
 
@@ -469,13 +465,97 @@ List<ResolvedMenuGroup> resolveMenuForContext({
     });
   }
 
+  final normalizedProfile = normalizeProfileCode(profileCode);
+  final tenantOverride = config.tenantOverrideFor(tenant.tenantId);
+  final backendReadyItems = tenantOverride.backendReadyItems.toSet();
+  final backendReadyAll = backendReadyItems.contains('*');
+  final hiddenItems = tenantOverride.hideItems.toSet();
+  final lockedItems = tenantOverride.lockItems.toSet();
+  final featureFlags = <String, bool>{
+    ...config.featureDefaults,
+    ...tenant.modules,
+    ...tenantOverride.featureOverrides,
+  };
+
+  bool _featureEnabled(String featureFlag) {
+    if (featureFlag.trim().isEmpty) {
+      return true;
+    }
+    return featureFlags[featureFlag] == true;
+  }
+
   MenuItemDecision _evaluate(MenuItemConfig item) {
-    // Modo inspeção total: o menu não bloqueia por feature, tenant, perfil,
-    // availability ou backend. A tela fallback garante clique seguro.
-    return const MenuItemDecision(
-      state: MenuAccessState.enabled,
-      actions: _inspectionActionSet,
-    );
+    if (hiddenItems.contains(item.id)) {
+      return const MenuItemDecision(
+        state: MenuAccessState.hidden,
+        actions: _emptyActionSet,
+        reason: 'hidden_by_tenant',
+      );
+    }
+
+    if (item.visibleProfiles.isNotEmpty &&
+        !item.visibleProfiles.contains(normalizedProfile)) {
+      return const MenuItemDecision(
+        state: MenuAccessState.hidden,
+        actions: _emptyActionSet,
+        reason: 'hidden_by_profile',
+      );
+    }
+
+    final featureEnabled = _featureEnabled(item.featureFlag);
+    if (!featureEnabled) {
+      return MenuItemDecision(
+        state: item.hideWhenFeatureOff
+            ? MenuAccessState.hidden
+            : MenuAccessState.locked,
+        actions: _emptyActionSet,
+        reason: item.hideWhenFeatureOff
+            ? 'hidden_by_feature'
+            : 'locked_by_feature',
+      );
+    }
+
+    final policy = config.policyById(item.actionPolicyRef);
+    final actions =
+        policy?.actionsForProfile(normalizedProfile) ?? _emptyActionSet;
+    if (actions.isEmpty) {
+      return const MenuItemDecision(
+        state: MenuAccessState.visible,
+        actions: _emptyActionSet,
+        reason: 'visible_without_actions',
+      );
+    }
+
+    if (lockedItems.contains(item.id)) {
+      return MenuItemDecision(
+        state: MenuAccessState.locked,
+        actions: actions,
+        reason: 'locked_by_tenant',
+      );
+    }
+
+    switch (item.availability) {
+      case MenuAvailability.now:
+        return MenuItemDecision(
+          state: MenuAccessState.enabled,
+          actions: actions,
+        );
+      case MenuAvailability.backend:
+        final backendReady =
+            backendReadyAll || backendReadyItems.contains(item.id);
+        return MenuItemDecision(
+          state:
+              backendReady ? MenuAccessState.enabled : MenuAccessState.locked,
+          actions: actions,
+          reason: backendReady ? null : 'backend_pending',
+        );
+      case MenuAvailability.later:
+        return MenuItemDecision(
+          state: MenuAccessState.locked,
+          actions: actions,
+          reason: 'implementation_pending',
+        );
+    }
   }
 
   ResolvedMenuItem? _resolveNode(MenuItemConfig item) {

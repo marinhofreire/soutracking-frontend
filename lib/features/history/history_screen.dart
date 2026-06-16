@@ -12,6 +12,8 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  static const int _maxPositionRows = 300;
+  static const int _maxEventRows = 300;
   static const List<String> _protocolCoreKeys = [
     'event',
     'ignition',
@@ -184,17 +186,29 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
     setState(() => _loading = true);
     try {
-      final positions = await client.getList(
-        path: '/positions',
-        cookie: session.cookie,
-        authHeader: session.authHeader,
-        query: query,
+      final responses = await Future.wait([
+        client.getList(
+          path: '/positions',
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          query: query,
+        ),
+        client.getList(
+          path: '/reports/events',
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          query: query,
+        ),
+      ]);
+      final positions = _trimRecentRows(
+        responses[0],
+        _maxPositionRows,
+        _positionDateOf,
       );
-      final events = await client.getList(
-        path: '/reports/events',
-        cookie: session.cookie,
-        authHeader: session.authHeader,
-        query: query,
+      final events = _trimRecentRows(
+        responses[1],
+        _maxEventRows,
+        _eventDateOf,
       );
 
       final mapped = <_HistoryLogRow>[
@@ -226,6 +240,33 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  List<Map<String, dynamic>> _trimRecentRows(
+    List<Map<String, dynamic>> rows,
+    int limit,
+    DateTime? Function(Map<String, dynamic>) resolveDate,
+  ) {
+    if (rows.length <= limit) {
+      return rows;
+    }
+    final sorted = [...rows]..sort((a, b) {
+        final aDate = resolveDate(a);
+        final bDate = resolveDate(b);
+        if (aDate == null && bDate == null) return 0;
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return bDate.compareTo(aDate);
+      });
+    return sorted.take(limit).toList(growable: false);
+  }
+
+  DateTime? _positionDateOf(Map<String, dynamic> raw) {
+    return _parseDate(raw['fixTime'] ?? raw['deviceTime'] ?? raw['serverTime']);
+  }
+
+  DateTime? _eventDateOf(Map<String, dynamic> raw) {
+    return _parseDate(raw['eventTime'] ?? raw['serverTime']);
   }
 
   _HistoryLogRow _mapPositionRow(Map<String, dynamic> raw) {

@@ -18,6 +18,9 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
   int? _selectedUserId;
   final Map<String, _PermissionState> _permissionStates = {};
   bool _creatingBinding = false;
+  static const String _permissionsBackendMessage =
+      'Somente o vinculo usuario-dispositivo persiste hoje. '
+      'A matriz completa de permissoes ainda depende de backend e segue em implantacao.';
 
   @override
   Widget build(BuildContext context) {
@@ -52,17 +55,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
           AdminActionButton(
             label: 'Salvar Permissões',
             icon: Icons.save_outlined,
-            onPressed: () {
-              final selectedUser = _findSelectedUser(usersAsync);
-              final userName = selectedUser?.name ?? 'usuário';
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Visual de permissões atualizado para $userName.',
-                  ),
-                ),
-              );
-            },
+            onPressed: _showPermissionsBackendPending,
           ),
         ],
       ),
@@ -90,6 +83,8 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _backendPendingBanner(),
+              const SizedBox(height: 16),
               // ── Seletor de usuário ──────────────────────────────────
               Wrap(
                 spacing: 12,
@@ -231,6 +226,32 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
             _initialStateFor(user, module, PermissionsVisualMode.monitoring),
           ),
       ]);
+  }
+
+  void _showPermissionsBackendPending() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(_permissionsBackendMessage)),
+    );
+  }
+
+  Widget _backendPendingBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: const Text(
+        _permissionsBackendMessage,
+        style: TextStyle(
+          color: Color(0xFF92400E),
+          fontWeight: FontWeight.w700,
+          fontSize: 12.2,
+        ),
+      ),
+    );
   }
 
   _PermissionState _initialStateFor(

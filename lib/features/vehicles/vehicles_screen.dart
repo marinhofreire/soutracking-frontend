@@ -308,7 +308,10 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
           _VehiclesPageHeader(
             onAddVehicle: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('Cadastro visual de veículo em ajuste.')),
+                content: Text(
+                  'Cadastro direto de veiculo ainda depende de fluxo/backend dedicado.',
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 10),

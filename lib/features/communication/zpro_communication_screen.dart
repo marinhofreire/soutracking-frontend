@@ -238,6 +238,8 @@ class _ZproCommunicationScreenState
           },
         ),
         const SizedBox(height: 10),
+        _implementationBanner(),
+        const SizedBox(height: 10),
         _filterBar(devices),
         const SizedBox(height: 10),
         _tabBar(),
@@ -392,13 +394,38 @@ class _ZproCommunicationScreenState
           OutlinedButton.icon(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Configura\u00E7\u00F5es r\u00E1pidas abertas.')),
+                const SnackBar(
+                  content: Text(
+                    'Configuracoes avancadas de comunicacao ainda dependem de backend proprio.',
+                  ),
+                ),
               );
             },
             icon: const Icon(Icons.tune_rounded, size: 16),
             label: const Text('Configura\u00E7\u00F5es'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _implementationBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: const Text(
+        'Modulo em implantacao: a tela usa comandos e notificacoes reais do tracking, '
+        'mas ainda nao representa chat/WhatsApp bidirecional com recebida/lida.',
+        style: TextStyle(
+          color: Color(0xFF92400E),
+          fontWeight: FontWeight.w700,
+          fontSize: 12.2,
+        ),
       ),
     );
   }

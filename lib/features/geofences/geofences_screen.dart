@@ -653,7 +653,15 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () {},
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Exportacao de cercas fica bloqueada ate concluir o fluxo de exportacao.',
+                        ),
+                      ),
+                    );
+                  },
                   icon: const Icon(Icons.file_download_outlined, size: 18),
                   label: const Text('Exportar'),
                 ),
@@ -1124,7 +1132,15 @@ class _GeofenceTable extends StatelessWidget {
                           children: [
                             IconButton(
                               tooltip: 'Editar',
-                              onPressed: () {},
+                              onPressed: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Edicao avancada de cerca segue em implantacao tecnica.',
+                                    ),
+                                  ),
+                                );
+                              },
                               icon: const Icon(
                                 Icons.edit_outlined,
                                 color: Color(0xFF176EEB),

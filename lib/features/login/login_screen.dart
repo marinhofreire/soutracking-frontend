@@ -260,7 +260,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () {},
+                              onPressed: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Recuperacao de senha ainda depende do backend de autenticacao.',
+                                    ),
+                                  ),
+                                );
+                              },
                               style: TextButton.styleFrom(
                                 foregroundColor: const Color(0xFF2FB0FF),
                                 padding: const EdgeInsets.symmetric(

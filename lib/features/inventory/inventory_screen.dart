@@ -74,6 +74,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _ImplementationBanner(
+            message:
+                'Modulo em implantacao: estoque ainda usa repositorio mock e nao deve ser apresentado como operacao produtiva.',
+          ),
+          const SizedBox(height: 12),
           kpiAsync.when(
             data: (summary) => InventoryKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
@@ -191,7 +196,41 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   void _showMockAction(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(
+          'Estoque depende de backend dedicado. Acao bloqueada: $message',
+        ),
+      ),
+    );
+  }
+}
+
+class _ImplementationBanner extends StatelessWidget {
+  const _ImplementationBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminGlassPanel(
+      backgroundColor: const Color(0xF2F8FAFC),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Text(
+          message,
+          style: const TextStyle(
+            color: Color(0xFF92400E),
+            fontWeight: FontWeight.w700,
+            fontSize: 12.2,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -47,6 +47,8 @@ class FinanceScreen extends ConsumerStatefulWidget {
 }
 
 class _FinanceScreenState extends ConsumerState<FinanceScreen> {
+  static const String _financeImplementationMessage =
+      'Modulo em implantacao: indicadores, cobrancas e exportacoes seguem em demonstracao com repositorio mock e nao representam financeiro produtivo.';
   final _searchController = TextEditingController();
 
   String _search = '';
@@ -74,6 +76,10 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _ImplementationBanner(
+            message: _financeImplementationMessage,
+          ),
+          const SizedBox(height: 12),
           kpiAsync.when(
             data: (summary) => FinanceKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
@@ -128,27 +134,35 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
                         setState(() => _paymentMethod = value),
                     onClientChanged: (value) => setState(() => _client = value),
                     onMoreFilters: () => _showMockAction(
-                        'Mais filtros sera habilitado na proxima etapa.'),
-                    onNewCharge: () =>
-                        _showMockAction('Nova cobranca simulada com sucesso.'),
+                        'Mais filtros ainda nao consultam backend financeiro real.'),
+                    onNewCharge: () => _showMockAction(
+                        'Criacao de cobranca permanece bloqueada em modo demonstrativo.'),
                     onPaymentLink: () => _showMockAction(
-                        'Criacao de link de pagamento simulada.'),
-                    onRecurrence: () =>
-                        _showMockAction('Criacao de recorrencia simulada.'),
-                    onExport: () => _showMockAction('Exportacao simulada.'),
+                        'Link de pagamento permanece bloqueado em modo demonstrativo.'),
+                    onRecurrence: () => _showMockAction(
+                        'Recorrencia permanece bloqueada em modo demonstrativo.'),
+                    onExport: () => _showMockAction(
+                        'Exportacao financeira permanece bloqueada sem backend dedicado.'),
+                  ),
+                  const SizedBox(height: 12),
+                  _mockDataNotice(
+                    filteredCount: filtered.length,
+                    totalCount: records.length,
                   ),
                   const SizedBox(height: 12),
                   FinanceTable(
                     records: filtered,
                     onView: (record) {
-                      _showMockAction('Visualizando cobranca ${record.id}.');
+                      _showMockAction(
+                          'Visualizacao detalhada da cobranca ${record.id} permanece bloqueada em modo demonstrativo.');
                     },
                     onMarkPaid: (record) {
                       _showMockAction(
-                          'Marcado como pago (mock): ${record.id}.');
+                          'Baixa financeira da cobranca ${record.id} nao executa operacao real.');
                     },
                     onCancel: (record) {
-                      _showMockAction('Cancelamento mock: ${record.id}.');
+                      _showMockAction(
+                          'Cancelamento da cobranca ${record.id} nao executa operacao real.');
                     },
                   ),
                 ],
@@ -199,7 +213,80 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
 
   void _showMockAction(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(
+          'Financeiro depende de backend dedicado. Operacao nao executada: $message',
+        ),
+      ),
+    );
+  }
+
+  Widget _mockDataNotice({
+    required int filteredCount,
+    required int totalCount,
+  }) {
+    return AdminGlassPanel(
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: const Text(
+              'VALORES MOCK',
+              style: TextStyle(
+                color: Color(0xFF92400E),
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Resumo demonstrativo: $filteredCount de $totalCount cobrancas visiveis com dados ficticios, sem baixa, emissao ou exportacao real.',
+              style: const TextStyle(
+                color: Color(0xFF5D728E),
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImplementationBanner extends StatelessWidget {
+  const _ImplementationBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminGlassPanel(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Text(
+          message,
+          style: const TextStyle(
+            color: Color(0xFF92400E),
+            fontWeight: FontWeight.w700,
+            fontSize: 12.2,
+          ),
+        ),
+      ),
     );
   }
 }

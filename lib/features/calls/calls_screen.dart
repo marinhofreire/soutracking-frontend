@@ -39,6 +39,8 @@ class CallsScreen extends ConsumerStatefulWidget {
 }
 
 class _CallsScreenState extends ConsumerState<CallsScreen> {
+  static const String _callsImplementationMessage =
+      'Modulo em implantacao: chamados seguem em demonstracao com repositorio mock. Nenhum dado ou acao desta tela representa atendimento produtivo.';
   final _searchController = TextEditingController();
 
   String _search = '';
@@ -66,6 +68,10 @@ class _CallsScreenState extends ConsumerState<CallsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _ImplementationBanner(
+            message: _callsImplementationMessage,
+          ),
+          const SizedBox(height: 12),
           kpiAsync.when(
             data: (summary) => CallsKpiRow(summary: summary),
             loading: () => const _LoadingPanel(),
@@ -125,15 +131,22 @@ class _CallsScreenState extends ConsumerState<CallsScreen> {
                     onClientChanged: (value) => setState(() => _client = value),
                     onMoreFilters: () {
                       _showMockAction(
-                        'Mais filtros sera habilitado na proxima etapa.',
+                        'Mais filtros ainda nao consultam backend real.',
                       );
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  _mockDataNotice(
+                    filteredCount: filtered.length,
+                    totalCount: records.length,
                   ),
                   const SizedBox(height: 12),
                   CallsTable(
                     records: filtered,
                     onView: (record) {
-                      _showMockAction('Visualizando chamado ${record.id}.');
+                      _showMockAction(
+                        'Abertura detalhada do chamado ${record.id} permanece bloqueada em modo demonstracao.',
+                      );
                     },
                   ),
                 ],
@@ -179,7 +192,80 @@ class _CallsScreenState extends ConsumerState<CallsScreen> {
 
   void _showMockAction(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(
+          'Chamados dependem de API propria. Operacao nao executada: $message',
+        ),
+      ),
+    );
+  }
+
+  Widget _mockDataNotice({
+    required int filteredCount,
+    required int totalCount,
+  }) {
+    return AdminGlassPanel(
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: const Text(
+              'DADOS MOCK',
+              style: TextStyle(
+                color: Color(0xFF92400E),
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Listagem demonstrativa: $filteredCount de $totalCount chamados visiveis, sem criacao, edicao ou despacho real.',
+              style: const TextStyle(
+                color: Color(0xFF5D728E),
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImplementationBanner extends StatelessWidget {
+  const _ImplementationBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminGlassPanel(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Text(
+          message,
+          style: const TextStyle(
+            color: Color(0xFF92400E),
+            fontWeight: FontWeight.w700,
+            fontSize: 12.2,
+          ),
+        ),
+      ),
     );
   }
 }

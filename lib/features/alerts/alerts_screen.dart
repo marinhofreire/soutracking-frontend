@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/display_text_formatter.dart';
@@ -219,6 +219,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       final ignition = _resolveIgnition(event, attributes);
       final battery = _resolveBattery(event, attributes);
       final address = _resolveAddress(event, attributes);
+      final alertMeaning = _resolveAlertMeaning(
+        eventType: typeCode,
+        attributes: attributes,
+        battery: battery,
+      );
       if (!ruleFilter.matches(
         eventType: typeCode,
         deviceId: deviceId,
@@ -226,14 +231,21 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       )) {
         continue;
       }
+      if (alertMeaning == null) {
+        continue;
+      }
 
       records.add(
         AlertRecord(
           id: _resolveEventId(event, dateTime),
-          severity: _resolveSeverity(typeCode, attributes),
-          type: _humanizeEventType(typeCode),
+          severity: alertMeaning.severity,
+          type: alertMeaning.typeLabel,
           vehicle: _resolveVehicleName(deviceId, devicesById),
-          description: _resolveDescription(event, attributes),
+          description: _resolveDescription(
+            event,
+            attributes,
+            fallback: alertMeaning.descriptionFallback,
+          ),
           dateTime: dateTime,
           status: _resolveStatus(event, attributes),
           latitude: latitude,
@@ -357,33 +369,112 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     return 'Dispositivo $deviceId';
   }
 
-  AlertSeverity _resolveSeverity(
-    String eventType,
-    Map<String, dynamic> attributes,
-  ) {
-    final normalized = eventType.toLowerCase();
-    final alarm = (attributes['alarm'] ?? '').toString().toLowerCase();
+  _ResolvedAlertMeaning? _resolveAlertMeaning({
+    required String eventType,
+    required Map<String, dynamic> attributes,
+    required String? battery,
+  }) {
+    final normalized = eventType.trim().toLowerCase();
+    final alarm = (attributes['alarm'] ?? '').toString().trim().toLowerCase();
+    final batteryText = (battery ?? '').trim().toLowerCase();
+    final batteryPercent = _parseBatteryPercent(batteryText);
+    final batteryVoltage = _parseBatteryVoltage(batteryText);
+
+    if (normalized.contains('overspeed') || alarm.contains('overspeed')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Excesso de velocidade',
+        severity: AlertSeverity.high,
+        descriptionFallback: 'Veículo acima do limite configurado.',
+      );
+    }
+
+    if (normalized.contains('geofenceenter') ||
+        normalized.contains('geofenceexit') ||
+        alarm.contains('geofence')) {
+      final geofenceName =
+          (attributes['geofenceName'] ?? attributes['geofence'] ?? '')
+              .toString()
+              .trim();
+      final isExit = normalized.contains('exit');
+      return _ResolvedAlertMeaning(
+        typeLabel: isExit ? 'Saída de cerca' : 'Entrada em cerca',
+        severity: AlertSeverity.medium,
+        descriptionFallback: geofenceName.isEmpty
+            ? (isExit
+                ? 'Saída de cerca registrada.'
+                : 'Entrada em cerca registrada.')
+            : '${isExit ? 'Saída' : 'Entrada'} de cerca: $geofenceName',
+      );
+    }
 
     if (normalized.contains('panic') ||
         normalized.contains('sos') ||
-        alarm.contains('sos') ||
         alarm.contains('panic') ||
-        normalized == 'alarm') {
-      return AlertSeverity.critical;
+        alarm.contains('sos')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Botão de pânico',
+        severity: AlertSeverity.critical,
+        descriptionFallback: 'Acionamento manual de emergência.',
+      );
     }
-    if (normalized.contains('overspeed') ||
-        normalized.contains('speed') ||
-        normalized.contains('geofence') ||
-        normalized.contains('jammer')) {
-      return AlertSeverity.high;
+
+    if (normalized == 'alarm' ||
+        alarm.contains('alarm') ||
+        alarm.contains('vibration') ||
+        alarm.contains('shock')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Alarme do veículo',
+        severity: AlertSeverity.high,
+        descriptionFallback: 'Alarme disparado pelo rastreador.',
+      );
     }
-    if (normalized.contains('ignition') ||
-        normalized.contains('offline') ||
-        normalized.contains('moving') ||
-        normalized.contains('stopped')) {
-      return AlertSeverity.medium;
+
+    if (normalized.contains('offline') ||
+        normalized.contains('disconnect') ||
+        normalized.contains('signal_lost') ||
+        normalized.contains('signallost') ||
+        alarm.contains('offline')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Sem comunicação',
+        severity: AlertSeverity.high,
+        descriptionFallback: 'Equipamento sem comunicação com a plataforma.',
+      );
     }
-    return AlertSeverity.low;
+
+    if (normalized.contains('jammer') || alarm.contains('jammer')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Possível bloqueador de sinal',
+        severity: AlertSeverity.critical,
+        descriptionFallback: 'Interferência de sinal detectada.',
+      );
+    }
+
+    if (normalized.contains('powercut') ||
+        normalized.contains('power cut') ||
+        alarm.contains('powercut') ||
+        alarm.contains('power')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Corte de energia',
+        severity: AlertSeverity.high,
+        descriptionFallback:
+            'Alimentação principal do rastreador interrompida.',
+      );
+    }
+
+    final isBatteryLow = (batteryPercent != null && batteryPercent <= 20) ||
+        (batteryVoltage != null && batteryVoltage <= 11.8) ||
+        normalized.contains('lowbattery') ||
+        normalized.contains('batterylow') ||
+        alarm.contains('low battery');
+    if (isBatteryLow) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Bateria baixa',
+        severity: AlertSeverity.medium,
+        descriptionFallback: 'Bateria do equipamento em nível baixo.',
+      );
+    }
+
+    return null;
   }
 
   AlertStatus? _resolveStatus(
@@ -419,9 +510,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   }
 
   String _resolveDescription(
-    Map<String, dynamic> event,
-    Map<String, dynamic> attributes,
-  ) {
+      Map<String, dynamic> event, Map<String, dynamic> attributes,
+      {String? fallback}) {
     final candidates = <String?>[
       event['message']?.toString(),
       event['description']?.toString(),
@@ -456,49 +546,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return 'Lat ${latitude.toStringAsFixed(5)}, Lng ${longitude.toStringAsFixed(5)}';
     }
 
-    return 'Sem descrição';
-  }
-
-  String _humanizeEventType(String type) {
-    switch (type) {
-      case 'deviceOnline':
-        return 'Dispositivo online';
-      case 'deviceOffline':
-        return 'Dispositivo offline';
-      case 'deviceUnknown':
-        return 'Status desconhecido';
-      case 'ignitionOn':
-        return 'Ignição ligada';
-      case 'ignitionOff':
-        return 'Ignição desligada';
-      case 'deviceMoving':
-        return 'Em movimento';
-      case 'deviceStopped':
-        return 'Parado';
-      case 'alarm':
-        return 'Alarme';
-      case 'commandResult':
-        return 'Resultado de comando';
-      case 'geofenceEnter':
-        return 'Entrada em cerca';
-      case 'geofenceExit':
-        return 'Saída de cerca';
-      case 'overspeed':
-        return 'Excesso de velocidade';
-      default:
-        final value = type.trim();
-        if (value.isEmpty) {
-          return 'Evento';
-        }
-        final spaced = value
-            .replaceAllMapped(
-              RegExp(r'([a-z])([A-Z])'),
-              (match) => '${match.group(1)} ${match.group(2)}',
-            )
-            .replaceAll('_', ' ')
-            .toLowerCase();
-        return spaced[0].toUpperCase() + spaced.substring(1);
+    if (fallback != null && fallback.trim().isNotEmpty) {
+      return fallback.trim();
     }
+
+    return 'Sem descrição';
   }
 
   bool _isTruthy(dynamic value) {
@@ -507,6 +559,23 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     }
     final normalized = value?.toString().trim().toLowerCase();
     return normalized == 'true' || normalized == '1' || normalized == 'yes';
+  }
+
+  double? _parseBatteryPercent(String value) {
+    if (!value.endsWith('%')) {
+      return null;
+    }
+    return double.tryParse(
+        value.replaceAll('%', '').trim().replaceAll(',', '.'));
+  }
+
+  double? _parseBatteryVoltage(String value) {
+    if (!value.endsWith('v')) {
+      return null;
+    }
+    return double.tryParse(
+      value.replaceAll('v', '').trim().replaceAll(',', '.'),
+    );
   }
 
   double? _resolveLatitude(
@@ -891,3 +960,14 @@ class _ErrorPanel extends StatelessWidget {
   }
 }
 
+class _ResolvedAlertMeaning {
+  const _ResolvedAlertMeaning({
+    required this.typeLabel,
+    required this.severity,
+    required this.descriptionFallback,
+  });
+
+  final String typeLabel;
+  final AlertSeverity severity;
+  final String descriptionFallback;
+}

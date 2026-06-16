@@ -95,3 +95,9 @@ lib/
   - Mitigação: nenhuma remoção de tela/fluxo existente; alterações isoladas em rotas extras.
 - Risco: tenant sem config.
   - Mitigação: fallback seguro em `TenantConfig.fallback`.
+
+## Ajustes de estabilização - 2026-06-12
+- O mapa operacional continua acoplado ao `HomeShell` por segurança; em vez de refatoração visual, a atualização quase em tempo real foi resolvida com invalidação periódica dos providers já existentes.
+- O polling é encerrado fora da visão principal do mapa para evitar refresh desnecessário em painéis laterais.
+- O filtro visível da sidebar permanece em `HomeShell`, que hoje é a superfície real de navegação; o resolvedor de `menu_master_config.dart` passou a refletir RBAC real para catálogos, auditorias e futuras integrações.
+- Fluxos sem backend pronto foram tratados como `locked` ou com aviso explícito, evitando falso positivo de funcionalidade concluída.

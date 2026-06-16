@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../admin/admin_reference_ui.dart';
 import '../models/alert_models.dart';
@@ -69,7 +69,7 @@ class AlertsTable extends StatelessWidget {
                         Expanded(flex: 2, child: _HeaderCell('Data/Hora')),
                         Expanded(flex: 2, child: _HeaderCell('Equipamento')),
                         Expanded(flex: 3, child: _HeaderCell('Tipo de alerta')),
-                        Expanded(flex: 2, child: _HeaderCell('Severidade')),
+                        Expanded(flex: 2, child: _HeaderCell('Prioridade')),
                         Expanded(flex: 2, child: _HeaderCell('Status')),
                         Expanded(flex: 4, child: _HeaderCell('Descrição')),
                         SizedBox(width: 56),
@@ -246,4 +246,3 @@ class _ActionIcon extends StatelessWidget {
     );
   }
 }
-

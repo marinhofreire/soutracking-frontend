@@ -61,6 +61,8 @@ class _MdvrDevicesScreenState extends ConsumerState<MdvrDevicesScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _implementationBanner(),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Text(
@@ -200,6 +202,27 @@ class _MdvrDevicesScreenState extends ConsumerState<MdvrDevicesScreen> {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) =>
           Center(child: Text('Erro ao carregar dispositivos: $error')),
+    );
+  }
+
+  Widget _implementationBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: const Text(
+        'Modulo em implantacao tecnica: a tela lista dispositivos e status, '
+        'mas player, live e historico de video ainda dependem de gateway/API especificos.',
+        style: TextStyle(
+          color: Color(0xFF92400E),
+          fontWeight: FontWeight.w700,
+          fontSize: 12.2,
+        ),
+      ),
     );
   }
 }
