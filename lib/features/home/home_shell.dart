@@ -17650,7 +17650,7 @@ class _VehicleSnapshot {
       normalizedStatus == 'offline' && !hasNoCommunication;
 
   bool get isOperationalMoving =>
-      hasPosition && !hasNoCommunication && (speed ?? 0) > 1;
+      hasPosition && !hasNoCommunication && (speedKmh ?? 0) > 1;
 
   bool get isOperationalStopped => hasPosition && !isOperationalMoving;
 
@@ -17658,14 +17658,22 @@ class _VehicleSnapshot {
 
   bool get isOffline => isOperationalOffline;
 
-  double? get speed {
+  double? get speedKnots {
     final value = position?.speed;
     if (value == null) return null;
     if (!value.isFinite) return null;
     return value;
   }
 
-  bool get isMoving => (speed ?? 0) > 1;
+  double? get speedKmh {
+    final value = speedKnots;
+    if (value == null) return null;
+    return value * 1.852;
+  }
+
+  double? get speed => speedKmh;
+
+  bool get isMoving => (speedKmh ?? 0) > 1;
 
   bool? get ignition {
     final value = position?.attributes?['ignition'] ??
@@ -17712,7 +17720,7 @@ class _VehicleSnapshot {
   }
 
   bool get hasAlert =>
-      !hasNoCommunication && (_hasAlarmFlag || (speed ?? 0) >= 80);
+      !hasNoCommunication && (_hasAlarmFlag || (speedKmh ?? 0) >= 80);
 
   String get identifierLabel {
     final value = device.uniqueId ??
