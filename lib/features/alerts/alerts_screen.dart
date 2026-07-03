@@ -429,18 +429,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       );
     }
 
-    if (normalized.contains('offline') ||
-        normalized.contains('disconnect') ||
-        normalized.contains('signal_lost') ||
-        normalized.contains('signallost') ||
-        alarm.contains('offline')) {
-      return const _ResolvedAlertMeaning(
-        typeLabel: 'Sem comunicação',
-        severity: AlertSeverity.high,
-        descriptionFallback: 'Equipamento sem comunicação com a plataforma.',
-      );
-    }
-
     if (normalized.contains('jammer') || alarm.contains('jammer')) {
       return const _ResolvedAlertMeaning(
         typeLabel: 'Possível bloqueador de sinal',

@@ -1315,8 +1315,35 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
     _focusReportRouteIfNeeded(reportRouteSelection);
     final snapshotKpis = _FleetKpis.fromSnapshots(snapshots);
-    final realAlertCount =
-        latestEvents.isNotEmpty ? latestEvents.length : snapshotKpis.alerts;
+    final realAlertCount = latestEvents.isNotEmpty
+        ? latestEvents.where((e) {
+            final type = (e['type'] ?? '')
+                .toString()
+                .toLowerCase()
+                .replaceAll(RegExp(r'[^a-z0-9]'), '');
+            final attrs = e['attributes'];
+            final alarm = (attrs is Map ? attrs['alarm'] : null)
+                    ?.toString()
+                    .toLowerCase() ??
+                '';
+            return type.contains('overspeed') ||
+                type.contains('geofenceenter') ||
+                type.contains('geofenceexit') ||
+                type.contains('panic') ||
+                type.contains('sos') ||
+                type.contains('alarm') ||
+                type.contains('jammer') ||
+                type.contains('powercut') ||
+                type.contains('lowbattery') ||
+                type.contains('batterylow') ||
+                alarm.contains('overspeed') ||
+                alarm.contains('panic') ||
+                alarm.contains('sos') ||
+                alarm.contains('jammer') ||
+                alarm.contains('vibration') ||
+                alarm.contains('shock');
+          }).length
+        : snapshotKpis.alerts;
     final noCommunicationCount =
         snapshots.where((snapshot) => snapshot.hasNoCommunication).length;
     final kpis = snapshotKpis.copyWith(alerts: realAlertCount);
@@ -2757,12 +2784,15 @@ class _OperationalMap extends StatelessWidget {
     final icons = <_VehicleMarkerIconKey, gmaps.BitmapDescriptor>{};
     for (final statusEntry in entries.entries) {
       for (final type in _VehicleMarkerType.values) {
-        final key = _VehicleMarkerIconKey(type, statusEntry.key);
-        final bytes = await _buildVehicleMarkerIconBytes(
-          statusColor: statusEntry.value,
-          vehicleImage: vehicleImages[type],
-        );
-        icons[key] = gmaps.BitmapDescriptor.bytes(bytes);
+        for (int dir = 0; dir < 8; dir++) {
+          final key = _VehicleMarkerIconKey(type, statusEntry.key, dir);
+          final bytes = await _buildVehicleMarkerIconBytes(
+            statusColor: statusEntry.value,
+            vehicleImage: vehicleImages[type],
+            course: dir * 45.0,
+          );
+          icons[key] = gmaps.BitmapDescriptor.bytes(bytes);
+        }
       }
     }
     return icons;
@@ -2781,88 +2811,80 @@ class _OperationalMap extends StatelessWidget {
     }
   }
 
-  static Future<Uint8List> _buildVehicleMarkerIconBytes(
-      {required Color statusColor, required ui.Image? vehicleImage}) async {
-    const iconSize = 92.0;
-    const iconRadius = 29.0;
+  static Future<Uint8List> _buildVehicleMarkerIconBytes({
+    required Color statusColor,
+    required ui.Image? vehicleImage,
+    double course = 0,
+  }) async {
+    const iconSize = 72.0;
+    const center = Offset(iconSize / 2, iconSize / 2);
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
-    const center = Offset(iconSize / 2, iconSize / 2);
 
-    final shadowPaint = Paint()
-      ..color = const Color(0xFF1F2A44).withValues(alpha: 0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawCircle(center, iconRadius, shadowPaint);
+    if (vehicleImage != null) {
+      // Rotaciona o carro no canvas antes de desenhar — garante direção
+      // correta em todas as plataformas (web/mobile).
+      final maxDim = vehicleImage.height > vehicleImage.width
+          ? vehicleImage.height.toDouble()
+          : vehicleImage.width.toDouble();
+      final scale = 64 / maxDim;
+      final w = vehicleImage.width * scale;
+      final h = vehicleImage.height * scale;
 
-    final fillPaint = Paint()
-      ..color = statusColor.withValues(alpha: vehicleImage == null ? 1 : 0.16);
-    canvas.drawCircle(center, iconRadius, fillPaint);
-
-    final borderPaint = Paint()
-      ..color = vehicleImage == null ? Colors.white : statusColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = vehicleImage == null ? 4 : 3;
-    canvas.drawCircle(center, iconRadius, borderPaint);
-
-    if (vehicleImage == null) {
-      const carIcon = Icons.directions_car_filled_rounded;
-      final carPainter = TextPainter(
-        textDirection: TextDirection.ltr,
-        text: TextSpan(
-          text: String.fromCharCode(carIcon.codePoint),
-          style: TextStyle(
-            fontSize: 31,
-            fontFamily: carIcon.fontFamily,
-            package: carIcon.fontPackage,
-            color: Colors.white,
-          ),
-        ),
-      )..layout();
-
-      carPainter.paint(
-        canvas,
-        Offset(
-          center.dx - (carPainter.width / 2),
-          center.dy - (carPainter.height / 2),
-        ),
-      );
-    } else {
-      final scale = 54 /
-          (vehicleImage.height > vehicleImage.width
-              ? vehicleImage.height
-              : vehicleImage.width);
-      final width = vehicleImage.width * scale;
-      final height = vehicleImage.height * scale;
-      final destination = Rect.fromCenter(
-        center: center,
-        width: width,
-        height: height,
-      );
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(course * math.pi / 180);
+      canvas.translate(-center.dx, -center.dy);
       canvas.drawImageRect(
         vehicleImage,
         Rect.fromLTWH(
-          0,
-          0,
-          vehicleImage.width.toDouble(),
-          vehicleImage.height.toDouble(),
-        ),
-        destination,
+            0, 0, vehicleImage.width.toDouble(), vehicleImage.height.toDouble()),
+        Rect.fromCenter(center: center, width: w, height: h),
         Paint()..isAntiAlias = true,
       );
+      canvas.restore();
+    } else {
+      // Fallback: seta colorida rotacionada.
+      final fill = Paint()
+        ..color = statusColor
+        ..style = PaintingStyle.fill;
+      final stroke = Paint()
+        ..color = Colors.white.withValues(alpha: 0.5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round;
+      // Seta base apontando para norte (cima). Rotação gira para a direção.
+      final arrow = Path()
+        ..moveTo(center.dx, 4)
+        ..lineTo(center.dx - 13, iconSize - 6)
+        ..lineTo(center.dx, iconSize - 16)
+        ..lineTo(center.dx + 13, iconSize - 6)
+        ..close();
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(course * math.pi / 180);
+      canvas.translate(-center.dx, -center.dy);
+      canvas.drawPath(arrow, fill);
+      canvas.drawPath(arrow, stroke);
+      canvas.restore();
     }
 
-    final statusDotCenter = Offset(iconSize - 25, iconSize - 25);
-    canvas.drawCircle(statusDotCenter, 8, Paint()..color = Colors.white);
-    canvas.drawCircle(statusDotCenter, 5.5, Paint()..color = statusColor);
+    // Ponto de status fixo (não roda com o carro) — sempre canto inferior direito.
+    final dot = Offset(iconSize - 11, iconSize - 11);
+    canvas.drawCircle(dot, 7, Paint()..color = Colors.white);
+    canvas.drawCircle(dot, 5, Paint()..color = statusColor);
 
     final image = await recorder
         .endRecording()
         .toImage(iconSize.toInt(), iconSize.toInt());
     final byteData = await image.toByteData(format: ImageByteFormat.png);
-    if (byteData == null) {
-      return Uint8List(0);
-    }
+    if (byteData == null) return Uint8List(0);
     return byteData.buffer.asUint8List();
+  }
+
+  static int _courseToBucket8(double? course) {
+    if (course == null) return 0;
+    return ((course + 22.5) / 45).floor() % 8;
   }
 
   static int _replayRotationBucket(double? bearing) {
@@ -3030,24 +3052,24 @@ class _OperationalMap extends StatelessWidget {
           final statusSummary = snapshot.speed != null
               ? '${snapshot.statusLabel} - ${snapshot.speedLabel}'
               : snapshot.statusLabel;
-          final markerIcon = markerIcons[snapshot.markerIconKey] ??
-              gmaps.BitmapDescriptor.defaultMarkerWithHue(snapshot.markerHue);
-          final markerRotation = selectedReplayPoint?.course ??
+          final course = selectedReplayPoint?.course ??
               reportRouteActiveBearing ??
               snapshot.markerRotation;
+          final bearing8 = _courseToBucket8(course);
+          final markerIcon = markerIcons[_VehicleMarkerIconKey(
+                snapshot.markerType, snapshot.operationalStatus, bearing8)] ??
+              gmaps.BitmapDescriptor.defaultMarkerWithHue(snapshot.markerHue);
           markers.add(
             gmaps.Marker(
               markerId: gmaps.MarkerId('vehicle-${snapshot.device.id}'),
               position: markerPosition,
               anchor: const Offset(0.5, 0.5),
               consumeTapEvents: true,
-              flat: markerRotation != null,
               icon: markerIcon,
               infoWindow: gmaps.InfoWindow(
                 title: '${snapshot.device.name} • $statusSummary',
               ),
               onTap: () => onVehicleTap(snapshot),
-              rotation: markerRotation ?? 0,
             ),
           );
         }
@@ -3090,20 +3112,6 @@ class _OperationalMap extends StatelessWidget {
         final highlightedCenter = selectedReplayPoint?.latLng ??
             reportRouteActiveLatLng ??
             selectedCenter;
-        if (!reportRouteMode &&
-            highlightedCenter != null &&
-            (selected != null || selectedDeviceId != null)) {
-          circles.add(
-            gmaps.Circle(
-              circleId: gmaps.CircleId('selected-${selectedDeviceId ?? 0}'),
-              center: highlightedCenter,
-              radius: 120,
-              fillColor: const Color(0xFF2F80FF).withValues(alpha: 0.14),
-              strokeColor: const Color(0xFF2F80FF).withValues(alpha: 0.36),
-              strokeWidth: 2,
-            ),
-          );
-        }
 
         final routePoints = reportRoutePath.length > 1
             ? reportRoutePath
@@ -17513,20 +17521,23 @@ enum _VehicleMarkerType {
 }
 
 class _VehicleMarkerIconKey {
-  const _VehicleMarkerIconKey(this.type, this.status);
+  const _VehicleMarkerIconKey(this.type, this.status, [this.bearing8 = 0]);
 
   final _VehicleMarkerType type;
   final _VehicleOperationalStatus status;
+  // 0-7: N, NE, E, SE, S, SW, W, NW (buckets de 45°)
+  final int bearing8;
 
   @override
   bool operator ==(Object other) {
     return other is _VehicleMarkerIconKey &&
         other.type == type &&
-        other.status == status;
+        other.status == status &&
+        other.bearing8 == bearing8;
   }
 
   @override
-  int get hashCode => Object.hash(type, status);
+  int get hashCode => Object.hash(type, status, bearing8);
 }
 
 class _VehicleSnapshot {
@@ -17921,10 +17932,6 @@ class _VehicleSnapshot {
   }
 
   double? get markerRotation {
-    if (operationalStatus == _VehicleOperationalStatus.offline ||
-        operationalStatus == _VehicleOperationalStatus.noCommunication) {
-      return null;
-    }
     return _normalizeDirection(
       position?.course ??
           _mergedAttributes['course'] ??

@@ -111,6 +111,7 @@ class TraccarUser {
     required this.administrator,
     required this.readonly,
     required this.disabled,
+    this.attributes,
   });
 
   final int id;
@@ -119,6 +120,10 @@ class TraccarUser {
   final bool administrator;
   final bool readonly;
   final bool disabled;
+  final Map<String, dynamic>? attributes;
+
+  String get soutrackingRole =>
+      (attributes?['soutracking_role'] ?? '').toString().trim().toLowerCase();
 
   factory TraccarUser.fromJson(Map<String, dynamic> json) {
     return TraccarUser(
@@ -128,6 +133,9 @@ class TraccarUser {
       administrator: json['administrator'] == true,
       readonly: json['readonly'] == true,
       disabled: json['disabled'] == true,
+      attributes: json['attributes'] is Map
+          ? (json['attributes'] as Map).cast<String, dynamic>()
+          : null,
     );
   }
 }

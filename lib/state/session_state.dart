@@ -283,6 +283,23 @@ class SessionController extends StateNotifier<SessionState> {
     Map<String, dynamic> user, {
     required TenantConfig tenantConfig,
   }) {
+    // Primeiro: lê soutracking_role dos attributes do Traccar.
+    final attrs = user['attributes'];
+    if (attrs is Map) {
+      final souRole = (attrs['soutracking_role'] ?? '').toString().trim();
+      if (souRole.isNotEmpty) {
+        return switch (souRole.toLowerCase()) {
+          'superadmin' || 'super_admin' => 'MA',
+          'master' => 'AE',
+          'operator' || 'operador' => 'OM',
+          'client' || 'cliente' => 'CF',
+          'viewer' || 'visualizador' => 'SO',
+          _ => _normalizeProfileCode(souRole),
+        };
+      }
+    }
+
+    // Fallback: campos diretos no user (legado ou custom backends).
     final directRole = user['role']?.toString();
     if (directRole != null && directRole.trim().isNotEmpty) {
       return _normalizeProfileCode(directRole);
@@ -298,6 +315,7 @@ class SessionController extends StateNotifier<SessionState> {
       return _normalizeProfileCode(directProfileCode);
     }
 
+    // Fallback final: flags booleanos do Traccar.
     if (tenantConfig.isMasterAdmin) {
       return 'MA';
     }
@@ -305,7 +323,7 @@ class SessionController extends StateNotifier<SessionState> {
       return 'AE';
     }
     if (user['readonly'] == true) {
-      return 'CF';
+      return 'SO';
     }
 
     return 'OM';

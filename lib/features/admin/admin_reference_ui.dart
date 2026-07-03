@@ -387,54 +387,70 @@ class AdminRoleSummary {
 
 List<AdminRoleSummary> buildRoleSummaries(List<TraccarUser> users) {
   final counts = <String, int>{
-    'Administrador': 0,
-    'Supervisor': 0,
+    'SuperAdmin': 0,
+    'Master': 0,
     'Operador': 0,
-    'Cliente Final': 0,
+    'Cliente': 0,
+    'Visualizador': 0,
   };
 
   for (final user in users) {
-    counts[deriveUserRole(user)] = (counts[deriveUserRole(user)] ?? 0) + 1;
+    final role = deriveUserRole(user);
+    counts[role] = (counts[role] ?? 0) + 1;
   }
 
   return [
     AdminRoleSummary(
-      key: 'admin',
-      label: 'Administrador',
-      count: counts['Administrador'] ?? 0,
+      key: 'superadmin',
+      label: 'SuperAdmin',
+      count: counts['SuperAdmin'] ?? 0,
       color: const Color(0xFF4C84FF),
     ),
     AdminRoleSummary(
-      key: 'supervisor',
-      label: 'Supervisor',
-      count: counts['Supervisor'] ?? 0,
-      color: const Color(0xFF3FC7B4),
+      key: 'master',
+      label: 'Master',
+      count: counts['Master'] ?? 0,
+      color: const Color(0xFF7C5CFF),
     ),
     AdminRoleSummary(
       key: 'operator',
       label: 'Operador',
       count: counts['Operador'] ?? 0,
-      color: const Color(0xFFF7B84B),
+      color: const Color(0xFF3FC7B4),
     ),
     AdminRoleSummary(
       key: 'client',
-      label: 'Cliente Final',
-      count: counts['Cliente Final'] ?? 0,
+      label: 'Cliente',
+      count: counts['Cliente'] ?? 0,
+      color: const Color(0xFFF7B84B),
+    ),
+    AdminRoleSummary(
+      key: 'viewer',
+      label: 'Visualizador',
+      count: counts['Visualizador'] ?? 0,
       color: const Color(0xFF9AA8BC),
     ),
   ];
 }
 
 String deriveUserRole(TraccarUser user) {
-  if (user.administrator) {
-    return 'Administrador';
+  // Prioridade: atributo soutracking_role gravado pelo SouTracking.
+  final souRole = user.soutrackingRole;
+  if (souRole.isNotEmpty) {
+    return switch (souRole) {
+      'superadmin' || 'super_admin' => 'SuperAdmin',
+      'master' => 'Master',
+      'operator' || 'operador' => 'Operador',
+      'client' || 'cliente' => 'Cliente',
+      'viewer' || 'visualizador' => 'Visualizador',
+      _ => 'Operador',
+    };
   }
-  if (user.readonly) {
-    return 'Supervisor';
-  }
-  if (user.disabled) {
-    return 'Cliente Final';
-  }
+
+  // Fallback: flags booleanos do Traccar.
+  if (user.administrator) return 'SuperAdmin';
+  if (user.readonly) return 'Visualizador';
+  if (user.disabled) return 'Inativo';
   return 'Operador';
 }
 

@@ -102,6 +102,42 @@
   return text.isEmpty ? fallback : text;
 }
 
+const _traccarEventLabels = <String, String>{
+  'deviceonline': 'Dispositivo online',
+  'deviceoffline': 'Dispositivo offline',
+  'deviceunknown': 'Sem comunicação',
+  'devicemoving': 'Veículo em movimento',
+  'devicestopped': 'Veículo parou',
+  'deviceoverspeed': 'Excesso de velocidade',
+  'devicefueldrop': 'Queda de combustível',
+  'devicefuelincrease': 'Aumento de combustível',
+  'geofenceenter': 'Entrada em cerca',
+  'geofenceexit': 'Saída de cerca',
+  'alarm': 'Alarme',
+  'ignitionon': 'Ignição ligada',
+  'ignitionoff': 'Ignição desligada',
+  'overspeed': 'Excesso de velocidade',
+  'poweroff': 'Energia desligada',
+  'poweron': 'Energia ligada',
+  'powercut': 'Corte de energia',
+  'lowbattery': 'Bateria baixa',
+  'batterylow': 'Bateria baixa',
+  'panic': 'Botão de pânico',
+  'sos': 'SOS / Emergência',
+  'jammer': 'Bloqueador de sinal',
+  'vibration': 'Vibração detectada',
+  'driverchanged': 'Motorista alterado',
+  'maintenance': 'Manutenção',
+  'textmessage': 'Mensagem recebida',
+  'commandresult': 'Resultado de comando',
+};
+
+String translateEventType(String? rawType) {
+  if (rawType == null || rawType.trim().isEmpty) return 'Evento';
+  final key = rawType.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  return _traccarEventLabels[key] ?? rawType;
+}
+
 String _normalizeRelativeTimeText(String text) {
   var normalized = text;
 

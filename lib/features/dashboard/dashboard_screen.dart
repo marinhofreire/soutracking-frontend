@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/display_text_formatter.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 
@@ -321,7 +322,7 @@ class DashboardScreen extends ConsumerWidget {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 7),
                             child: _EventLine(
-                              type: '${event['type'] ?? 'evento'}',
+                              type: translateEventType(event['type']?.toString()),
                               details:
                                   '${event['attributes']?['message'] ?? event['attributes']?['alarm'] ?? 'Atualização operacional'}',
                               rawDate:

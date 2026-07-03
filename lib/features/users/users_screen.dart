@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/app_permissions.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../admin/admin_reference_ui.dart';
@@ -18,9 +19,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
 
-  bool _admin = false;
-  bool _readonly = false;
-  bool _disabled = false;
+  AppUserRole _selectedRole = AppUserRole.operator;
   bool _saving = false;
 
   Future<void> _openCreateUserDialog() async {
@@ -81,20 +80,39 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
                       decoration: const InputDecoration(labelText: 'Telefone'),
                     ),
                     const SizedBox(height: 12),
-                    SwitchListTile(
-                      value: _admin,
-                      onChanged: (value) => setState(() => _admin = value),
-                      title: const Text('Administrador'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Perfil de acesso',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: const Color(0xFF7A8CA8),
+                          ),
                     ),
-                    SwitchListTile(
-                      value: _readonly,
-                      onChanged: (value) => setState(() => _readonly = value),
-                      title: const Text('Somente leitura'),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<AppUserRole>(
+                      initialValue: _selectedRole,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: AppUserRole.values
+                          .map(
+                            (role) => DropdownMenuItem(
+                              value: role,
+                              child: Text(labelFromRole(role)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (role) {
+                        if (role != null) setState(() => _selectedRole = role);
+                      },
                     ),
-                    SwitchListTile(
-                      value: _disabled,
-                      onChanged: (value) => setState(() => _disabled = value),
-                      title: const Text('Desativado'),
+                    const SizedBox(height: 4),
+                    Text(
+                      _roleDescription(_selectedRole),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF9AA8BC),
+                          ),
                     ),
                     const SizedBox(height: 16),
                     Align(
@@ -134,6 +152,21 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
     super.dispose();
   }
 
+  String _roleDescription(AppUserRole role) {
+    return switch (role) {
+      AppUserRole.superAdmin =>
+        'Acesso total — cria usuários, vê todos os tenants e configurações do sistema.',
+      AppUserRole.master =>
+        'Revenda — gerencia seus próprios clientes, dispositivos e usuários.',
+      AppUserRole.operator =>
+        'Operador — mapa, alertas, relatórios e comandos. Sem gestão de usuários.',
+      AppUserRole.client =>
+        'Cliente final — visualiza seus veículos. Comandos conforme plano contratado.',
+      AppUserRole.viewer =>
+        'Somente leitura — acessa mapa e posições. Sem comandos nem alertas.',
+    };
+  }
+
   Future<bool> _createUser() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
@@ -152,6 +185,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
     final client = ref.read(traccarClientProvider);
 
     try {
+      final flags = traccarFlagsFromRole(_selectedRole);
       await client.createUser(
         cookie: session.cookie,
         authHeader: session.authHeader,
@@ -160,9 +194,10 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
           'email': email,
           'password': password,
           if (phone.isNotEmpty) 'phone': phone,
-          'administrator': _admin,
-          'readonly': _readonly,
-          'disabled': _disabled,
+          ...flags,
+          'attributes': {
+            'soutracking_role': soutrackingAttrFromRole(_selectedRole),
+          },
         },
       );
       ref.invalidate(usersProvider);
@@ -170,11 +205,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
       _emailController.clear();
       _passwordController.clear();
       _phoneController.clear();
-      setState(() {
-        _admin = false;
-        _readonly = false;
-        _disabled = false;
-      });
+      setState(() => _selectedRole = AppUserRole.operator);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Usuário criado com sucesso.')),
