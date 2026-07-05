@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' hide Image;
@@ -295,14 +295,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'dispositivos':
       case 'devices':
         return 'devices';
-      case 'veÃ­culos':
+      case 'veículos':
       case 've\u00EDculos':
       case 'vehicles':
         return 'vehicles';
       case 'alertas':
       case 'alerts':
         return 'alerts';
-      case 'relatÃ³rios':
+      case 'relatórios':
       case 'relat\u00F3rios':
       case 'reports':
         return 'reports';
@@ -320,13 +320,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'fences':
       case 'geofences':
         return 'geofences';
-      case 'manutenÃ§Ã£o':
+      case 'manutenção':
       case 'manutencao':
-      case 'ManutenÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o':
-      case 'manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'Manutenção':
+      case 'manutenção':
       case 'maintenance':
         return 'maintenance';
-      case 'comunicaÃ§Ã£o':
+      case 'comunicação':
       case 'comunica\u00E7\u00E3o':
       case 'communication':
         return 'communication';
@@ -334,7 +334,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'tickets':
       case 'calls':
         return 'tickets';
-      case 'configuraÃ§Ãµes':
+      case 'configurações':
       case 'configura\u00E7\u00F5es':
       case 'settings':
         return 'settings';
@@ -1404,7 +1404,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     final clusterModeChanged =
                         (_currentZoom < _OperationalMap.clusterZoomThreshold) !=
                             (nextZoom < _OperationalMap.clusterZoomThreshold);
+                    final labelModeChanged =
+                        (_currentZoom >= 13.0) != (nextZoom >= 13.0);
                     if (clusterModeChanged ||
+                        labelModeChanged ||
                         (nextZoom - _currentZoom).abs() >= 0.5) {
                       setState(() => _currentZoom = nextZoom);
                     } else {
@@ -1634,23 +1637,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     _vehiclePanelMode = _VehiclePanelMode.summary;
                   }),
                 ),
-              if (!pixelTelemetryMode &&
-                  !isPixeltiSession &&
-                  !_activePanelVisible)
-                _CopilotOperationalPanel(
-                  open: _copilotPanelOpen,
-                  settings: visualSettings,
-                  diagnosis: _lastVisualDiagnosis,
-                  onClose: _toggleCopilotPanel,
-                  onDiagnose: () => _runVisualDiagnosis(visualSettings),
-                  onReset: visualController.reset,
-                  onBalloonSize: visualController.setBalloonSize,
-                  onLogoMode: visualController.setLogoMode,
-                  onCardDensity: visualController.setCardDensity,
-                  onTransparency: visualController.setTransparency,
-                  onFontSize: visualController.setFontSize,
-                  onMapMode: visualController.setMapMode,
-                ),
+              // Copiloto removido do mapa — virou item de menu "IA Operacional"
             ],
           ),
         ),
@@ -1663,19 +1650,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String _panelSubtitle(String? id) {
     switch (id) {
       case 'dashboard':
-        return 'VisÃ£o geral da OperaÃ§Ã£o';
+        return 'Visão geral da Operação';
       case 'map':
         return 'Monitoramento em tempo real';
       case 'vehicles':
         return 'Cadastro e ciclo de vida da frota';
       case 'devices':
-        return 'GestÃ£o operacional de rastreadores';
+        return 'Gestão operacional de rastreadores';
       case 'telemetry':
         return 'Sensores e dados operacionais';
       case 'routes':
         return 'Hist\u00F3rico, replay e quilometragem';
       case 'alerts':
-        return 'Eventos, regras e notificaÃ§Ãµes';
+        return 'Eventos, regras e notificações';
       case 'maintenance':
         return 'Planos e hist\u00F3rico de manuten\u00E7\u00E3o';
       case 'geofences':
@@ -1685,25 +1672,25 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'communication':
         return 'Atendimento e mensagens operacionais';
       case 'ai-operations':
-        return 'Assistente inteligente da OperaÃ§Ã£o';
+        return 'Assistente inteligente da Operação';
       case 'finance':
-        return 'GestÃ£o financeira e cobranÃ§as';
+        return 'Gestão financeira e cobranças';
       case 'inventory':
         return 'Estoque e equipamentos vinculados';
       case 'mdvr':
-        return 'Monitoramento de cÃ¢meras e evidÃªncias';
+        return 'Monitoramento de câmeras e evidências';
       case 'telemetry-demo':
         return 'Sensores e dados operacionais';
       case 'logs':
-        return 'Data log por comunicaÃ§Ã£o do dispositivo';
+        return 'Data log por comunicação do dispositivo';
       case 'reports':
-        return 'RelatÃ³rios operacionais e executivos';
+        return 'Relatórios operacionais e executivos';
       case 'commands':
         return 'Comandos remotos e a\u00E7\u00F5es operacionais';
       case 'automations':
-        return 'Regras e gatilhos automÃ¡ticos';
+        return 'Regras e gatilhos automáticos';
       case 'settings':
-        return 'GovernanÃ§a e parÃ¢metros do ambiente';
+        return 'Governança e parâmetros do ambiente';
       default:
         return 'Painel integrado';
     }
@@ -2231,7 +2218,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: RoutesScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatÃ³rios',
+          moduleTitle: 'relatórios',
           items: const [
             (
               label: 'Paradas',
@@ -2246,7 +2233,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             (
               label: 'Quilometragem',
               icon: Icons.speed_outlined,
-              description: 'Consolidado de quilometragem rodada por veÃ­culo.',
+              description: 'Consolidado de quilometragem rodada por veículo.',
             ),
             (
               label: 'Rota obrigatoria',
@@ -2300,7 +2287,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: CallsScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatÃ³rios',
+          moduleTitle: 'relatórios',
           items: const [
             (
               label: 'Guincho',
@@ -2324,7 +2311,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             ),
             (
               label:
-                  'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                  'Manutenção',
               icon: Icons.build_outlined,
               description: 'Controle visual de manutencoes em aberto.',
             ),
@@ -2339,9 +2326,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Fluxo para ocorrencias de sinistro.',
             ),
             (
-              label: 'Suporte tÃ©cnico',
+              label: 'Suporte técnico',
               icon: Icons.support_agent_outlined,
-              description: 'Canal dedicado de suporte tÃ©cnico.',
+              description: 'Canal dedicado de suporte técnico.',
             ),
           ],
         ),
@@ -2377,18 +2364,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             operationId: 'cerca',
             title: 'Criar cerca por IA',
             description:
-                'Sugere parÃ¢metros de cerca e registra a criaÃ§Ã£o no fluxo operacional.',
+                'Sugere parâmetros de cerca e registra a criação no fluxo operacional.',
           ),
         ),
         _PanelToolEntry(
-          label: 'Criar relatÃ³rio por IA',
+          label: 'Criar relatório por IA',
           icon: Icons.analytics_outlined,
-          detail: 'Assistente ativo para relatÃ³rios',
+          detail: 'Assistente ativo para relatórios',
           child: _AiOperationAssistantScreen(
             operationId: 'relatorio',
-            title: 'Criar relatÃ³rio por IA',
+            title: 'Criar relatório por IA',
             description:
-                'Monta e dispara uma solicitaÃ§Ã£o de relatÃ³rio assistida por prompt.',
+                'Monta e dispara uma solicitação de relatório assistida por prompt.',
           ),
         ),
         _PanelToolEntry(
@@ -2398,26 +2385,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: _BridgeTicketCreateScreen(),
         ),
         _PanelToolEntry(
-          label: 'Resumo diÃ¡rio',
+          label: 'Resumo diário',
           icon: Icons.calendar_view_day_outlined,
-          detail: 'VisÃ£o consolidada da OperaÃ§Ã£o',
+          detail: 'Visão consolidada da Operação',
           child: StatisticsScreen(),
         ),
         _PanelToolEntry(
-          label: 'DiagnÃ³stico de risco',
+          label: 'Diagnóstico de risco',
           icon: Icons.monitor_heart_outlined,
           detail: 'Eventos criticos em tempo real',
           child: AlertsScreen(),
         ),
         _PanelToolEntry(
-          label: 'SuGestÃ£o de acao',
+          label: 'SuGestão de acao',
           icon: Icons.tips_and_updates_outlined,
           detail: 'Recomendacao operacional',
           child: _AiOperationAssistantScreen(
             operationId: 'acao',
-            title: 'SuGestÃ£o de acao',
+            title: 'SuGestão de acao',
             description:
-                'Registra recomendaÃ§Ãµes de acao priorizadas para o operador.',
+                'Registra recomendações de acao priorizadas para o operador.',
           ),
         ),
         _PanelToolEntry(
@@ -2448,28 +2435,28 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: ClientsScreen(),
         ),
         const _PanelToolEntry(
-          label: 'cobranÃ§as',
+          label: 'cobranças',
           icon: Icons.receipt_long_outlined,
           detail: 'Painel financeiro atual',
           child: FinanceScreen(),
         ),
         ..._placeholderEntries(
-          moduleTitle: 'relatÃ³rios',
+          moduleTitle: 'relatórios',
           items: const [
             (
               label: 'Pix',
               icon: Icons.pix_outlined,
-              description: 'Estrutura visual de cobranÃ§as por Pix.',
+              description: 'Estrutura visual de cobranças por Pix.',
             ),
             (
               label: 'Boleto',
               icon: Icons.description_outlined,
-              description: 'Estrutura visual de cobranÃ§as por boleto.',
+              description: 'Estrutura visual de cobranças por boleto.',
             ),
             (
               label: 'Cartao',
               icon: Icons.credit_card_outlined,
-              description: 'Estrutura visual de cobranÃ§as por cartao.',
+              description: 'Estrutura visual de cobranças por cartao.',
             ),
             (
               label: 'Recorrencias',
@@ -2487,9 +2474,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               description: 'Agenda visual de vencimentos financeiros.',
             ),
             (
-              label: 'relatÃ³rios financeiros',
+              label: 'relatórios financeiros',
               icon: Icons.bar_chart_outlined,
-              description: 'Conjunto de relatÃ³rios financeiros.',
+              description: 'Conjunto de relatórios financeiros.',
             ),
             (
               label: 'Split/comissoes',
@@ -2523,19 +2510,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const _PanelToolEntry(
           label: 'Frota em tempo real',
           icon: Icons.directions_car_outlined,
-          detail: 'VisÃ£o operacional',
+          detail: 'Visão operacional',
           child: VehiclesScreen(),
         ),
         const _PanelToolEntry(
           label: 'Dispositivos',
           icon: Icons.gps_fixed_outlined,
-          detail: 'VisÃ£o operacional em tempo real',
+          detail: 'Visão operacional em tempo real',
           child: DevicesScreen(),
         ),
         const _PanelToolEntry(
           label: 'Comandos',
           icon: Icons.terminal_outlined,
-          detail: 'aÃ§Ãµes remotas no equipamento',
+          detail: 'ações remotas no equipamento',
           child: CommandsScreen(),
         ),
         const _PanelToolEntry(
@@ -2570,7 +2557,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget _buildAutomationsPanel() {
     return _TraccarToolsPanel(
       key: const ValueKey('automations-tools'),
-      title: 'AutomaÃ§Ãµes',
+      title: 'Automações',
       entries: const [
         _PanelToolEntry(
           label: 'Regras automaticas',
@@ -2595,12 +2582,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ),
         _PanelToolEntry(
-          label: 'aÃ§Ãµes',
+          label: 'ações',
           icon: Icons.playlist_add_check_outlined,
-          detail: 'CatÃ¡logo ativo de aÃ§Ãµes',
+          detail: 'Catálogo ativo de ações',
           child: _AutomationWorkbenchScreen(
-            title: 'aÃ§Ãµes',
-            description: 'Configura a resposta automÃ¡tica apÃ³s cada gatilho.',
+            title: 'ações',
+            description: 'Configura a resposta automática após cada gatilho.',
             scope: 'actions',
             actionType: 'evento',
           ),
@@ -2612,65 +2599,65 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           child: _AutomationWorkbenchScreen(
             title: 'Webhooks',
             description:
-                'Configura e testa callbacks para integraÃ§Ãµes externas.',
+                'Configura e testa callbacks para integrações externas.',
             scope: 'webhooks',
             actionType: 'webhook',
           ),
         ),
         _PanelToolEntry(
-          label: 'Alertas automÃ¡ticos',
+          label: 'Alertas automáticos',
           icon: Icons.notification_important_outlined,
-          detail: 'AutomaÃ§Ã£o ativa de alertas',
+          detail: 'Automação ativa de alertas',
           child: _AutomationWorkbenchScreen(
-            title: 'Alertas automÃ¡ticos',
+            title: 'Alertas automáticos',
             description:
-                'Dispara alertas automÃ¡ticos quando o gatilho ocorrer.',
+                'Dispara alertas automáticos quando o gatilho ocorrer.',
             scope: 'alerts',
             actionType: 'alerta',
           ),
         ),
         _PanelToolEntry(
-          label: 'WhatsApp automÃ¡tico',
+          label: 'WhatsApp automático',
           icon: Icons.forum_outlined,
-          detail: 'AutomaÃ§Ã£o ativa de WhatsApp',
+          detail: 'Automação ativa de WhatsApp',
           child: _AutomationWorkbenchScreen(
-            title: 'WhatsApp automÃ¡tico',
+            title: 'WhatsApp automático',
             description:
-                'Envia mensagem automÃ¡tica para o destino configurado.',
+                'Envia mensagem automática para o destino configurado.',
             scope: 'whatsapp',
             actionType: 'whatsapp',
           ),
         ),
         _PanelToolEntry(
-          label: 'CriaÃ§Ã£o automÃ¡tica de chamado',
+          label: 'Criação automática de chamado',
           icon: Icons.add_box_outlined,
-          detail: 'Abertura automÃ¡tica ativa',
+          detail: 'Abertura automática ativa',
           child: _AutomationWorkbenchScreen(
-            title: 'CriaÃ§Ã£o automÃ¡tica de chamado',
+            title: 'Criação automática de chamado',
             description: 'Abre chamado automaticamente com dados do evento.',
             scope: 'tickets',
             actionType: 'ticket',
           ),
         ),
         _PanelToolEntry(
-          label: 'RelatÃ³rios automÃ¡ticos',
+          label: 'Relatórios automáticos',
           icon: Icons.description_outlined,
-          detail: 'Agendamento ativo de relatÃ³rios',
+          detail: 'Agendamento ativo de relatórios',
           child: _AutomationWorkbenchScreen(
-            title: 'RelatÃ³rios automÃ¡ticos',
-            description: 'Agenda e testa geraÃ§Ã£o automÃ¡tica de relatÃ³rios.',
+            title: 'Relatórios automáticos',
+            description: 'Agenda e testa geração automática de relatórios.',
             scope: 'reports',
             actionType: 'relatorio',
           ),
         ),
         _PanelToolEntry(
-          label: 'IntegraÃ§Ã£o MackFlow/Bridge',
+          label: 'Integração MackFlow/Bridge',
           icon: Icons.link_outlined,
-          detail: 'Registro ativo de integraÃ§Ã£o',
+          detail: 'Registro ativo de integração',
           child: _AutomationWorkbenchScreen(
-            title: 'IntegraÃ§Ã£o MackFlow/Bridge',
+            title: 'Integração MackFlow/Bridge',
             description:
-                'Registra payloads de integraÃ§Ã£o para uso do Bridge.',
+                'Registra payloads de integração para uso do Bridge.',
             scope: 'bridge',
             actionType: 'evento',
           ),
@@ -2766,6 +2753,10 @@ class _OperationalMap extends StatelessWidget {
       _replayRouteMarkerFutureByBucket =
       <int, Future<gmaps.BitmapDescriptor>>{};
   static const double _replayRouteMarkerRotationOffset = 0;
+  // Cache de labels dos veículos: chave = "id_speedLabel_colorValue"
+  static final Map<String, gmaps.BitmapDescriptor> _vehicleLabelCache = {};
+  // Cache de clusters por contagem (1-999)
+  static final Map<int, gmaps.BitmapDescriptor> _clusterIconCache = {};
 
   static Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>
       _loadVehicleMarkerIcons() async {
@@ -2885,6 +2876,146 @@ class _OperationalMap extends StatelessWidget {
   static int _courseToBucket8(double? course) {
     if (course == null) return 0;
     return ((course + 22.5) / 45).floor() % 8;
+  }
+
+  // Bitmap de label flutuante: card branco com nome + velocidade,
+  // 40px transparentes abaixo para posicionar acima do ícone do carro.
+  static Future<Uint8List> _buildVehicleLabelBytes({
+    required String name,
+    required String speedLabel,
+    required Color statusColor,
+  }) async {
+    const cardW = 190.0;
+    const cardH = 44.0;
+    const bottomPad = 44.0; // empurra label acima do ícone (72px, ancor 0.5,0.5)
+    const totalH = cardH + bottomPad;
+    const r = 9.0;
+
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Sombra suave
+    final shadowPaint = Paint()
+      ..color = const Color(0x22000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(3, 3, cardW - 2, cardH - 1),
+        const Radius.circular(r),
+      ),
+      shadowPaint,
+    );
+
+    // Fundo branco
+    final rrect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(1, 1, cardW - 2, cardH - 2),
+      const Radius.circular(r),
+    );
+    canvas.drawRRect(rrect, Paint()..color = Colors.white);
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = const Color(0xFFDDE5F0)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+
+    // Ponto de status
+    canvas.drawCircle(
+      const Offset(13, cardH / 2),
+      5,
+      Paint()..color = statusColor,
+    );
+
+    // Nome do veículo
+    final namePainter = TextPainter(
+      text: TextSpan(
+        text: name,
+        style: const TextStyle(
+          color: Color(0xFF1F2A44),
+          fontSize: 12.5,
+          fontWeight: FontWeight.w700,
+          decoration: TextDecoration.none,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: cardW - 26);
+    namePainter.paint(canvas, const Offset(23, 6));
+
+    // Velocidade / status
+    final speedPainter = TextPainter(
+      text: TextSpan(
+        text: speedLabel,
+        style: const TextStyle(
+          color: Color(0xFF6B7C95),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          decoration: TextDecoration.none,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: cardW - 26);
+    speedPainter.paint(canvas, const Offset(23, 24));
+
+    final image = await recorder
+        .endRecording()
+        .toImage(cardW.toInt(), totalH.toInt());
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
+    if (byteData == null) return Uint8List(0);
+    return byteData.buffer.asUint8List();
+  }
+
+  // Badge circular para clusters: círculo azul com número branco.
+  static Future<gmaps.BitmapDescriptor> _getClusterIcon(int count) async {
+    if (_clusterIconCache.containsKey(count)) return _clusterIconCache[count]!;
+    const size = 64.0;
+    const center = Offset(size / 2, size / 2);
+    const r = 28.0;
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Anel externo translúcido
+    canvas.drawCircle(
+        center, r + 6, Paint()..color = const Color(0x332F80FF));
+    // Círculo sólido
+    canvas.drawCircle(center, r, Paint()..color = const Color(0xFF2F80FF));
+    // Borda branca
+    canvas.drawCircle(
+        center, r,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5);
+
+    // Número
+    final label = count > 99 ? '99+' : '$count';
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: label.length > 2 ? 14 : 17,
+          fontWeight: FontWeight.w800,
+          decoration: TextDecoration.none,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas,
+        Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+
+    final image =
+        await recorder.endRecording().toImage(size.toInt(), size.toInt());
+    final byteData =
+        await image.toByteData(format: ImageByteFormat.png);
+    final desc = gmaps.BitmapDescriptor.bytes(
+        byteData?.buffer.asUint8List() ?? Uint8List(0));
+    _clusterIconCache[count] = desc;
+    return desc;
   }
 
   static int _replayRotationBucket(double? bearing) {
@@ -3072,6 +3203,35 @@ class _OperationalMap extends StatelessWidget {
               onTap: () => onVehicleTap(snapshot),
             ),
           );
+
+          // Labels: sempre para o selecionado; para os demais só em zoom >= 13.
+          final showLabel = isSelectedRouteVehicle || mapZoom >= 13.0;
+          if (showLabel) {
+            final labelKey =
+                '${snapshot.device.id}_${snapshot.speedLabel}_${snapshot.statusColor.value}';
+            final cachedLabel = _vehicleLabelCache[labelKey];
+            if (cachedLabel != null) {
+              markers.add(
+                gmaps.Marker(
+                  markerId: gmaps.MarkerId('label-${snapshot.device.id}'),
+                  position: markerPosition,
+                  anchor: const Offset(0.5, 1.0),
+                  consumeTapEvents: true,
+                  icon: cachedLabel,
+                  onTap: () => onVehicleTap(snapshot),
+                ),
+              );
+            } else {
+              _buildVehicleLabelBytes(
+                name: snapshot.device.name,
+                speedLabel: snapshot.speedLabel,
+                statusColor: snapshot.statusColor,
+              ).then((bytes) {
+                _vehicleLabelCache[labelKey] =
+                    gmaps.BitmapDescriptor.bytes(bytes);
+              });
+            }
+          }
         }
 
         if (!reportRouteMode && mapZoom < clusterZoomThreshold) {
@@ -3090,18 +3250,24 @@ class _OperationalMap extends StatelessWidget {
               addVehicleMarker(cluster.first);
               continue;
             }
+            final clusterCount = cluster.length;
+            final clusterIcon = _clusterIconCache[clusterCount];
             markers.add(
               gmaps.Marker(
                 markerId: gmaps.MarkerId('cluster-${entry.key}'),
                 position: _clusterCenter(cluster),
-                icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
-                  gmaps.BitmapDescriptor.hueAzure,
-                ),
+                anchor: const Offset(0.5, 0.5),
+                icon: clusterIcon ??
+                    gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                        gmaps.BitmapDescriptor.hueAzure),
                 infoWindow: gmaps.InfoWindow(
-                  title: '${cluster.length} ve\u00EDculos pr\u00F3ximos',
+                  title: '$clusterCount ve\u00EDculos pr\u00F3ximos',
                 ),
               ),
             );
+            if (clusterIcon == null) {
+              _getClusterIcon(clusterCount);
+            }
           }
         } else if (!reportRouteMode) {
           for (final snapshot in snapshotsWithPosition) {
@@ -3611,12 +3777,10 @@ class _RouteReplayControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeTotal = total <= 0 ? 1 : total;
     final boundedIndex = index.clamp(0, safeTotal - 1).toInt();
-    final leftInset = sidebarVisible ? (sidebarOpen ? 252.0 : 92.0) : 20.0;
-
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      left: leftInset,
+      left: 222,
       right: 20,
       bottom: visible ? 20 : -180,
       child: IgnorePointer(
@@ -3804,7 +3968,6 @@ class _ReplayControlButton extends StatelessWidget {
 class _TopSearchBar extends StatelessWidget {
   const _TopSearchBar({
     required this.brand,
-    required this.cardDensity,
     required this.logoMode,
     required this.hideLogoOnFullMap,
     required this.profileName,
@@ -3815,32 +3978,33 @@ class _TopSearchBar extends StatelessWidget {
     required this.onKpiTap,
     required this.onMenuTap,
     required this.menuOpen,
-    required this.sidebarVisible,
     required this.alertCount,
     required this.panelOpen,
     required this.activeTitle,
     required this.activeSubtitle,
     required this.onRefresh,
     required this.onClosePanel,
-    required this.onOpenSettingsPanel,
-    required this.showStatusCards,
     required this.onLogout,
-    required this.noCommunicationCount,
-    required this.showMapQuickActions,
-    required this.mapType,
-    required this.trafficEnabled,
-    required this.onMapTypeChanged,
-    required this.onTrafficToggle,
-    required this.onRecenter,
-    required this.onRefreshPositions,
-    required this.onFilterSelected,
-    required this.onClearFilters,
-    required this.onAiTap,
-    required this.aiPanelOpen,
+    // extra params from extended call-site (unused in build)
+    this.cardDensity,
+    this.sidebarVisible = true,
+    this.onOpenSettingsPanel,
+    this.showStatusCards = false,
+    this.noCommunicationCount = 0,
+    this.showMapQuickActions = false,
+    this.mapType,
+    this.trafficEnabled,
+    this.onMapTypeChanged,
+    this.onTrafficToggle,
+    this.onRecenter,
+    this.onRefreshPositions,
+    this.onFilterSelected,
+    this.onClearFilters,
+    this.onAiTap,
+    this.aiPanelOpen = false,
   });
 
   final WhiteLabelConfig brand;
-  final VisualCardDensity cardDensity;
   final VisualLogoMode logoMode;
   final bool hideLogoOnFullMap;
   final String profileName;
@@ -3851,255 +4015,209 @@ class _TopSearchBar extends StatelessWidget {
   final ValueChanged<_KpiFilter> onKpiTap;
   final VoidCallback onMenuTap;
   final bool menuOpen;
-  final bool sidebarVisible;
   final int alertCount;
   final bool panelOpen;
   final String? activeTitle;
   final String activeSubtitle;
   final VoidCallback onRefresh;
   final VoidCallback onClosePanel;
-  final VoidCallback onOpenSettingsPanel;
-  final bool showStatusCards;
   final VoidCallback onLogout;
+  final VisualCardDensity? cardDensity;
+  final bool sidebarVisible;
+  final VoidCallback? onOpenSettingsPanel;
+  final bool showStatusCards;
   final int noCommunicationCount;
   final bool showMapQuickActions;
-  final gmaps.MapType mapType;
-  final bool trafficEnabled;
-  final ValueChanged<gmaps.MapType> onMapTypeChanged;
-  final VoidCallback onTrafficToggle;
-  final VoidCallback onRecenter;
-  final VoidCallback onRefreshPositions;
-  final ValueChanged<_KpiFilter> onFilterSelected;
-  final VoidCallback onClearFilters;
-  final VoidCallback onAiTap;
+  final gmaps.MapType? mapType;
+  final bool? trafficEnabled;
+  final ValueChanged<gmaps.MapType>? onMapTypeChanged;
+  final VoidCallback? onTrafficToggle;
+  final VoidCallback? onRecenter;
+  final VoidCallback? onRefreshPositions;
+  final ValueChanged<_KpiFilter>? onFilterSelected;
+  final VoidCallback? onClearFilters;
+  final VoidCallback? onAiTap;
   final bool aiPanelOpen;
-
-  int _percent(int value, int total) {
-    if (total <= 0) return 0;
-    return ((value * 100) / total).round().clamp(0, 100);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final observedTotals = <int>[
-      kpis.online + kpis.offline,
-      kpis.moving,
-      alertCount,
-      noCommunicationCount,
-    ];
-    var totalFleet = 1;
-    for (final value in observedTotals) {
-      if (value > totalFleet) totalFleet = value;
-    }
     final title = activeTitle?.trim().isNotEmpty == true
         ? activeTitle!.trim()
-        : 'OperaÃ§Ã£o';
-    final compactDensity = cardDensity == VisualCardDensity.compact;
-    final sideWidth = !sidebarVisible
-        ? 0.0
-        : (menuOpen
-            ? (compactDensity ? 208.0 : 224.0)
-            : (compactDensity ? 68.0 : 72.0));
-    final leftInset = 16.0 + sideWidth + 12.0;
-
-    if (panelOpen && !showStatusCards) {
-      return Positioned(
-        left: leftInset,
-        right: 16,
-        top: 16,
-        child: _SurfaceGuard(
-          child: _GlassSurface(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            child: Row(
-              children: [
-                _TopIcon(
-                  icon: sidebarVisible
-                      ? Icons.menu_open_rounded
-                      : Icons.menu_rounded,
-                  count: null,
-                  onTap: onMenuTap,
-                  tooltip:
-                      sidebarVisible ? 'Ocultar sidebar' : 'Mostrar sidebar',
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF176EEB).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: const Icon(
-                    Icons.dashboard_customize_outlined,
-                    color: Color(0xFF176EEB),
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF1F2A44),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 1),
-                      Text(
-                        activeSubtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF60718D),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const _TopSearchToggleField(compact: true),
-                IconButton(
-                  tooltip: 'Atualizar dados',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onRefresh,
-                  icon: const Icon(
-                    Icons.refresh_rounded,
-                    color: Color(0xFF52627C),
-                    size: 20,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Fechar painel',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onClosePanel,
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Color(0xFF52627C),
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+        : 'Operacao';
+    final brandName =
+        brand.appName.trim().isEmpty ? 'SouTracking' : brand.appName.trim();
+    final brandLogoAsset = brand.logoAsset?.trim() ?? '';
+    final hasBrandLogo = brandLogoAsset.isNotEmpty;
+    final hideBrand =
+        logoMode == VisualLogoMode.hideOnFullMap && hideLogoOnFullMap;
+    final compactLogo = logoMode == VisualLogoMode.compact;
+    final logoHeight = compactLogo ? 18.0 : 24.0;
+    final brandWidth = compactLogo ? 178.0 : (hasBrandLogo ? 236.0 : 186.0);
 
     return Positioned(
-      left: leftInset,
+      left: 16,
       right: 16,
       top: 16,
       child: _SurfaceGuard(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _TopIcon(
-                icon: sidebarVisible
-                    ? Icons.menu_open_rounded
-                    : Icons.menu_rounded,
-                count: null,
-                onTap: onMenuTap,
-                tooltip: sidebarVisible ? 'Ocultar sidebar' : 'Mostrar sidebar',
-              ),
-              const SizedBox(width: 8),
-              const _TopSearchToggleField(),
-              if (showStatusCards) ...[
-                const SizedBox(width: 10),
-                _MapKpiCard(
-                  title: 'Online',
-                  value: kpis.online,
-                  subtitle: '${_percent(kpis.online, totalFleet)}% do total',
-                  icon: Icons.wifi_tethering_rounded,
-                  color: const Color(0xFF2EDD87),
-                  selected: activeFilter == _KpiFilter.online,
-                  onTap: () => onKpiTap(_KpiFilter.online),
-                ),
-                const SizedBox(width: 8),
-                _MapKpiCard(
-                  title: 'Offline',
-                  value: kpis.offline,
-                  subtitle: '${_percent(kpis.offline, totalFleet)}% do total',
-                  icon: Icons.power_settings_new_rounded,
-                  color: const Color(0xFF9BA9BE),
-                  selected: activeFilter == _KpiFilter.offline,
-                  onTap: () => onKpiTap(_KpiFilter.offline),
-                ),
-                const SizedBox(width: 8),
-                _MapKpiCard(
-                  title: 'Em movimento',
-                  value: kpis.moving,
-                  subtitle: '${_percent(kpis.moving, totalFleet)}% do total',
-                  icon: Icons.directions_car_filled_outlined,
-                  color: const Color(0xFFF5A623),
-                  selected: activeFilter == _KpiFilter.moving,
-                  onTap: () => onKpiTap(_KpiFilter.moving),
-                ),
-                const SizedBox(width: 8),
-                _MapKpiCard(
-                  title: 'Alertas',
-                  value: alertCount,
-                  subtitle: '${_percent(alertCount, totalFleet)}% do total',
-                  icon: Icons.warning_amber_rounded,
-                  color: const Color(0xFFEB5962),
-                  selected: activeFilter == _KpiFilter.alerts,
-                  onTap: () => onKpiTap(_KpiFilter.alerts),
-                ),
-                const SizedBox(width: 8),
-                _MapKpiCard(
-                  title: 'Sem comunica\u00E7\u00E3o',
-                  value: noCommunicationCount,
-                  subtitle:
-                      '${_percent(noCommunicationCount, totalFleet)}% do total',
-                  icon: Icons.wifi_off_rounded,
-                  color: const Color(0xFFF8B400),
-                  selected: activeFilter == _KpiFilter.noCommunication,
-                  onTap: () => onKpiTap(_KpiFilter.noCommunication),
-                ),
-              ],
-              const SizedBox(width: 12),
-              _TopIcon(
-                icon: Icons.notifications_none_outlined,
-                count: alertCount > 0 ? alertCount : null,
-              ),
+        child: Row(
+          children: [
+            _GlassButton(
+              tooltip: menuOpen ? 'Recolher menu' : 'Expandir menu',
+              icon: menuOpen ? Icons.menu_open_rounded : Icons.menu_rounded,
+              onTap: onMenuTap,
+            ),
+            if (!hideBrand) ...[
               const SizedBox(width: 10),
-              _TopIcon(
-                icon: Icons.psychology_alt_outlined,
-                count: null,
-                onTap: onAiTap,
-                tooltip:
-                    aiPanelOpen ? 'Fechar IA Operacional' : 'IA Operacional',
-                selected: aiPanelOpen,
-              ),
-              const SizedBox(width: 10),
-              _ProfileMenuButton(
-                onLogout: onLogout,
-                profileName: profileName,
-                profileDetail: profileDetail,
-                compactMenu: compactProfileMenu,
-                avatarOnly: true,
-                showQuickActions: showMapQuickActions,
-                onFilterSelected: onFilterSelected,
-                onClearFilters: onClearFilters,
-                mapType: mapType,
-                trafficEnabled: trafficEnabled,
-                onMapTypeChanged: onMapTypeChanged,
-                onTrafficToggle: onTrafficToggle,
-                onRecenter: onRecenter,
-                onRefreshPositions: onRefreshPositions,
-                onOpenQuickSettings: onOpenSettingsPanel,
+              _GlassSurface(
+                width: brandWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: hasBrandLogo
+                          ? Image.asset(
+                              brandLogoAsset,
+                              height: logoHeight,
+                              fit: BoxFit.contain,
+                              alignment: Alignment.centerLeft,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Text(
+                                  brandName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF1F2A44),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: compactLogo ? 13 : 16,
+                                  ),
+                                );
+                              },
+                            )
+                          : Text(
+                              brandName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF1F2A44),
+                                fontWeight: FontWeight.w900,
+                                fontSize: compactLogo ? 13 : 16,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
+            const SizedBox(width: 10),
+            _GlassButton(
+              tooltip: 'Buscar',
+              icon: Icons.search_rounded,
+              onTap: () {},
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: panelOpen
+                    ? _GlassSurface(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF176EEB)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              child: const Icon(
+                                Icons.dashboard_customize_outlined,
+                                color: Color(0xFF176EEB),
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '$title - Dados de rastreamento',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF1F2A44),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    activeSubtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF60718D),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Atualizar dados',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: onRefresh,
+                              icon: const Icon(
+                                Icons.refresh_rounded,
+                                color: Color(0xFF52627C),
+                                size: 20,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Fechar painel',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: onClosePanel,
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Color(0xFF52627C),
+                                size: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _KpiStrip(
+                        kpis: kpis,
+                        activeFilter: activeFilter,
+                        onTap: onKpiTap,
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            _TopIcon(
+              icon: Icons.notifications_none_outlined,
+              count: alertCount > 0 ? alertCount : null,
+            ),
+            const SizedBox(width: 10),
+            const _TopIcon(icon: Icons.grid_view_rounded, count: null),
+            const SizedBox(width: 10),
+            _ProfileMenuButton(
+              onLogout: onLogout,
+              profileName: profileName,
+              profileDetail: profileDetail,
+              compactMenu: compactProfileMenu,
+            ),
+          ],
         ),
       ),
     );
@@ -4254,8 +4372,8 @@ class _MapKpiCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: _GlassSurface(
-          width: 108,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          width: 148,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           borderColor:
               selected ? const Color(0xFFBBD7FF) : const Color(0xFFDDE6F2),
           child: Row(
@@ -4470,7 +4588,7 @@ class _ProfileMenuButton extends StatelessWidget {
                   color: Color(0xFF52627C),
                 ),
                 SizedBox(width: 10),
-                Expanded(child: Text('ConfiguraÃ§Ãµes rÃ¡pidas')),
+                Expanded(child: Text('Configurações rápidas')),
               ],
             ),
           ),
@@ -4506,7 +4624,7 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
             const PopupMenuItem<String>(
               value: _filterNoComKey,
-              child: Text('Sem comunicaÃ§Ã£o'),
+              child: Text('Sem comunicação'),
             ),
             const PopupMenuItem<String>(
               value: _filterClearKey,
@@ -4517,7 +4635,7 @@ class _ProfileMenuButton extends StatelessWidget {
               enabled: false,
               height: 28,
               child: Text(
-                'OpÃ§Ãµes de mapa',
+                'Opções de mapa',
                 style: TextStyle(
                   color: Color(0xFF60718D),
                   fontWeight: FontWeight.w800,
@@ -4551,7 +4669,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('SatÃ©lite'),
+                  const Text('Satélite'),
                 ],
               ),
             ),
@@ -4566,7 +4684,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('HÃ­brido'),
+                  const Text('Híbrido'),
                 ],
               ),
             ),
@@ -4581,7 +4699,7 @@ class _ProfileMenuButton extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text('TrÃ¢nsito on/off'),
+                  const Text('Trânsito on/off'),
                 ],
               ),
             ),
@@ -4591,7 +4709,7 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
             const PopupMenuItem<String>(
               value: _mapRefreshKey,
-              child: Text('Atualizar posiÃ§Ãµes'),
+              child: Text('Atualizar posições'),
             ),
           ],
           const PopupMenuDivider(),
@@ -4684,48 +4802,38 @@ class _SideMenu extends StatelessWidget {
   const _SideMenu({
     required this.open,
     required this.cardDensity,
-    required this.brandName,
-    required this.brandLogoAsset,
-    required this.onToggle,
     required this.items,
     required this.activeId,
     required this.onSelect,
     required this.onLogout,
+    // extra params from extended call-site (unused in build)
+    this.brandName,
+    this.brandLogoAsset,
+    this.onToggle,
   });
 
   final bool open;
   final VisualCardDensity cardDensity;
-  final String brandName;
-  final String? brandLogoAsset;
-  final VoidCallback onToggle;
   final List<_OperationalMenuItem> items;
   final String? activeId;
   final ValueChanged<_OperationalMenuItem> onSelect;
   final VoidCallback onLogout;
+  final String? brandName;
+  final String? brandLogoAsset;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
     final expanded = open;
     final compactDensity = cardDensity == VisualCardDensity.compact;
-    final cleanBrandName = brandName.trim().isEmpty ? 'SouTracking' : brandName;
-    final requestedLogoAsset = brandLogoAsset?.trim() ?? '';
-    const defaultSoutrackingLogoAsset =
-        'assets/branding/soutracking_logo_horizontal.png';
-    final isSoutrackingBrand =
-        cleanBrandName.toLowerCase().contains('soutracking');
-    final logoAsset =
-        isSoutrackingBrand ? defaultSoutrackingLogoAsset : requestedLogoAsset;
-    final hasLogo = logoAsset.isNotEmpty;
-    final expandedWidth = compactDensity ? 222.0 : 238.0;
-    final collapsedWidth = compactDensity ? 68.0 : 72.0;
-
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
       left: compactDensity ? 12 : 16,
-      top: 16,
-      bottom: 16,
-      width: expanded ? expandedWidth : collapsedWidth,
+      top: 86,
+      bottom: 18,
+      width:
+          expanded ? (compactDensity ? 190 : 206) : (compactDensity ? 52 : 56),
       child: IgnorePointer(
         ignoring: false,
         child: _SurfaceGuard(
@@ -4741,86 +4849,11 @@ class _SideMenu extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  if (expanded) ...[
-                    SizedBox(
-                      height: 58,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            tooltip: 'Recolher menu',
-                            onPressed: onToggle,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 34,
-                              minHeight: 34,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(
-                              Icons.menu_open_rounded,
-                              color: Color(0xFF25344A),
-                              size: 19,
-                            ),
-                          ),
-                          const SizedBox(width: 1),
-                          Expanded(
-                            child: hasLogo
-                                ? Container(
-                                    color: Colors.transparent,
-                                    alignment: Alignment.centerLeft,
-                                    child: SizedBox(
-                                      height: compactDensity ? 42 : 46,
-                                      child: Image.asset(
-                                        logoAsset,
-                                        fit: BoxFit.fitWidth,
-                                        width: double.infinity,
-                                        alignment: Alignment.centerLeft,
-                                        errorBuilder: (_, __, ___) => Text(
-                                          cleanBrandName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Color(0xFF1F2A44),
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Text(
-                                    cleanBrandName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF1F2A44),
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Divider(color: Color(0xFFE2E8F0), height: 1),
-                    const SizedBox(height: 8),
-                  ] else ...[
-                    IconButton(
-                      tooltip: 'Expandir menu',
-                      onPressed: onToggle,
-                      icon: const Icon(
-                        Icons.menu_rounded,
-                        color: Color(0xFF25344A),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
                   Expanded(
                     child: ListView.separated(
                       padding: EdgeInsets.zero,
                       itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 2),
+                      separatorBuilder: (_, __) => const SizedBox(height: 3),
                       itemBuilder: (context, index) {
                         final item = items[index];
                         return _MenuTile(
@@ -4856,15 +4889,6 @@ class _SideMenu extends StatelessWidget {
                         IconButton(
                           tooltip: 'Sair',
                           onPressed: onLogout,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 30,
-                            minHeight: 30,
-                          ),
-                          style: IconButton.styleFrom(
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
                           icon: const Icon(
                             Icons.logout_rounded,
                             color: Color(0xFF71819B),
@@ -4894,7 +4918,6 @@ class _SideMenu extends StatelessWidget {
     );
   }
 }
-
 class _MenuTile extends StatelessWidget {
   const _MenuTile({
     required this.item,
@@ -5162,7 +5185,7 @@ class _NoVehiclesMapHint extends StatelessWidget {
               ),
               SizedBox(height: 8),
               Text(
-                'Nenhum equipamento com posiÃ§Ã£o vÃ¡lida no momento',
+                'Nenhum equipamento com posição válida no momento',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
@@ -5214,7 +5237,7 @@ class _KpiVehicleList extends StatelessWidget {
     final sidebarWidth = !sidebarVisible
         ? 0.0
         : (sidebarOpen ? (compactDensity ? 208.0 : 224.0) : 72.0);
-    final openedLeft = 16.0 + sidebarWidth + 12.0;
+    final openedLeft = compactDensity ? 210.0 : 226.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
@@ -5263,7 +5286,7 @@ class _KpiVehicleList extends StatelessWidget {
                     child: snapshots.isEmpty
                         ? const Center(
                             child: Text(
-                              'Nenhum veÃ­culo disponivel no momento',
+                              'Nenhum veículo disponivel no momento',
                               style: TextStyle(color: Color(0xFF52627C)),
                             ),
                           )
@@ -5379,11 +5402,8 @@ class _IntegratedPanel extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final compact = screenWidth < 760;
     final compactDensity = cardDensity == VisualCardDensity.compact;
-    final sidebarWidth = !sidebarVisible
-        ? 0.0
-        : (sidebarOpen ? (compactDensity ? 208.0 : 224.0) : 72.0);
-    final leftInset = compact ? 16.0 : (16.0 + sidebarWidth + 12.0);
-    final rightInset = compact ? 16.0 : 32.0;
+    final leftInset = compact ? 16.0 : (compactDensity ? 216.0 : 238.0);
+    const rightInset = 24.0;
     final availableWidth = screenWidth - leftInset - rightInset;
     final width = availableWidth
         .clamp(320.0, compactDensity ? 1280.0 : 1240.0)
@@ -5838,19 +5858,19 @@ class _PixelTelemetrySidebar extends StatelessWidget {
       ),
       (
         id: 'reports',
-        label: 'relatÃ³rios',
+        label: 'relatórios',
         icon: Icons.insert_chart_outlined,
         selected: false
       ),
       (
         id: 'communication',
-        label: 'comunicaÃ§Ã£o',
+        label: 'comunicação',
         icon: Icons.chat_bubble_outline,
         selected: false
       ),
       (
         id: 'settings',
-        label: 'ConfiguraÃ§Ãµes',
+        label: 'Configurações',
         icon: Icons.settings_outlined,
         selected: false
       ),
@@ -6055,7 +6075,7 @@ class _PixelTelemetryContent extends StatelessWidget {
                           ),
                           SizedBox(height: 3),
                           Text(
-                            'VisÃ£o geral dos equipamentos da OperaÃ§Ã£o',
+                            'Visão geral dos equipamentos da Operação',
                             style: TextStyle(
                               color: Color(0xFF8DA7CC),
                               fontWeight: FontWeight.w500,
@@ -6132,7 +6152,7 @@ class _PixelTelemetryContent extends StatelessWidget {
                         icon: Icons.wifi_off_rounded,
                       ),
                       _PixelKpiCard(
-                        title: 'Sem comunicaÃ§Ã£o',
+                        title: 'Sem comunicação',
                         value: '$noSignal',
                         hint: total > 0
                             ? '${((noSignal / total) * 100).round()}% do total'
@@ -6448,14 +6468,14 @@ class _PixelDevicesTable extends StatelessWidget {
               DataColumn(label: Text('Status')),
               DataColumn(label: Text('Equipamento')),
               DataColumn(label: Text('IMEI / ID')),
-              DataColumn(label: Text('veÃ­culo / Ativo')),
+              DataColumn(label: Text('veículo / Ativo')),
               DataColumn(label: Text('Grupo')),
               DataColumn(label: Text('Ultima Conexao')),
               DataColumn(label: Text('Velocidade')),
               DataColumn(label: Text('Ignição')),
               DataColumn(label: Text('Bateria')),
               DataColumn(label: Text('Sinal GSM')),
-              DataColumn(label: Text('aÃ§Ãµes')),
+              DataColumn(label: Text('ações')),
             ],
             rows: [
               for (final row in rows) _deviceRow(row),
@@ -6487,9 +6507,7 @@ class _PixelDevicesTable extends StatelessWidget {
   DataRow _deviceRow(_VehicleSnapshot row) {
     final statusText = _statusLabel(row);
     final statusColor = _statusColor(row);
-    final model = (row.modelLabel ==
-                'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â' ||
-            row.modelLabel == 'Não informado')
+    final model = (row.modelLabel.isEmpty || row.modelLabel == '—' || row.modelLabel == 'Não informado')
         ? row.device.name
         : row.modelLabel;
     final groupRaw = row.device.attributes?['groupId'] ??
@@ -7111,21 +7129,21 @@ class _HighlightsRail extends StatelessWidget {
                     icon: Icons.map_outlined,
                     title: 'Mapa como plano de fundo',
                     text:
-                        'Google Maps hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­brido sempre visÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel.',
+                        'Google Maps híbrido sempre visível.',
                   ),
                   _HighlightItem(
                     icon: Icons.layers_outlined,
                     title:
-                        'Menus translÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºcidos',
+                        'Menus translúcidos',
                     text:
-                        'PainÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©is claros sobre o mapa.',
+                        'Painéis claros sobre o mapa.',
                   ),
                   _HighlightItem(
                     icon: Icons.speed_rounded,
                     title:
-                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego e velocidade',
+                        'Tráfego e velocidade',
                     text:
-                        'TrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡fego Google + telemetria do veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culo.',
+                        'Tráfego Google + telemetria do veículo.',
                   ),
                 ],
               ),
@@ -7221,10 +7239,8 @@ class _VehicleCompactPopup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compactDensity = cardDensity == VisualCardDensity.compact;
-    final sidebarWidth = sidebarOpen ? (compactDensity ? 208.0 : 224.0) : 72.0;
-    final leftInset = 16.0 + sidebarWidth + 16.0;
     return Positioned(
-      left: leftInset,
+      left: compactDensity ? 242 : 270,
       top: 142,
       child: _SurfaceGuard(
         child: Transform.scale(
@@ -7535,16 +7551,39 @@ class _VehicleBottomContent extends StatelessWidget {
       builder: (context, constraints) {
         final compact =
             constraints.maxWidth < 1040 || constraints.maxHeight < 320;
-        final summaryMetrics = <(IconData icon, String label, String value)>[
-          (Icons.speed_rounded, 'Velocidade', snapshot.speedLabel),
-          (Icons.power_settings_new_rounded, 'Ignição', snapshot.ignitionLabel),
-          (
-            Icons.battery_charging_full_rounded,
-            'Bateria',
-            snapshot.batteryLabel,
-          ),
-          (Icons.network_cell_rounded, 'Sinal GSM', snapshot.gsmSignalLabel),
-        ];
+        final isDriver = snapshot.isDriver;
+        final summaryMetrics = isDriver
+            ? <(IconData icon, String label, String value)>[
+                (Icons.speed_rounded, 'Velocidade', snapshot.speedLabel),
+                (
+                  Icons.person_pin_circle_rounded,
+                  'Tipo',
+                  'Prestador SouFind',
+                ),
+                (
+                  Icons.access_time_rounded,
+                  'Última posição',
+                  snapshot.relativeLastPoint,
+                ),
+              ]
+            : <(IconData icon, String label, String value)>[
+                (Icons.speed_rounded, 'Velocidade', snapshot.speedLabel),
+                (
+                  Icons.power_settings_new_rounded,
+                  'Ignição',
+                  snapshot.ignitionLabel,
+                ),
+                (
+                  Icons.battery_charging_full_rounded,
+                  'Bateria',
+                  snapshot.batteryLabel,
+                ),
+                (
+                  Icons.network_cell_rounded,
+                  'Sinal GSM',
+                  snapshot.gsmSignalLabel,
+                ),
+              ];
 
         Widget modeButton({
           required IconData icon,
@@ -7576,6 +7615,16 @@ class _VehicleBottomContent extends StatelessWidget {
         }
 
         final isCollapsed = panelMode == _VehiclePanelMode.collapsed;
+        final iconBgColor =
+            isDriver ? const Color(0xFFEDFAF0) : const Color(0xFFEAF2FF);
+        final iconBorderColor =
+            isDriver ? const Color(0xFFB2EFC2) : const Color(0xFFD7E6FF);
+        final iconColor =
+            isDriver ? const Color(0xFF1A9E3F) : const Color(0xFF176EEB);
+        final iconData = isDriver
+            ? Icons.engineering_rounded
+            : Icons.directions_car_filled_rounded;
+
         final header = SizedBox(
           height: isCollapsed ? 60 : 68,
           child: Padding(
@@ -7586,13 +7635,13 @@ class _VehicleBottomContent extends StatelessWidget {
                   width: isCollapsed ? 30 : 38,
                   height: isCollapsed ? 30 : 38,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEAF2FF),
+                    color: iconBgColor,
                     borderRadius: BorderRadius.circular(isCollapsed ? 9 : 11),
-                    border: Border.all(color: const Color(0xFFD7E6FF)),
+                    border: Border.all(color: iconBorderColor),
                   ),
                   child: Icon(
-                    Icons.directions_car_filled_rounded,
-                    color: const Color(0xFF176EEB),
+                    iconData,
+                    color: iconColor,
                     size: isCollapsed ? 18 : 21,
                   ),
                 ),
@@ -9339,7 +9388,7 @@ class _VehicleCommandsTabState extends ConsumerState<_VehicleCommandsTab> {
   @override
   Widget build(BuildContext context) {
     final commands = [
-      ('positionSingle', Icons.my_location_outlined, 'PosiÃ§Ã£o'),
+      ('positionSingle', Icons.my_location_outlined, 'Posição'),
       ('engineStop', Icons.lock_outline_rounded, 'Bloquear'),
       ('engineResume', Icons.lock_open_rounded, 'Desbloquear'),
       ('alarm', Icons.notifications_active_outlined, 'Alarme'),
@@ -9554,11 +9603,11 @@ class _VehicleTabChip extends StatelessWidget {
 }
 
 enum _VehicleBottomTab {
-  overview('VisÃ£o geral', Icons.dashboard_customize_outlined),
+  overview('Visão geral', Icons.dashboard_customize_outlined),
   photos('Fotos', Icons.image_outlined),
   commands('Comandos', Icons.terminal_rounded),
   chart('Grafico', Icons.show_chart_outlined),
-  info('InformaÃ§Ãµes', Icons.info_outline_rounded);
+  info('Informações', Icons.info_outline_rounded);
 
   const _VehicleBottomTab(this.label, this.icon);
 
@@ -10371,7 +10420,7 @@ class _CopilotOperationalPanel extends StatelessWidget {
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
       top: 92,
-      bottom: 20,
+      bottom: 24,
       right: open ? 16 : -410,
       width: 390,
       child: IgnorePointer(
@@ -10457,7 +10506,7 @@ class _CopilotOperationalPanel extends StatelessWidget {
                             ),
                             const SizedBox(height: 12),
                             _CopilotChoiceGroup<VisualBalloonSize>(
-                              title: 'Tamanho dos balÃµes',
+                              title: 'Tamanho dos balões',
                               selected: settings.balloonSize,
                               options: const [
                                 _CopilotOption(
@@ -10603,7 +10652,7 @@ class _CopilotOperationalPanel extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 8),
                                     _CopilotDiagnosisRow(
-                                      label: 'SuGestÃ£o de ajuste',
+                                      label: 'SuGestão de ajuste',
                                       value: diagnosis!.adjustmentSuggestion,
                                     ),
                                     const SizedBox(height: 8),
@@ -10826,30 +10875,30 @@ class _CopilotInlineChatState extends State<_CopilotInlineChat> {
           'Se precisar de contraste maior, combine mapa escuro com transparencia baixa.';
     }
     if (text.contains('logo')) {
-      return 'VocÃª pode manter o logo normal, compacto ou ocultar no mapa cheio. '
+      return 'Você pode manter o logo normal, compacto ou ocultar no mapa cheio. '
           'Para foco operacional, recomendo ocultar no mapa cheio.';
     }
     if (text.contains('fonte') || text.contains('texto')) {
-      return 'Ative fonte grande para leitura em operaÃ§Ã£o. '
-          'Se a tela ficar densa, combine com cards confortÃ¡veis.';
+      return 'Ative fonte grande para leitura em operação. '
+          'Se a tela ficar densa, combine com cards confortáveis.';
     }
     if (text.contains('transparen') || text.contains('vidro')) {
       return 'Transparencia baixa melhora leitura; alta destaca mapa. '
-          'Para uso diÃ¡rio, mÃ©dio costuma equilibrar visual e legibilidade.';
+          'Para uso diário, médio costuma equilibrar visual e legibilidade.';
     }
     if (text.contains('card') || text.contains('compact')) {
-      return 'Cards compactos aumentam Ã¡rea Ãºtil; confortÃ¡vel melhora leitura. '
-          'VocÃª pode alternar instantaneamente para comparar.';
+      return 'Cards compactos aumentam área útil; confortável melhora leitura. '
+          'Você pode alternar instantaneamente para comparar.';
     }
     if (text.contains('resumo') || text.contains('status')) {
       return summary();
     }
     if (text.contains('balao') || text.contains('popup')) {
-      return 'Tamanho dos balÃµes ajusta o popup rÃ¡pido do veÃ­culo no mapa. '
-          'Grande favorece toque, pequeno reduz obstruÃ§Ã£o.';
+      return 'Tamanho dos balões ajusta o popup rápido do veículo no mapa. '
+          'Grande favorece toque, pequeno reduz obstrução.';
     }
 
-    return 'Entendi. Posso te guiar em ajustes de mapa, cards, transparÃªncia, fonte e logo. ${summary()}';
+    return 'Entendi. Posso te guiar em ajustes de mapa, cards, transparência, fonte e logo. ${summary()}';
   }
 
   @override
@@ -11190,7 +11239,7 @@ class _AiOperationAssistantScreenState
   @override
   void initState() {
     super.initState();
-    _contextController.text = 'OperaÃ§Ã£o monitorada pelo painel SouTracking';
+    _contextController.text = 'Operação monitorada pelo painel SouTracking';
   }
 
   @override
@@ -11213,7 +11262,7 @@ class _AiOperationAssistantScreenState
     final payload = <String, dynamic>{
       'origem': 'SouTracking',
       'modulo': 'ia_operacional',
-      'OperaÃ§Ã£o': widget.operationId,
+      'Operação': widget.operationId,
       'alvo': _targetController.text.trim(),
       'prompt': prompt,
       'contexto': _contextController.text.trim(),
@@ -11293,7 +11342,7 @@ class _AiOperationAssistantScreenState
               TextField(
                 controller: _targetController,
                 decoration: const InputDecoration(
-                  labelText: 'Alvo (veÃ­culo, grupo ou regra)',
+                  labelText: 'Alvo (veículo, grupo ou regra)',
                   hintText: 'Ex.: AB12, Frota Escolar, Regra de risco',
                   border: OutlineInputBorder(),
                 ),
@@ -11305,7 +11354,7 @@ class _AiOperationAssistantScreenState
                 maxLines: 5,
                 decoration: const InputDecoration(
                   labelText: 'Prompt operacional',
-                  hintText: 'Descreva o que a IA deve gerar para a OperaÃ§Ã£o.',
+                  hintText: 'Descreva o que a IA deve gerar para a Operação.',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -11707,10 +11756,10 @@ class _BridgeTicketCreateScreen extends StatefulWidget {
 
 class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
   static const List<String> _tipos = [
-    'Suporte tÃ©cnico',
+    'Suporte técnico',
     'Sem comunica\u00E7\u00E3o',
     'Instalacao',
-    'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Manutenção',
     'Guincho',
     'Vistoria',
     'Sinistro',
@@ -11758,7 +11807,7 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
     return 'Chamado criado no SouTracking.\n'
         'Tipo: $tipo\n'
         'Prioridade: $prioridade\n'
-        'veÃ­culo: $vehicleId\n'
+        'veículo: $vehicleId\n'
         'Status: aguardando envio para SouFind.';
   }
 
@@ -11767,7 +11816,7 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
     final descricao = _descricaoController.text.trim();
     if (vehicleId.isEmpty || descricao.isEmpty) {
       setState(() {
-        _erro = 'Preencha veÃ­culo e descricao para criar o chamado.';
+        _erro = 'Preencha veículo e descricao para criar o chamado.';
       });
       return;
     }
@@ -11917,8 +11966,8 @@ class _BridgeTicketCreateScreenState extends State<_BridgeTicketCreateScreen> {
               TextField(
                 controller: _vehicleIdController,
                 decoration: const InputDecoration(
-                  labelText: 'veÃ­culo',
-                  hintText: 'Ex.: ABC-1234 ou ID do veÃ­culo',
+                  labelText: 'veículo',
+                  hintText: 'Ex.: ABC-1234 ou ID do veículo',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -12176,7 +12225,7 @@ class _InventoryDemoScreen extends StatelessWidget {
     ),
     _InventorySummaryData(
       title:
-          'Em manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'Em manutenção',
       value: '6',
       icon: Icons.build_circle_outlined,
       color: Color(0xFFD97706),
@@ -12236,7 +12285,7 @@ class _InventoryDemoScreen extends StatelessWidget {
       idNumber: '-',
       carrier: '-',
       status:
-          'ManutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'Manutenção',
       technician: 'Carlos Tecnico',
       vehicle: 'XYZ-9876',
       movement: 'Retorno tecnico',
@@ -12246,19 +12295,19 @@ class _InventoryDemoScreen extends StatelessWidget {
   static const _history = <String>[
     '23:10 Entrada de rastreador 4G',
     '22:45 Saida de chip Vivo para tecnico',
-    '21:30 Instalacao no veÃ­culo ABC-1234',
-    '20:10 RelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© enviado para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    '21:30 Instalacao no veículo ABC-1234',
+    '20:10 Relé enviado para manutenção',
   ];
 
   static const _actions = <String>[
     'Entrada',
     'Saida para tecnico',
-    'Instalar no veÃ­culo',
+    'Instalar no veículo',
     'Trocar chip',
-    'Enviar para manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Enviar para manutenção',
     'Devolver ao estoque',
     'Dar baixa',
-    'Ver histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico',
+    'Ver histórico',
   ];
 
   void _showAction(BuildContext context, String action) {
@@ -12285,7 +12334,7 @@ class _InventoryDemoScreen extends StatelessWidget {
               ),
               SizedBox(height: 6),
               Text(
-                'Controle de rastreadores, chips, acessorios e movimentaÃ§Ãµes operacionais.',
+                'Controle de rastreadores, chips, acessorios e movimentações operacionais.',
                 style: TextStyle(
                   color: Color(0xFF526684),
                   fontWeight: FontWeight.w600,
@@ -12384,7 +12433,7 @@ class _InventoryDemoScreen extends StatelessWidget {
                       DataColumn(label: Text('Operadora')),
                       DataColumn(label: Text('Status')),
                       DataColumn(label: Text('Tecnico')),
-                      DataColumn(label: Text('veÃ­culo')),
+                      DataColumn(label: Text('veículo')),
                       DataColumn(label: Text('Ultima movimentacao')),
                     ],
                     rows: [
@@ -12414,7 +12463,7 @@ class _InventoryDemoScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'MovimentaÃ§Ãµes (demo)',
+                'Movimentações (demo)',
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
                   fontWeight: FontWeight.w900,
@@ -12492,7 +12541,7 @@ class _InventoryDemoScreen extends StatelessWidget {
               _InventoryFlowLine(text: 'Google Sheets'),
               _InventoryFlowLine(text: 'Aba Itens atualiza status'),
               _InventoryFlowLine(
-                  text: 'Aba MovimentaÃ§Ãµes registra Histórico'),
+                  text: 'Aba Movimentações registra Histórico'),
             ],
           ),
         ),
@@ -12607,7 +12656,7 @@ class _InventoryStatusChip extends StatelessWidget {
           bg: const Color(0xFFECFDF3),
           border: const Color(0xFFBBF7D0),
         );
-      case 'ManutenÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o':
+      case 'Manutenção':
         return (
           fg: const Color(0xFFD97706),
           bg: const Color(0xFFFFF7ED),
@@ -12777,7 +12826,7 @@ class _MdvrDemoScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'MDVR / CÃ¢meras',
+                'MDVR / Câmeras',
                 style: TextStyle(
                   color: Color(0xFF1F2A44),
                   fontWeight: FontWeight.w900,
@@ -12964,7 +13013,7 @@ class _MdvrCameraCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'veÃ­culo vinculado: ABC-1234',
+            'veículo vinculado: ABC-1234',
             style: TextStyle(
               color: Color(0xFF60718D),
               fontWeight: FontWeight.w700,
@@ -13207,14 +13256,14 @@ class _TelemetryRaceShowcaseScreenState
     extends State<_TelemetryRaceShowcaseScreen> {
   static const _seasonOptions = ['Temporada atual demo'];
   static const _raceOptions = [
-    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+    'Austrália',
     'China',
-    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Japão',
     'Bahrein'
   ];
   static const _sessionOptions = [
     'Treino',
-    'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+    'Classificação',
     'Corrida'
   ];
   static const _driverOptions = [
@@ -13232,12 +13281,12 @@ class _TelemetryRaceShowcaseScreenState
   ];
 
   final Map<String, _RaceTelemetryCircuit> _circuits = {
-    'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
+    'Austrália':
         _RaceTelemetryCircuit(
       raceName:
-          'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia',
+          'Austrália',
       trackSubtitle:
-          'Albert Park ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Albert Park • Setores 1/2/3',
       pathPoints: const [
         Offset(0.13, 0.62),
         Offset(0.22, 0.79),
@@ -13267,7 +13316,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'aus-3',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.76, 0.43),
           accent: Color(0xFF22C55E),
@@ -13275,7 +13324,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'aus-4',
           label:
-              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
+              'Perda de aderência',
           sector: 'Setor 1',
           position: Offset(0.34, 0.24),
           accent: Color(0xFFA855F7),
@@ -13283,7 +13332,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'aus-5',
           label:
-              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+              'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.63, 0.30),
           accent: Color(0xFF3B82F6),
@@ -13293,7 +13342,7 @@ class _TelemetryRaceShowcaseScreenState
     'China': _RaceTelemetryCircuit(
       raceName: 'China',
       trackSubtitle:
-          'Shanghai ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Shanghai • Setores 1/2/3',
       pathPoints: const [
         Offset(0.15, 0.70),
         Offset(0.25, 0.82),
@@ -13330,19 +13379,19 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'chi-4',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.69, 0.27),
           accent: Color(0xFF3B82F6),
         ),
       ],
     ),
-    'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+    'Japão':
         _RaceTelemetryCircuit(
       raceName:
-          'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'Japão',
       trackSubtitle:
-          'Suzuka ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Suzuka • Setores 1/2/3',
       pathPoints: const [
         Offset(0.16, 0.67),
         Offset(0.23, 0.82),
@@ -13358,7 +13407,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'jpn-1',
           label:
-              'Perda de aderÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia',
+              'Perda de aderência',
           sector: 'Setor 1',
           position: Offset(0.25, 0.81),
           accent: Color(0xFFEF4444),
@@ -13380,7 +13429,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'jpn-4',
           label:
-              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+              'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.46, 0.22),
           accent: Color(0xFF3B82F6),
@@ -13390,7 +13439,7 @@ class _TelemetryRaceShowcaseScreenState
     'Bahrein': _RaceTelemetryCircuit(
       raceName: 'Bahrein',
       trackSubtitle:
-          'Sakhir ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Setores 1/2/3',
+          'Sakhir • Setores 1/2/3',
       pathPoints: const [
         Offset(0.14, 0.72),
         Offset(0.29, 0.83),
@@ -13427,7 +13476,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'bah-4',
           label:
-              'AceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡xima',
+              'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.63, 0.24),
           accent: Color(0xFF3B82F6),
@@ -13435,7 +13484,7 @@ class _TelemetryRaceShowcaseScreenState
         _RaceTelemetryEvent(
           id: 'bah-5',
           label:
-              'Volta rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡pida',
+              'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.36, 0.25),
           accent: Color(0xFFA855F7),
@@ -13460,7 +13509,7 @@ class _TelemetryRaceShowcaseScreenState
       gpsSignal: 92,
       gsmSignal: 88,
       lastCommunication:
-          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 9 s',
+          'há 9 s',
       fuelOrLoad: 54,
       trackerTemperature: 39,
       behavior: 'normal',
@@ -13480,15 +13529,15 @@ class _TelemetryRaceShowcaseScreenState
       gpsSignal: 94,
       gsmSignal: 86,
       lastCommunication:
-          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 7 s',
+          'há 7 s',
       fuelOrLoad: 49,
       trackerTemperature: 40,
       behavior:
-          'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+          'atenção',
     ),
     'Norris': const _RaceTelemetryDriverSnapshot(
       tireCompound:
-          'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dio',
+          'Médio',
       tireLife: 66,
       speedKmh: 301,
       rpm: 11910,
@@ -13502,14 +13551,14 @@ class _TelemetryRaceShowcaseScreenState
       gpsSignal: 89,
       gsmSignal: 85,
       lastCommunication:
-          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 11 s',
+          'há 11 s',
       fuelOrLoad: 56,
       trackerTemperature: 38,
       behavior: 'normal',
     ),
     'Leclerc': const _RaceTelemetryDriverSnapshot(
       tireCompound:
-          'IntermediÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rio',
+          'Intermediário',
       tireLife: 60,
       speedKmh: 300,
       rpm: 11760,
@@ -13523,7 +13572,7 @@ class _TelemetryRaceShowcaseScreenState
       gpsSignal: 87,
       gsmSignal: 82,
       lastCommunication:
-          'hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ 13 s',
+          'há 13 s',
       fuelOrLoad: 52,
       trackerTemperature: 41,
       behavior: 'risco',
@@ -13543,7 +13592,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -9;
-      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'Classificação':
         return 6;
       case 'Corrida':
         return 0;
@@ -13555,7 +13604,7 @@ class _TelemetryRaceShowcaseScreenState
     switch (_selectedSession) {
       case 'Treino':
         return -300;
-      case 'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'Classificação':
         return 210;
       case 'Corrida':
         return 0;
@@ -13565,11 +13614,11 @@ class _TelemetryRaceShowcaseScreenState
 
   int _raceAdjust(String race) {
     switch (race) {
-      case 'AustrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lia':
+      case 'Austrália':
         return 2;
       case 'China':
         return -1;
-      case 'JapÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o':
+      case 'Japão':
         return 4;
       case 'Bahrein':
         return 1;
@@ -13586,7 +13635,7 @@ class _TelemetryRaceShowcaseScreenState
     final tireLifeShift = _selectedSession == 'Corrida'
         ? -5
         : (_selectedSession ==
-                'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+                'Classificação'
             ? -2
             : 4);
 
@@ -13602,8 +13651,8 @@ class _TelemetryRaceShowcaseScreenState
       behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
           ? 'risco'
           : (_selectedSession ==
-                  'ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
-              ? 'atenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o'
+                  'Classificação'
+              ? 'atenção'
               : 'normal'),
     );
   }
@@ -13702,7 +13751,7 @@ class _TelemetryRaceShowcaseScreenState
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/simulados. Sem uso de marca oficial.',
+                    'Demonstração técnica com dados públicos/simulados. Sem uso de marca oficial.',
                     style: TextStyle(
                       color: Color(0xFF9DB6D8),
                       fontWeight: FontWeight.w600,
@@ -13747,7 +13796,7 @@ class _TelemetryRaceShowcaseScreenState
                   ),
                   _RaceTelemetryFilterDropdown(
                     label:
-                        'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                        'Sessão',
                     value: _selectedSession,
                     options: _sessionOptions,
                     onChanged: (value) {
@@ -14060,7 +14109,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tricas de corrida',
+            'Métricas de corrida',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -14072,7 +14121,7 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
           _RaceTelemetryInfoLine(
               label:
-                  'SessÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                  'Sessão',
               value: _selectedSession),
           _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
           _RaceTelemetryInfoLine(
@@ -14093,16 +14142,16 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(
             label: 'Temperatura do pneu',
             value:
-                '${snapshot.tireTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.tireTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do motor',
             value:
-                '${snapshot.engineTempC}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.engineTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
             label:
-                'Gap para comparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'Gap para comparação',
             value: comparison == null
                 ? 'n/a'
                 : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
@@ -14138,7 +14187,7 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'IgniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'Ignição',
             value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
           ),
           _RaceTelemetryInfoLine(
@@ -14151,18 +14200,18 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ltima comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'Última comunicação',
             value: snapshot.lastCommunication,
           ),
           _RaceTelemetryInfoLine(
             label:
-                'Temperatura do baÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº/motor',
+                'Temperatura do baú/motor',
             value:
-                '${snapshot.trackerTemperature}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°C',
+                '${snapshot.trackerTemperature}Â°C',
           ),
           _RaceTelemetryInfoLine(
             label:
-                'NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel de combustÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel/carga',
+                'Nível de combustível/carga',
             value: '${snapshot.fuelOrLoad}%',
           ),
           _RaceTelemetryInfoLine(
@@ -14194,7 +14243,7 @@ class _TelemetryRaceShowcaseScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'A mesma lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³gica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­culos de frota, guinchos, caminhÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes, mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡quinas e operaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ticas.',
+            'A mesma lógica usada para analisar velocidade, pneus, temperatura e comportamento em uma corrida pode ser aplicada em veículos de frota, guinchos, caminhões, máquinas e operações críticas.',
             style: TextStyle(
               color: Color(0xFFBCD3F3),
               fontWeight: FontWeight.w600,
@@ -14203,13 +14252,13 @@ class _TelemetryRaceShowcaseScreenState
           const SizedBox(height: 8),
           const _RaceTelemetryBullet(
               text:
-                  'detectar conduÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o agressiva;'),
+                  'detectar condução agressiva;'),
           const _RaceTelemetryBullet(
               text:
-                  'prever manutenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
+                  'prever manutenção;'),
           const _RaceTelemetryBullet(
               text:
-                  'monitorar bateria e comunicaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o;'),
+                  'monitorar bateria e comunicação;'),
           const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
           const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
           const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
@@ -14237,7 +14286,7 @@ class _TelemetryRaceShowcaseScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'ComparaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+            'Comparação',
             style: TextStyle(
               color: Color(0xFFEAF1FF),
               fontWeight: FontWeight.w900,
@@ -14255,22 +14304,22 @@ class _TelemetryRaceShowcaseScreenState
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de velocidade',
+                'Diferença de velocidade',
             value: formatDelta(comparison.speedDelta, ' km/h'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de frenagem',
+                'Diferença de frenagem',
             value: formatDelta(comparison.brakingDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de aceleraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o',
+                'Diferença de aceleração',
             value: formatDelta(comparison.throttleDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
             label:
-                'DiferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a de desgaste de pneu',
+                'Diferença de desgaste de pneu',
             value: formatDelta(comparison.tireWearDelta, '%'),
           ),
         ],
@@ -15239,7 +15288,7 @@ class _TelemetryDemoScreenState extends State<_TelemetryDemoScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'DemonstraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cnica com dados pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºblicos/snapshot. Sem uso de marca oficial.',
+                'Demonstração técnica com dados públicos/snapshot. Sem uso de marca oficial.',
                 style: TextStyle(
                   color: Color(0xFF8FAED6),
                   fontWeight: FontWeight.w600,
@@ -15367,7 +15416,7 @@ class _TelemetryTopHeader extends StatelessWidget {
       children: [
         if (compact) ...[
           const Text(
-            'OperaÃ§Ã£o > Demo Telemetria',
+            'Operação > Demo Telemetria',
             style: TextStyle(
               color: Color(0xFF6F8CB5),
               fontWeight: FontWeight.w700,
@@ -15413,7 +15462,7 @@ class _TelemetryTopHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'OperaÃ§Ã£o > Demo Telemetria',
+                      'Operação > Demo Telemetria',
                       style: TextStyle(
                         color: Color(0xFF6F8CB5),
                         fontWeight: FontWeight.w700,
@@ -15509,7 +15558,7 @@ class _TelemetryTopHeader extends StatelessWidget {
             _TelemetryActionChip(
               icon: Icons.more_horiz,
               label: 'Mais',
-              onTap: () => onAction('Mais aÃ§Ãµes'),
+              onTap: () => onAction('Mais ações'),
             ),
           ],
         ),
@@ -16073,7 +16122,7 @@ class _TelemetryLivePanel extends StatelessWidget {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'GPS 23ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°42\'45.8"S   46ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°41\'19.6"W',
+                  'GPS 23Â°42\'45.8"S   46Â°41\'19.6"W',
                   style: TextStyle(
                     color: Color(0xFFD3E4FF),
                     fontWeight: FontWeight.w700,
@@ -16837,7 +16886,7 @@ final _serverPanelSnapshotProvider = FutureProvider<_ServerPanelSnapshot>((
         communicationLevel: 'Não informado',
         defaultCoordinates: 'Não informado',
         message:
-            'Seu usuario nao tem permissao para consultar essas configuraÃ§Ãµes.',
+            'Seu usuario nao tem permissao para consultar essas configurações.',
       );
     }
     if (code != null && code >= 500) {
@@ -17039,13 +17088,13 @@ class _ServerStatusPanel extends ConsumerWidget {
             const SizedBox(height: 8),
             _SimpleToolRow(
               icon: Icons.settings_suggest_outlined,
-              title: 'ConfiguraÃ§Ãµes operacionais',
+              title: 'Configurações operacionais',
               detail: status.operationalConfig,
             ),
             const SizedBox(height: 8),
             _SimpleToolRow(
               icon: Icons.wifi_tethering_outlined,
-              title: 'Nivel de comunicaÃ§Ã£o',
+              title: 'Nivel de comunicação',
               detail: status.communicationLevel,
             ),
             const SizedBox(height: 8),
@@ -17390,7 +17439,7 @@ class _FleetKpis {
       if (snapshot.isOperationalOnline) {
         online++;
       } else {
-        // Status offline/unknown ou atualizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o antiga entram no offline operacional.
+        // Status offline/unknown ou atualização antiga entram no offline operacional.
         offline++;
       }
 
@@ -17627,7 +17676,7 @@ class _VehicleSnapshot {
     if (normalizedStatus.isEmpty) return true;
     return normalizedStatus == 'unknown' ||
         normalizedStatus == 'nao informado' ||
-        normalizedStatus == 'nÃ£o informado' ||
+        normalizedStatus == 'não informado' ||
         normalizedStatus == 'n/a';
   }
 
@@ -17732,6 +17781,9 @@ class _VehicleSnapshot {
 
   bool get hasAlert =>
       !hasNoCommunication && (_hasAlarmFlag || (speedKmh ?? 0) >= 80);
+
+  bool get isDriver =>
+      (device.uniqueId ?? '').toLowerCase().startsWith('driver_');
 
   String get identifierLabel {
     final value = device.uniqueId ??
@@ -17975,9 +18027,9 @@ class _VehicleSnapshot {
 
   String get locationSummaryLabel {
     if (hasGpsInvalidPacket) return 'GPS inválido no último pacote';
-    if (hasValidGps && address != 'NÃ£o informado') return address;
+    if (hasValidGps && address != 'Não informado') return address;
     if (hasValidGps) return latLngLabel;
-    return 'NÃ£o informado';
+    return 'Não informado';
   }
 
   String get lastCommunicationLabel {
@@ -18066,7 +18118,7 @@ class _VehicleSnapshot {
   }
 
   String get latestEventLabel {
-    if (recentEvents.isEmpty) return 'NÃ£o informado';
+    if (recentEvents.isEmpty) return 'Não informado';
     final type = '${recentEvents.first['type'] ?? 'evento'}';
     return _humanizeEventType(type);
   }
@@ -18092,7 +18144,7 @@ class _VehicleSnapshot {
 
   String get directionLabel {
     final bearing = markerRotation;
-    if (bearing == null) return 'NÃ£o informado';
+    if (bearing == null) return 'Não informado';
     return _bearingToCardinalLabel(bearing);
   }
 
