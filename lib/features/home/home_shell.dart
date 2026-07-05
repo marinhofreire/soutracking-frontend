@@ -1455,7 +1455,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   kpis: kpis,
                   activeFilter: _kpiListOpen ? _activeKpiFilter : null,
                   onKpiTap: _openKpi,
-                  onMenuTap: _toggleMenu,
+                  onMenuTap: _toggleSidebarCompact,
                   menuOpen: _menuOpen,
                   sidebarVisible: sidebarVisible,
                   alertCount: realAlertCount,
@@ -4061,7 +4061,7 @@ class _TopSearchBar extends StatelessWidget {
     final brandLogoAsset = brand.logoAsset?.trim() ?? '';
     final hasBrandLogo = brandLogoAsset.isNotEmpty;
     final hideBrand =
-        logoMode == VisualLogoMode.hideOnFullMap && hideLogoOnFullMap;
+        !menuOpen || (logoMode == VisualLogoMode.hideOnFullMap && hideLogoOnFullMap);
     final compactLogo = logoMode == VisualLogoMode.compact;
     final logoHeight = compactLogo ? 18.0 : 24.0;
     final brandWidth = compactLogo ? 178.0 : (hasBrandLogo ? 236.0 : 186.0);
