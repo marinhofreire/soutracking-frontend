@@ -7525,7 +7525,9 @@ class _VehicleBottomContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = snapshot.statusColor;
+    final isDriver = snapshot.isDriver;
+    final statusColor =
+        isDriver ? snapshot.driverStatusColor : snapshot.statusColor;
     final quickActions = [
       (
         icon: Icons.remove_red_eye_outlined,
@@ -7563,14 +7565,13 @@ class _VehicleBottomContent extends StatelessWidget {
       builder: (context, constraints) {
         final compact =
             constraints.maxWidth < 1040 || constraints.maxHeight < 320;
-        final isDriver = snapshot.isDriver;
         final summaryMetrics = isDriver
             ? <(IconData icon, String label, String value)>[
                 (Icons.speed_rounded, 'Velocidade', snapshot.speedLabel),
                 (
-                  Icons.person_pin_circle_rounded,
-                  'Tipo',
-                  'Prestador SouFind',
+                  Icons.fiber_manual_record_rounded,
+                  'Status',
+                  snapshot.driverStatusLabel,
                 ),
                 (
                   Icons.access_time_rounded,
@@ -7691,7 +7692,9 @@ class _VehicleBottomContent extends StatelessWidget {
                               ),
                             ),
                             child: Text(
-                              snapshot.statusLabel,
+                              isDriver
+                                  ? snapshot.driverStatusLabel
+                                  : snapshot.statusLabel,
                               style: TextStyle(
                                 color: statusColor,
                                 fontWeight: FontWeight.w900,
@@ -17796,6 +17799,39 @@ class _VehicleSnapshot {
 
   bool get isDriver =>
       (device.uniqueId ?? '').toLowerCase().startsWith('driver_');
+
+  int get driverStatus {
+    final raw = _mergedAttributes['status'];
+    if (raw == null) return 1;
+    if (raw is int) return raw;
+    return int.tryParse(raw.toString()) ?? 1;
+  }
+
+  String get driverStatusLabel {
+    switch (driverStatus) {
+      case 0:
+        return 'Offline';
+      case 2:
+        return 'A caminho';
+      case 3:
+        return 'Em Atendimento';
+      default:
+        return 'Disponível';
+    }
+  }
+
+  Color get driverStatusColor {
+    switch (driverStatus) {
+      case 0:
+        return const Color(0xFF9CA3AF);
+      case 2:
+        return const Color(0xFFF59E0B);
+      case 3:
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF22C55E);
+    }
+  }
 
   String get identifierLabel {
     final value = device.uniqueId ??
