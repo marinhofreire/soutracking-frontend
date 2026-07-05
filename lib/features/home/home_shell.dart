@@ -219,13 +219,15 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _replayTick = Duration(milliseconds: 80);
   static const Duration _replaySegment = Duration(milliseconds: 720);
-  static const Duration _operationalRefreshInterval = Duration(seconds: 10);
+  static const Duration _operationalRefreshInterval = Duration(seconds: 30);
+  static const Duration _positionRefreshInterval = Duration(seconds: 3);
 
   gmaps.GoogleMapController? _googleMapController;
   final Map<int, List<gmaps.LatLng>> _positionTrailByDeviceId = {};
   String? _lastFollowedSelectedPositionKey;
   Timer? _replayTimer;
   Timer? _operationalRefreshTimer;
+  Timer? _positionRefreshTimer;
   int _selectedReplayIndex = 0;
   double _routeReplaySegmentProgress = 0;
   int _replayDebugLinesEmitted = 0;
@@ -267,6 +269,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void dispose() {
     _replayTimer?.cancel();
     _operationalRefreshTimer?.cancel();
+    _positionRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -1165,24 +1168,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (!enabled) {
       _operationalRefreshTimer?.cancel();
       _operationalRefreshTimer = null;
+      _positionRefreshTimer?.cancel();
+      _positionRefreshTimer = null;
       return;
     }
 
-    if (_operationalRefreshTimer != null) {
-      return;
-    }
-
-    if (immediateRefresh) {
-      _refreshOperationalData();
-    }
-
-    _operationalRefreshTimer = Timer.periodic(
-      _operationalRefreshInterval,
-      (_) {
-        if (!mounted) return;
+    if (_operationalRefreshTimer == null) {
+      if (immediateRefresh) {
         _refreshOperationalData();
-      },
-    );
+      }
+      _operationalRefreshTimer = Timer.periodic(
+        _operationalRefreshInterval,
+        (_) {
+          if (!mounted) return;
+          _refreshOperationalData();
+        },
+      );
+    }
+
+    if (_positionRefreshTimer == null) {
+      _positionRefreshTimer = Timer.periodic(
+        _positionRefreshInterval,
+        (_) {
+          if (!mounted) return;
+          ref.invalidate(positionsProvider);
+        },
+      );
+    }
   }
 
   Future<void> _handleLogout() async {
