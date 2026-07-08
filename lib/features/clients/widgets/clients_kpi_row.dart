@@ -9,92 +9,64 @@ class ClientsKpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+    return Row(
       children: [
-        _KpiCard(
-          label: 'Total de clientes',
-          value: summary.total.toString(),
-          color: const Color(0xFF3F8CFF),
-          icon: Icons.groups_2_outlined,
-        ),
-        _KpiCard(
-          label: 'Ativos',
-          value: summary.active.toString(),
-          color: const Color(0xFF10B981),
-          icon: Icons.verified_outlined,
-        ),
-        _KpiCard(
-          label: 'Atrasados',
-          value: summary.overdue.toString(),
-          color: const Color(0xFFE74B4B),
-          icon: Icons.warning_amber_outlined,
-        ),
-        _KpiCard(
-          label: 'VIP',
-          value: summary.vip.toString(),
-          color: const Color(0xFFF59E0B),
-          icon: Icons.workspace_premium_outlined,
-        ),
+        _KpiCard(label: 'Total',         value: '${summary.total}',    color: const Color(0xFF176EEB)),
+        const SizedBox(width: 10),
+        _KpiCard(label: 'Ativos',        value: '${summary.active}',   color: const Color(0xFF22C55E)),
+        const SizedBox(width: 10),
+        _KpiCard(label: 'Inadimplentes', value: '${summary.overdue}',  color: const Color(0xFFEF4444)),
+        const SizedBox(width: 10),
+        _KpiCard(label: 'Inativos',      value: '${summary.inactive}', color: const Color(0xFF9CA3AF)),
       ],
     );
   }
 }
 
 class _KpiCard extends StatelessWidget {
-  const _KpiCard({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
-
+  const _KpiCard({required this.label, required this.value, required this.color});
   final String label;
   final String value;
   final Color color;
-  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 22,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFDDE6F2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF60718D),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11.5,
+                ),
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 20,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

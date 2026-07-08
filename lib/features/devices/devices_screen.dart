@@ -85,15 +85,102 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     'totalHours',
   };
 
+  static const List<MapEntry<String, String>> _protocolOptions = [
+    MapEntry('teltonika', 'Teltonika'),
+    MapEntry('queclink', 'Queclink / GV'),
+    MapEntry('gt06', 'GT06 / Concox'),
+    MapEntry('suntech', 'Suntech'),
+    MapEntry('coban', 'Coban / TK103'),
+    MapEntry('meitrack', 'Meitrack'),
+    MapEntry('ruptela', 'Ruptela'),
+    MapEntry('galileosky', 'Galileosky'),
+    MapEntry('wialon', 'Wialon IPS'),
+    MapEntry('osmand', 'OsmAnd'),
+    MapEntry('other', 'Outro'),
+  ];
+
+  static const Map<String, String> _protocolPorts = {
+    'teltonika': '5027',
+    'queclink': '5093',
+    'gt06': '5023',
+    'suntech': '5011',
+    'coban': '5004',
+    'meitrack': '5020',
+    'ruptela': '5046',
+    'galileosky': '5004',
+    'wialon': '5013',
+    'osmand': '5055',
+  };
+
+  static const List<MapEntry<String, String>> _operatorOptions = [
+    MapEntry('claro', 'Claro'),
+    MapEntry('vivo', 'Vivo'),
+    MapEntry('tim', 'Tim'),
+    MapEntry('oi', 'Oi'),
+    MapEntry('other', 'Outra'),
+  ];
+
+  static const Map<String, String> _operatorApns = {
+    'claro': 'claro.com.br',
+    'vivo': 'zap.vivo.com.br',
+    'tim': 'tim.br',
+    'oi': 'gprs.oi.com.br',
+  };
+
+  static const List<MapEntry<String, String>> _timezoneOptions = [
+    MapEntry('America/Sao_Paulo', '(UTC-03:00) Brasília'),
+    MapEntry('America/Manaus', '(UTC-04:00) Manaus'),
+    MapEntry('America/Belem', '(UTC-03:00) Belém'),
+    MapEntry('America/Fortaleza', '(UTC-03:00) Fortaleza'),
+    MapEntry('America/Recife', '(UTC-03:00) Recife'),
+    MapEntry('America/Noronha', '(UTC-02:00) Fernando de Noronha'),
+    MapEntry('America/Porto_Velho', '(UTC-04:00) Porto Velho'),
+    MapEntry('America/Boa_Vista', '(UTC-04:00) Boa Vista'),
+    MapEntry('America/Rio_Branco', '(UTC-05:00) Rio Branco'),
+    MapEntry('UTC', '(UTC+00:00) UTC'),
+  ];
+  static const List<MapEntry<String, String>> _manufacturerOptions = [
+    MapEntry('teltonika', 'Teltonika'),
+    MapEntry('queclink', 'Queclink'),
+    MapEntry('concox', 'Concox / Jointech'),
+    MapEntry('suntech', 'Suntech'),
+    MapEntry('coban', 'Coban / TK'),
+    MapEntry('meitrack', 'Meitrack'),
+    MapEntry('ruptela', 'Ruptela'),
+    MapEntry('galileosky', 'Galileosky'),
+    MapEntry('jt', 'JT / Jointech'),
+    MapEntry('other', 'Outro'),
+  ];
+  static const Map<String, List<String>> _modelsByManufacturer = {
+    'teltonika': ['FMB920', 'FMB140', 'FMC130', 'FMB003', 'FMB010', 'FMB110', 'FMC880'],
+    'queclink': ['GV20', 'GV310', 'GV500', 'GV55', 'GL300', 'GL500'],
+    'concox': ['GT06', 'GT02', 'ET25', 'ET300', 'HVT001', 'HVT002'],
+    'suntech': ['ST300', 'ST310', 'ST600', 'ST340'],
+    'coban': ['TK103', 'TK303', 'TK305', 'GPS303'],
+    'meitrack': ['T333', 'T399', 'MVT380', 'MVT600'],
+    'ruptela': ['FM-Eco3', 'FM-Eco4', 'HCV5', 'Pro5'],
+    'galileosky': ['Base Block', 'Galileosky 7.0', 'Galileosky 5.0'],
+    'jt': ['JT600', 'JT701', 'JT706'],
+  };
+
   final _nameController = TextEditingController();
   final _plateController = TextEditingController();
   final _identifierController = TextEditingController();
   final _categoryController = TextEditingController();
   final _phoneController = TextEditingController();
   final _searchController = TextEditingController();
+  final _portController = TextEditingController();
+  final _apnController = TextEditingController();
+  final _clientController = TextEditingController();
+  final _groupController = TextEditingController();
   final Set<String> _selectedSensorKeys = <String>{};
   bool _isActive = true;
   String? _selectedMapIconKey;
+  String? _selectedProtocol;
+  String? _selectedOperator;
+  String? _selectedManufacturer;
+  String? _selectedModel;
+  String _selectedTimezone = 'America/Sao_Paulo';
 
   bool _saving = false;
   _DevicesQuickFilter _activeFilter = _DevicesQuickFilter.all;
@@ -107,6 +194,10 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     _categoryController.dispose();
     _phoneController.dispose();
     _searchController.dispose();
+    _portController.dispose();
+    _apnController.dispose();
+    _clientController.dispose();
+    _groupController.dispose();
     super.dispose();
   }
 
@@ -117,8 +208,17 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       _identifierController.clear();
       _categoryController.clear();
       _phoneController.clear();
+      _portController.clear();
+      _apnController.clear();
+      _clientController.clear();
+      _groupController.clear();
       _isActive = true;
       _selectedMapIconKey = null;
+      _selectedProtocol = null;
+      _selectedOperator = null;
+      _selectedManufacturer = null;
+      _selectedModel = null;
+      _selectedTimezone = 'America/Sao_Paulo';
       _selectedSensorKeys
         ..clear()
         ..addAll(_defaultSensorKeys);
@@ -128,284 +228,444 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       _identifierController.text = (editing.uniqueId ?? '').trim();
       _categoryController.text = (editing.category ?? '').trim();
       _phoneController.text = (editing.attributes?['phone'] ?? '').toString();
+      _portController.text = (editing.attributes?['souPort'] ?? '').toString();
+      _apnController.text = (editing.attributes?['souApn'] ?? '').toString();
+      _clientController.text = (editing.attributes?['souClient'] ?? '').toString();
+      _groupController.text = (editing.attributes?['souGroup'] ?? '').toString();
       _isActive = _readActiveFlag(editing);
       _selectedMapIconKey = _normalizeMapIconKey(
         editing.attributes?['souMapIcon']?.toString(),
       );
+      _selectedProtocol = editing.attributes?['souProtocol']?.toString();
+      _selectedOperator = editing.attributes?['souOperator']?.toString();
+      _selectedManufacturer = editing.attributes?['souManufacturer']?.toString();
+      _selectedModel = editing.attributes?['souModel']?.toString();
+      _selectedTimezone =
+          (editing.attributes?['souTimezone'] ?? 'America/Sao_Paulo').toString();
       _setSelectedSensorsFromDevice(editing);
     }
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return DefaultTabController(
-          length: 3,
-          child: Dialog(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 700,
-                maxHeight: 760,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: StatefulBuilder(
-                  builder: (context, setModalState) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                editing == null
-                                    ? 'Novo equipamento'
-                                    : 'Editar equipamento',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(
-                                      color: const Color(0xFF1F2A44),
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: _saving
-                                  ? null
-                                  : () => Navigator.of(dialogContext).pop(),
-                              icon: const Icon(Icons.close_rounded),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5F8FD),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFD6E0EE)),
-                          ),
-                          child: const TabBar(
-                            labelColor: Color(0xFF176EEB),
-                            unselectedLabelColor: Color(0xFF5A6B84),
-                            indicatorColor: Color(0xFF176EEB),
-                            tabs: [
-                              Tab(text: 'Informações'),
-                              Tab(text: 'Ícone'),
-                              Tab(text: 'Sensores'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Expanded(
-                          child: TabBarView(
-                            children: [
-                              SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    TextField(
-                                      controller: _nameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Nome',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: _plateController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Placa (opcional)',
-                                      ),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                          RegExp(r'[A-Za-z0-9-]'),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: _identifierController,
-                                      decoration: const InputDecoration(
-                                        labelText:
-                                            'Identificador / IMEI / Unique ID',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: _phoneController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Telefone/chip (opcional)',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: _categoryController,
-                                      decoration: const InputDecoration(
-                                        labelText:
-                                            'Categoria/Modelo (opcional)',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    SwitchListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      value: _isActive,
-                                      onChanged: _saving
-                                          ? null
-                                          : (value) {
-                                              setModalState(
-                                                () => _isActive = value,
-                                              );
-                                            },
-                                      title: const Text('Ativo'),
-                                      subtitle: Text(
-                                        _isActive
-                                            ? 'Equipamento marcado como ativo'
-                                            : 'Equipamento marcado como inativo',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Escolha o ícone do mapa',
-                                      style: TextStyle(
-                                        color: Color(0xFF1F2A44),
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 1060,
+              maxHeight: 860,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+              child: StatefulBuilder(
+                builder: (context, setModalState) {
+                  final hasImei =
+                      _identifierController.text.trim().length >= 10;
+                  final hasProtocol = _selectedProtocol != null &&
+                      _portController.text.trim().isNotEmpty;
+                  final hasSensors = _selectedSensorKeys.isNotEmpty;
+                  final hasGroup = _groupController.text.trim().isNotEmpty;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Header ──
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  editing == null
+                                      ? 'Criar Dispositivo'
+                                      : 'Editar Dispositivo',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF1F2A44),
                                         fontWeight: FontWeight.w800,
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _MapIconPreview(
-                                      iconKey: _selectedMapIconKey,
-                                      categoryLabel:
-                                          _categoryController.text.trim(),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
+                                ),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'Cadastre um novo rastreador e defina seus parâmetros iniciais.',
+                                  style: TextStyle(
+                                    color: Color(0xFF5A6B84),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(height: 1, color: Color(0xFFE8EEF6)),
+                      const SizedBox(height: 16),
+                      // ── Body ──
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Left: single scroll form ──
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    // Section: Dados Gerais
+                                    _DeviceSection(
+                                      icon: Icons.inventory_2_outlined,
+                                      iconColor: const Color(0xFF176EEB),
+                                      title: 'Dados Gerais',
                                       children: [
-                                        _MapIconTile(
-                                          label: 'Automático',
-                                          assetPath:
-                                              'assets/icons/map/default.png',
-                                          selected: _selectedMapIconKey == null,
-                                          onTap: _saving
-                                              ? null
-                                              : () => setModalState(
-                                                    () => _selectedMapIconKey =
-                                                        null,
-                                                  ),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _clientController,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText:
+                                                      'Cliente / Empresa',
+                                                  hintText:
+                                                      'Selecione o cliente',
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _nameController,
+                                                onChanged: (_) =>
+                                                    setModalState(() {}),
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText:
+                                                      'Nome do Veículo *',
+                                                  hintText:
+                                                      'Digite o nome do veículo',
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _plateController,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'Placa *',
+                                                  hintText: 'ABC1D23',
+                                                ),
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .allow(RegExp(
+                                                          r'[A-Za-z0-9-]')),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        for (final choice in _mapIconChoices)
-                                          _MapIconTile(
-                                            label: choice.label,
-                                            assetPath: choice.assetPath,
-                                            selected: _selectedMapIconKey ==
-                                                choice.key,
-                                            onTap: _saving
-                                                ? null
-                                                : () => setModalState(
-                                                      () =>
-                                                          _selectedMapIconKey =
-                                                              choice.key,
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller:
+                                                    _identifierController,
+                                                onChanged: (_) =>
+                                                    setModalState(() {}),
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'IMEI *',
+                                                  hintText:
+                                                      'Digite o IMEI do dispositivo',
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: _DeviceDropdown(
+                                                label: 'Fabricante',
+                                                value: _selectedManufacturer,
+                                                options: _manufacturerOptions,
+                                                onChanged: (v) =>
+                                                    setModalState(() {
+                                                  _selectedManufacturer = v;
+                                                  _selectedModel = null;
+                                                }),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: _selectedManufacturer !=
+                                                          null &&
+                                                      (_modelsByManufacturer[
+                                                                  _selectedManufacturer]
+                                                              ?.isNotEmpty ??
+                                                          false)
+                                                  ? _DeviceDropdown(
+                                                      label: 'Modelo',
+                                                      value: _selectedModel,
+                                                      options: (_modelsByManufacturer[
+                                                                  _selectedManufacturer] ??
+                                                              [])
+                                                          .map((m) =>
+                                                              MapEntry(m, m))
+                                                          .toList(),
+                                                      onChanged: (v) =>
+                                                          setModalState(() =>
+                                                              _selectedModel =
+                                                                  v),
+                                                    )
+                                                  : TextField(
+                                                      decoration:
+                                                          InputDecoration(
+                                                        labelText: 'Modelo',
+                                                        hintText:
+                                                            'Selecione o modelo',
+                                                        enabled:
+                                                            _selectedManufacturer !=
+                                                                null,
+                                                      ),
+                                                      onChanged: (v) =>
+                                                          setModalState(() =>
+                                                              _selectedModel =
+                                                                  v.isEmpty
+                                                                      ? null
+                                                                      : v),
                                                     ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        TextField(
+                                          controller: _groupController,
+                                          onChanged: (_) =>
+                                              setModalState(() {}),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Grupo *',
+                                            hintText: 'Selecione o grupo',
                                           ),
+                                        ),
                                       ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                              SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                    const SizedBox(height: 16),
+                                    // Section: Conectividade
+                                    _DeviceSection(
+                                      icon: Icons.wifi_rounded,
+                                      iconColor: const Color(0xFF176EEB),
+                                      title: 'Conectividade',
                                       children: [
-                                        const Expanded(
-                                          child: Text(
-                                            'Sensores do card',
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _phoneController,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'Chip / Telefone',
+                                                  hintText:
+                                                      '(DDD) 9 9999-9999',
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: _DeviceDropdown(
+                                                label: 'Operadora',
+                                                value: _selectedOperator,
+                                                options: _operatorOptions,
+                                                onChanged: (v) =>
+                                                    setModalState(() {
+                                                  _selectedOperator = v;
+                                                  final apn =
+                                                      _operatorApns[v];
+                                                  if (apn != null &&
+                                                      _apnController
+                                                          .text.isEmpty) {
+                                                    _apnController.text = apn;
+                                                  }
+                                                }),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _apnController,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'APN',
+                                                  hintText: 'Digite o APN',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _DeviceDropdown(
+                                                label: 'Protocolo',
+                                                value: _selectedProtocol,
+                                                options: _protocolOptions,
+                                                onChanged: (v) =>
+                                                    setModalState(() {
+                                                  _selectedProtocol = v;
+                                                  final port =
+                                                      _protocolPorts[v];
+                                                  if (port != null &&
+                                                      _portController
+                                                          .text.isEmpty) {
+                                                    _portController.text =
+                                                        port;
+                                                  }
+                                                }),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _portController,
+                                                onChanged: (_) =>
+                                                    setModalState(() {}),
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'Porta',
+                                                  hintText: 'Ex: 5023',
+                                                ),
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .digitsOnly,
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: _DeviceDropdown(
+                                                label: 'Fuso Horário',
+                                                value: _selectedTimezone,
+                                                options: _timezoneOptions,
+                                                onChanged: (v) =>
+                                                    setModalState(() =>
+                                                        _selectedTimezone = v ??
+                                                            _selectedTimezone),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'Ativo / Inativo',
+                                              style: TextStyle(
+                                                color: Color(0xFF1F2A44),
+                                                fontWeight: FontWeight.w500,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Switch(
+                                              value: _isActive,
+                                              onChanged: _saving
+                                                  ? null
+                                                  : (v) => setModalState(
+                                                      () => _isActive = v),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _isActive ? 'Ativo' : 'Inativo',
+                                              style: TextStyle(
+                                                color: _isActive
+                                                    ? const Color(0xFF18A558)
+                                                    : const Color(0xFF5A6B84),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Section: Sensores
+                                    _DeviceSection(
+                                      icon: Icons.sensors_rounded,
+                                      iconColor: const Color(0xFF7B2FC4),
+                                      title: 'Sensores',
+                                      trailing: Tooltip(
+                                        message:
+                                            'Ative os sensores suportados pelo hardware do rastreador',
+                                        child: const Icon(
+                                          Icons.info_outline_rounded,
+                                          size: 16,
+                                          color: Color(0xFF8FA3BF),
+                                        ),
+                                      ),
+                                      children: [
+                                        Wrap(
+                                          spacing: 10,
+                                          runSpacing: 10,
+                                          children: [
+                                            for (final option in _sensorOptions)
+                                              _SensorCardV2(
+                                                sensorKey: option.key,
+                                                label: option.value,
+                                                selected: _selectedSensorKeys
+                                                    .contains(option.key),
+                                                onToggle: _saving
+                                                    ? null
+                                                    : (v) =>
+                                                        setModalState(() {
+                                                          if (v) {
+                                                            _selectedSensorKeys
+                                                                .add(
+                                                                    option.key);
+                                                          } else {
+                                                            _selectedSensorKeys
+                                                                .remove(
+                                                                    option.key);
+                                                          }
+                                                        }),
+                                              ),
+                                          ],
+                                        ),
+                                        if (_selectedSensorKeys.any((k) =>
+                                            !_sensorOptions
+                                                .any((o) => o.key == k))) ...[
+                                          const SizedBox(height: 12),
+                                          const Text(
+                                            'Sensores personalizados',
                                             style: TextStyle(
                                               color: Color(0xFF1F2A44),
-                                              fontWeight: FontWeight.w800,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13,
                                             ),
                                           ),
-                                        ),
-                                        OutlinedButton.icon(
-                                          onPressed: _saving
-                                              ? null
-                                              : () async {
-                                                  final created =
-                                                      await _openSensorInputDialog();
-                                                  if (created == null) return;
-                                                  setModalState(() {
-                                                    _selectedSensorKeys.add(
-                                                      _normalizeSensorKey(
-                                                        created,
-                                                      ),
-                                                    );
-                                                  });
-                                                },
-                                          icon: const Icon(
-                                            Icons.add_rounded,
-                                            size: 18,
-                                          ),
-                                          label: const Text('Cadastrar sensor'),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        for (final option in _sensorOptions)
-                                          FilterChip(
-                                            label: Text(option.value),
-                                            selected: _selectedSensorKeys
-                                                .contains(option.key),
-                                            onSelected: _saving
-                                                ? null
-                                                : (selected) {
-                                                    setModalState(() {
-                                                      if (selected) {
-                                                        _selectedSensorKeys.add(
-                                                          option.key,
-                                                        );
-                                                      } else {
-                                                        _selectedSensorKeys
-                                                            .remove(option.key);
-                                                      }
-                                                    });
-                                                  },
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 14),
-                                    const Text(
-                                      'Sensores selecionados',
-                                      style: TextStyle(
-                                        color: Color(0xFF1F2A44),
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (_selectedSensorKeys.isEmpty)
-                                      const Text(
-                                        'Nenhum sensor selecionado.',
-                                        style: TextStyle(
-                                          color: Color(0xFF5A6B84),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      )
-                                    else
-                                      Column(
-                                        children: [
+                                          const SizedBox(height: 8),
                                           for (final sensorKey
-                                              in _sortedSelectedSensors())
+                                              in _selectedSensorKeys
+                                                  .where((k) => !_sensorOptions
+                                                      .any((o) => o.key == k))
+                                                  .toList()
+                                                ..sort())
                                             _SelectedSensorRow(
                                               sensorKey: sensorKey,
                                               label: _sensorLabel(sensorKey),
@@ -419,80 +679,262 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                                       if (updated == null) {
                                                         return;
                                                       }
-                                                      final normalizedUpdated =
-                                                          _normalizeSensorKey(
-                                                        updated,
-                                                      );
                                                       setModalState(() {
                                                         _selectedSensorKeys
                                                             .remove(sensorKey);
                                                         _selectedSensorKeys.add(
-                                                          normalizedUpdated,
+                                                          _normalizeSensorKey(
+                                                              updated),
                                                         );
                                                       });
                                                     },
                                               onDelete: _saving
                                                   ? null
-                                                  : () {
-                                                      setModalState(
-                                                        () =>
-                                                            _selectedSensorKeys
-                                                                .remove(
-                                                                    sensorKey),
-                                                      );
-                                                    },
+                                                  : () => setModalState(() =>
+                                                      _selectedSensorKeys
+                                                          .remove(sensorKey)),
                                             ),
                                         ],
-                                      ),
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: TextButton.icon(
+                                            onPressed: _saving
+                                                ? null
+                                                : () async {
+                                                    final created =
+                                                        await _openSensorInputDialog();
+                                                    if (created == null) {
+                                                      return;
+                                                    }
+                                                    setModalState(() {
+                                                      _selectedSensorKeys.add(
+                                                        _normalizeSensorKey(
+                                                            created),
+                                                      );
+                                                    });
+                                                  },
+                                            icon: const Icon(
+                                                Icons.add_rounded,
+                                                size: 16),
+                                            label: const Text(
+                                                'Adicionar sensor personalizado'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton.icon(
-                            onPressed: _saving
-                                ? null
-                                : () async {
-                                    final ok = editing == null
-                                        ? await _createDevice()
-                                        : await _updateDevice(editing);
-                                    if (!mounted || !dialogContext.mounted) {
-                                      return;
-                                    }
-                                    if (ok) {
-                                      Navigator.of(dialogContext).pop();
-                                    }
-                                  },
-                            icon: _saving
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Icon(
-                                    editing == null
-                                        ? Icons.add_rounded
-                                        : Icons.save_outlined,
-                                  ),
-                            label: Text(
-                              _saving
-                                  ? 'Salvando...'
-                                  : (editing == null
-                                      ? 'Salvar equipamento'
-                                      : 'Salvar alterações'),
                             ),
-                          ),
+                            const SizedBox(width: 20),
+                            // ── Right: Summary Panel ──
+                            SizedBox(
+                              width: 240,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FBFF),
+                                      borderRadius:
+                                          BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: const Color(0xFFD6E0EE)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Resumo do Dispositivo',
+                                          style: TextStyle(
+                                            color: Color(0xFF1F2A44),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        _DeviceSummaryRow(
+                                          label: 'Status inicial',
+                                          chip: _isActive ? 'Ativo' : 'Inativo',
+                                          chipColor: _isActive
+                                              ? const Color(0xFF18A558)
+                                              : const Color(0xFF5E6B82),
+                                        ),
+                                        _DeviceSummaryRow(
+                                          label: 'Grupo',
+                                          value: _groupController.text
+                                                  .trim()
+                                                  .isEmpty
+                                              ? 'Não definido'
+                                              : _groupController.text.trim(),
+                                        ),
+                                        _DeviceSummaryRow(
+                                          label: 'Protocolo',
+                                          value: _selectedProtocol == null
+                                              ? 'Não definido'
+                                              : (_protocolOptions
+                                                      .where((e) =>
+                                                          e.key ==
+                                                          _selectedProtocol)
+                                                      .firstOrNull
+                                                      ?.value ??
+                                                  _selectedProtocol!),
+                                        ),
+                                        _DeviceSummaryRow(
+                                          label: 'Porta',
+                                          value: _portController.text
+                                                  .trim()
+                                                  .isEmpty
+                                              ? 'Não definido'
+                                              : _portController.text.trim(),
+                                        ),
+                                        const _DeviceSummaryRow(
+                                          label: 'Última validação',
+                                          value: '—',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      onPressed: _saving
+                                          ? null
+                                          : () async {
+                                              final ok = editing == null
+                                                  ? await _createDevice()
+                                                  : await _updateDevice(
+                                                      editing);
+                                              if (!mounted ||
+                                                  !dialogContext.mounted) {
+                                                return;
+                                              }
+                                              if (ok) {
+                                                Navigator.of(dialogContext)
+                                                    .pop();
+                                              }
+                                            },
+                                      icon: _saving
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                      strokeWidth: 2),
+                                            )
+                                          : const Icon(Icons.save_outlined,
+                                              size: 18),
+                                      label: Text(
+                                        _saving
+                                            ? 'Salvando...'
+                                            : (editing == null
+                                                ? 'Salvar Dispositivo'
+                                                : 'Salvar Alterações'),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor:
+                                            const Color(0xFF176EEB)
+                                                .withValues(alpha: 0.85),
+                                      ),
+                                      onPressed: _saving
+                                          ? null
+                                          : () async {
+                                              final ok = editing == null
+                                                  ? await _createDevice()
+                                                  : await _updateDevice(
+                                                      editing);
+                                              if (!mounted ||
+                                                  !dialogContext.mounted) {
+                                                return;
+                                              }
+                                              if (ok) {
+                                                Navigator.of(dialogContext)
+                                                    .pop();
+                                              }
+                                            },
+                                      icon: const Icon(
+                                          Icons.settings_rounded,
+                                          size: 18),
+                                      label: const Text(
+                                          'Salvar e Configurar Sensores'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _saving
+                                          ? null
+                                          : () =>
+                                              Navigator.of(dialogContext)
+                                                  .pop(),
+                                      icon: const Icon(Icons.close_rounded,
+                                          size: 16),
+                                      label: const Text('Cancelar'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FBFF),
+                                      borderRadius:
+                                          BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: const Color(0xFFD6E0EE)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Checklist de Criação',
+                                          style: TextStyle(
+                                            color: Color(0xFF1F2A44),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        _ChecklistItem(
+                                          label: 'Validar IMEI',
+                                          checked: hasImei,
+                                        ),
+                                        _ChecklistItem(
+                                          label: 'Confirmar protocolo e porta',
+                                          checked: hasProtocol,
+                                        ),
+                                        _ChecklistItem(
+                                          label: 'Revisar sensores padrão',
+                                          checked: hasSensors,
+                                        ),
+                                        _ChecklistItem(
+                                          label: 'Vincular grupo operacional',
+                                          checked: hasGroup,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    );
-                  },
-                ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -566,11 +1008,6 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     }
   }
 
-  List<String> _sortedSelectedSensors() {
-    final values = _selectedSensorKeys.toList()..sort();
-    return values;
-  }
-
   String _sensorLabel(String key) {
     for (final option in _sensorOptions) {
       if (option.key == key) {
@@ -628,6 +1065,10 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     final identifier = _identifierController.text.trim();
     final category = _categoryController.text.trim();
     final phone = _phoneController.text.trim();
+    final port = _portController.text.trim();
+    final apn = _apnController.text.trim();
+    final clientVal = _clientController.text.trim();
+    final groupVal = _groupController.text.trim();
     final selectedSensors = (_selectedSensorKeys.isEmpty
             ? _defaultSensorKeys
             : _selectedSensorKeys)
@@ -663,6 +1104,16 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
             if ((_selectedMapIconKey ?? '').trim().isNotEmpty)
               'souMapIcon': _selectedMapIconKey,
             'souSensors': selectedSensors,
+            if (_selectedProtocol != null) 'souProtocol': _selectedProtocol,
+            if (port.isNotEmpty) 'souPort': port,
+            if (_selectedOperator != null) 'souOperator': _selectedOperator,
+            if (apn.isNotEmpty) 'souApn': apn,
+            if (_selectedManufacturer != null)
+              'souManufacturer': _selectedManufacturer,
+            if (_selectedModel != null) 'souModel': _selectedModel,
+            if (clientVal.isNotEmpty) 'souClient': clientVal,
+            if (groupVal.isNotEmpty) 'souGroup': groupVal,
+            'souTimezone': _selectedTimezone,
           },
         },
       );
@@ -692,6 +1143,10 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     final identifier = _identifierController.text.trim();
     final category = _categoryController.text.trim();
     final phone = _phoneController.text.trim();
+    final port = _portController.text.trim();
+    final apn = _apnController.text.trim();
+    final clientVal = _clientController.text.trim();
+    final groupVal = _groupController.text.trim();
     final selectedSensors = (_selectedSensorKeys.isEmpty
             ? _defaultSensorKeys
             : _selectedSensorKeys)
@@ -711,6 +1166,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       ...?device.attributes,
       'souActive': _isActive,
       'souSensors': selectedSensors,
+      'souTimezone': _selectedTimezone,
     };
     if (phone.isNotEmpty) {
       attributes['phone'] = phone;
@@ -726,6 +1182,46 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       attributes['souMapIcon'] = _selectedMapIconKey;
     } else {
       attributes.remove('souMapIcon');
+    }
+    if (_selectedProtocol != null) {
+      attributes['souProtocol'] = _selectedProtocol;
+    } else {
+      attributes.remove('souProtocol');
+    }
+    if (port.isNotEmpty) {
+      attributes['souPort'] = port;
+    } else {
+      attributes.remove('souPort');
+    }
+    if (_selectedOperator != null) {
+      attributes['souOperator'] = _selectedOperator;
+    } else {
+      attributes.remove('souOperator');
+    }
+    if (apn.isNotEmpty) {
+      attributes['souApn'] = apn;
+    } else {
+      attributes.remove('souApn');
+    }
+    if (_selectedManufacturer != null) {
+      attributes['souManufacturer'] = _selectedManufacturer;
+    } else {
+      attributes.remove('souManufacturer');
+    }
+    if (_selectedModel != null) {
+      attributes['souModel'] = _selectedModel;
+    } else {
+      attributes.remove('souModel');
+    }
+    if (clientVal.isNotEmpty) {
+      attributes['souClient'] = clientVal;
+    } else {
+      attributes.remove('souClient');
+    }
+    if (groupVal.isNotEmpty) {
+      attributes['souGroup'] = groupVal;
+    } else {
+      attributes.remove('souGroup');
     }
 
     final session = ref.read(sessionProvider);
@@ -1670,6 +2166,326 @@ class _PanelMessageState extends StatelessWidget {
   }
 }
 
+// ── Shared form widgets for device dialog ─────────────────────────────────
+
+class _DeviceSection extends StatelessWidget {
+  const _DeviceSection({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final List<Widget> children;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: iconColor),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 6),
+              trailing!,
+            ],
+          ],
+        ),
+        const SizedBox(height: 14),
+        ...children,
+      ],
+    );
+  }
+}
+
+class _SensorCardV2 extends StatelessWidget {
+  const _SensorCardV2({
+    required this.sensorKey,
+    required this.label,
+    required this.selected,
+    required this.onToggle,
+  });
+  final String sensorKey;
+  final String label;
+  final bool selected;
+  final void Function(bool)? onToggle;
+
+  static const Map<String, IconData> _icons = {
+    'ignition': Icons.power_settings_new_rounded,
+    'battery': Icons.battery_charging_full_rounded,
+    'gsm': Icons.signal_cellular_alt_rounded,
+    'speed': Icons.speed_rounded,
+    'gps': Icons.gps_fixed_rounded,
+    'door': Icons.sensor_door_rounded,
+    'temperature': Icons.thermostat_rounded,
+    'fuel': Icons.local_gas_station_rounded,
+    'rpm': Icons.settings_rounded,
+    'panic': Icons.warning_amber_rounded,
+    'driver': Icons.badge_rounded,
+    'hours': Icons.timer_rounded,
+    'odometer': Icons.route_rounded,
+    'motion': Icons.directions_run_rounded,
+    'sos': Icons.emergency_rounded,
+    'lock': Icons.lock_rounded,
+    'seatbelt': Icons.airline_seat_recline_normal_rounded,
+  };
+
+  static const Map<String, Color> _colors = {
+    'ignition': Color(0xFF176EEB),
+    'battery': Color(0xFF18A558),
+    'gsm': Color(0xFF7B2FC4),
+    'speed': Color(0xFFE67E22),
+    'gps': Color(0xFF176EEB),
+    'door': Color(0xFF8FA3BF),
+    'temperature': Color(0xFFE74C3C),
+    'fuel': Color(0xFFE67E22),
+    'rpm': Color(0xFF5A6B84),
+    'panic': Color(0xFFE74C3C),
+    'driver': Color(0xFF176EEB),
+    'hours': Color(0xFF18A558),
+    'odometer': Color(0xFF5A6B84),
+    'motion': Color(0xFFE67E22),
+    'sos': Color(0xFFE74C3C),
+    'lock': Color(0xFF7B2FC4),
+    'seatbelt': Color(0xFF176EEB),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = _icons[sensorKey] ?? Icons.sensors_rounded;
+    final color = _colors[sensorKey] ?? const Color(0xFF176EEB);
+    return SizedBox(
+      width: 108,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? color.withValues(alpha: 0.06)
+              : const Color(0xFFF8FBFF),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color:
+                selected ? color.withValues(alpha: 0.4) : const Color(0xFFD6E0EE),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 28,
+                color: selected ? color : const Color(0xFFB0BED0)),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected
+                    ? const Color(0xFF1F2A44)
+                    : const Color(0xFF8FA3BF),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            Transform.scale(
+              scale: 0.75,
+              child: Switch(
+                value: selected,
+                onChanged: onToggle,
+                activeThumbColor: color,
+              ),
+            ),
+            GestureDetector(
+              onTap: () {},
+              child: Text(
+                'Configurar',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: selected ? color : const Color(0xFFB0BED0),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeviceDropdown extends StatelessWidget {
+  const _DeviceDropdown({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+  final String label;
+  final String? value;
+  final List<MapEntry<String, String>> options;
+  final void Function(String?) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      items: options
+          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _DeviceSummaryRow extends StatelessWidget {
+  const _DeviceSummaryRow({
+    required this.label,
+    this.value,
+    this.chip,
+    this.chipColor,
+  });
+  final String label;
+  final String? value;
+  final String? chip;
+  final Color? chipColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF5A6B84),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (chip != null)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: (chipColor ?? const Color(0xFF18A558))
+                    .withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                chip!,
+                style: TextStyle(
+                  color: chipColor ?? const Color(0xFF18A558),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: Text(
+                value ?? '—',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: const Color(0xFF1F2A44),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChecklistItem extends StatelessWidget {
+  const _ChecklistItem({required this.label, required this.checked});
+  final String label;
+  final bool checked;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: checked
+                  ? const Color(0xFF18A558)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(
+                color: checked
+                    ? const Color(0xFF18A558)
+                    : const Color(0xFFB0BED0),
+                width: 1.5,
+              ),
+            ),
+            child: checked
+                ? const Icon(Icons.check_rounded,
+                    size: 12, color: Colors.white)
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: checked
+                    ? const Color(0xFF18A558)
+                    : const Color(0xFF5A6B84),
+                fontWeight:
+                    checked ? FontWeight.w600 : FontWeight.w400,
+                decoration: checked
+                    ? TextDecoration.none
+                    : TextDecoration.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Map icon choice model ──────────────────────────────────────────────────
+
 class _MapIconChoice {
   const _MapIconChoice(this.key, this.label);
 
@@ -1679,157 +2495,6 @@ class _MapIconChoice {
   String get assetPath => 'assets/icons/map/$key.png';
 }
 
-class _MapIconPreview extends StatelessWidget {
-  const _MapIconPreview({
-    required this.iconKey,
-    required this.categoryLabel,
-  });
-
-  final String? iconKey;
-  final String categoryLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final normalizedKey = (iconKey ?? '').trim();
-    final isAutomatic = normalizedKey.isEmpty;
-    final resolvedKey = isAutomatic ? 'default' : normalizedKey;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD6E0EE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFD6E0EE)),
-            ),
-            padding: const EdgeInsets.all(10),
-            child: Image.asset(
-              'assets/icons/map/$resolvedKey.png',
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Image.asset(
-                'assets/icons/map/default.png',
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isAutomatic ? 'Modo automático' : 'Ícone selecionado',
-                  style: const TextStyle(
-                    color: Color(0xFF1F2A44),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isAutomatic
-                      ? 'Sem ícone salvo. O mapa continua usando a regra automática atual.'
-                      : 'Será salvo em attributes.souMapIcon.',
-                  style: const TextStyle(
-                    color: Color(0xFF5A6B84),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (categoryLabel.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Categoria/modelo atual: $categoryLabel',
-                    style: const TextStyle(
-                      color: Color(0xFF176EEB),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MapIconTile extends StatelessWidget {
-  const _MapIconTile({
-    required this.label,
-    required this.assetPath,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final String assetPath;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: 110,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFEAF2FF) : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color:
-                  selected ? const Color(0xFF2D8CFF) : const Color(0xFFD6E0EE),
-              width: selected ? 1.4 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              SizedBox(
-                width: 44,
-                height: 44,
-                child: Image.asset(
-                  assetPath,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.image_not_supported_outlined,
-                    color: Color(0xFF74839B),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected
-                      ? const Color(0xFF176EEB)
-                      : const Color(0xFF394B66),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _SelectedSensorRow extends StatelessWidget {
   const _SelectedSensorRow({

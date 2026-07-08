@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/app_constants.dart';
+import '../../data/asaas_config.dart';
 import '../admin/admin_reference_ui.dart';
 import 'models/finance_models.dart';
+import 'repositories/asaas_finance_repository.dart';
 import 'repositories/finance_repository.dart';
 import 'repositories/mock_finance_repository.dart';
 import 'services/finance_api_service.dart';
@@ -12,13 +13,15 @@ import 'widgets/finance_kpi_row.dart';
 import 'widgets/finance_summary_cards.dart';
 import 'widgets/finance_table.dart';
 
-final financeApiServiceProvider = Provider<FinanceApiService>((ref) {
-  return FinanceApiService(baseUrl: kSouAssistApiBaseUrl);
+final financeApiServiceProvider = Provider<FinanceApiService?>((ref) {
+  final config = ref.watch(asaasConfigProvider);
+  if (!config.isConfigured) return null;
+  return FinanceApiService(baseUrl: config.baseUrl, apiKey: config.apiKey);
 });
 
 final financeRepositoryProvider = Provider<FinanceRepository>((ref) {
-  // Mantemos mock nesta etapa; swap para API real fica centralizado aqui.
-  ref.watch(financeApiServiceProvider);
+  final api = ref.watch(financeApiServiceProvider);
+  if (api != null) return AsaasFinanceRepository(api: api);
   return const MockFinanceRepository();
 });
 

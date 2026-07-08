@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/display_text_formatter.dart';
+import '../../data/bridge_client.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 
@@ -20,6 +21,7 @@ class DashboardScreen extends ConsumerWidget {
         const <Map<String, dynamic>>[];
     final orders =
         ref.watch(ordersProvider).valueOrNull ?? const <Map<String, dynamic>>[];
+    final ia = ref.watch(iaProvider);
 
     final positionByDeviceId = <int, TraccarPosition>{
       for (final position in positions) position.deviceId: position,
@@ -85,6 +87,43 @@ class DashboardScreen extends ConsumerWidget {
     final recentEvents = latestEvents.take(6).toList(growable: false);
     final maintenance = _maintenanceSummary(orders);
 
+    const demoChamados = <_ChamadoItem>[
+      _ChamadoItem(id: '#4821', cliente: 'Ricardo Mendes', servico: 'Guincho', status: _ChamadoStatus.aguardando),
+      _ChamadoItem(id: '#4820', cliente: 'Fernanda Lima', servico: 'Pane Elétrica', status: _ChamadoStatus.emAndamento),
+      _ChamadoItem(id: '#4819', cliente: 'Marcos Oliveira', servico: 'Bateria', status: _ChamadoStatus.emAndamento),
+      _ChamadoItem(id: '#4818', cliente: 'Ana Costa', servico: 'Troca de Pneu', status: _ChamadoStatus.concluido),
+      _ChamadoItem(id: '#4817', cliente: 'João Silva', servico: 'Reboque', status: _ChamadoStatus.concluido),
+    ];
+    final chamadosAbertos = demoChamados
+        .where((c) => c.status != _ChamadoStatus.concluido)
+        .length;
+    const autoAtivas = 8;
+    const autoComErro = 1;
+
+    final businessCards = <_MetricData>[
+      _MetricData(
+        title: 'Chamados abertos',
+        value: '$chamadosAbertos',
+        subtitle: '${demoChamados.where((c) => c.status == _ChamadoStatus.aguardando).length} aguardando parceiro',
+        icon: Icons.support_agent_rounded,
+        color: const Color(0xFF8B5CF6),
+      ),
+      _MetricData(
+        title: 'IA pendentes',
+        value: '${ia.pending.length}',
+        subtitle: '${ia.acertosHoje} acertos hoje',
+        icon: Icons.auto_awesome_rounded,
+        color: const Color(0xFF06B6D4),
+      ),
+      _MetricData(
+        title: 'Automações ativas',
+        value: '$autoAtivas',
+        subtitle: '$autoComErro com erro',
+        icon: Icons.bolt_rounded,
+        color: const Color(0xFFF59E0B),
+      ),
+    ];
+
     final totalCards = <_MetricData>[
       _MetricData(
         title: 'Frota total',
@@ -144,6 +183,31 @@ class DashboardScreen extends ConsumerWidget {
                       child: _CommercialMetricCard(data: totalCards[i]),
                     ),
                     if (i != totalCards.length - 1) const SizedBox(width: 10),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 10.0;
+            final bWidth =
+                ((constraints.maxWidth - (businessCards.length - 1) * spacing) /
+                        businessCards.length)
+                    .clamp(170.0, 280.0)
+                    .toDouble();
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < businessCards.length; i++) ...[
+                    SizedBox(
+                      width: bWidth,
+                      child: _CommercialMetricCard(data: businessCards[i]),
+                    ),
+                    if (i != businessCards.length - 1) const SizedBox(width: 10),
                   ],
                 ],
               ),
@@ -370,6 +434,66 @@ class DashboardScreen extends ConsumerWidget {
                 Expanded(flex: 6, child: eventsCard),
                 const SizedBox(width: 10),
                 Expanded(flex: 5, child: rankingCard),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 1080;
+
+            final chamadosCard = _CommercialPanelCard(
+              title: 'Chamados recentes',
+              subtitle: 'Atendimentos e socorro veicular',
+              icon: Icons.support_agent_rounded,
+              child: Column(
+                children: [
+                  for (final c in demoChamados)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 7),
+                      child: _ChamadoLine(item: c),
+                    ),
+                ],
+              ),
+            );
+
+            final iaCard = _CommercialPanelCard(
+              title: 'IA Operacional',
+              subtitle: 'Aprovações e eventos da camada inteligente',
+              icon: Icons.auto_awesome_rounded,
+              child: ia.pending.isEmpty && ia.log.isEmpty
+                  ? const _EmptyStateText(text: 'Nenhum evento de IA registrado.')
+                  : Column(
+                      children: [
+                        _IaSummaryRow(ia: ia),
+                        const SizedBox(height: 8),
+                        const Divider(height: 1, color: Color(0xFFE5ECF6)),
+                        const SizedBox(height: 8),
+                        for (final e in [...ia.pending, ...ia.log].take(4))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: _IaEventLine(event: e),
+                          ),
+                      ],
+                    ),
+            );
+
+            if (compact) {
+              return Column(
+                children: [
+                  chamadosCard,
+                  const SizedBox(height: 10),
+                  iaCard,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: chamadosCard),
+                const SizedBox(width: 10),
+                Expanded(child: iaCard),
               ],
             );
           },
@@ -1121,6 +1245,264 @@ class _EmptyStateText extends StatelessWidget {
         color: Color(0xFF60718D),
         fontWeight: FontWeight.w600,
         fontSize: 11.4,
+      ),
+    );
+  }
+}
+
+// ── Chamados ──────────────────────────────────────────────────────────────────
+
+enum _ChamadoStatus { aguardando, emAndamento, concluido }
+
+class _ChamadoItem {
+  const _ChamadoItem({
+    required this.id,
+    required this.cliente,
+    required this.servico,
+    required this.status,
+  });
+  final String id;
+  final String cliente;
+  final String servico;
+  final _ChamadoStatus status;
+}
+
+class _ChamadoLine extends StatelessWidget {
+  const _ChamadoLine({required this.item});
+  final _ChamadoItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = switch (item.status) {
+      _ChamadoStatus.aguardando  => ('Aguardando', const Color(0xFFF59E0B)),
+      _ChamadoStatus.emAndamento => ('Em andamento', const Color(0xFF176EEB)),
+      _ChamadoStatus.concluido   => ('Concluído', const Color(0xFF22C55E)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDE6F2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            item.id,
+            style: const TextStyle(
+              color: Color(0xFF60718D),
+              fontWeight: FontWeight.w700,
+              fontSize: 10.5,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              item.cliente,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            item.servico,
+            style: const TextStyle(
+              color: Color(0xFF52627C),
+              fontWeight: FontWeight.w600,
+              fontSize: 10.8,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 9.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── IA ────────────────────────────────────────────────────────────────────────
+
+class _IaSummaryRow extends StatelessWidget {
+  const _IaSummaryRow({required this.ia});
+  final IaState ia;
+
+  @override
+  Widget build(BuildContext context) {
+    final (statusLabel, statusColor) = switch (ia.status) {
+      BridgeConnectionStatus.connected    => ('Conectada', const Color(0xFF22C55E)),
+      BridgeConnectionStatus.connecting   => ('Conectando…', const Color(0xFFF59E0B)),
+      BridgeConnectionStatus.disconnected => ('Desconectada', const Color(0xFF9CA3AF)),
+      BridgeConnectionStatus.error        => ('Erro', const Color(0xFFEF4444)),
+    };
+    return Row(
+      children: [
+        _IaKpi(label: 'Status', value: statusLabel, color: statusColor),
+        const SizedBox(width: 10),
+        _IaKpi(label: 'Pendentes', value: '${ia.pending.length}', color: const Color(0xFF176EEB)),
+        const SizedBox(width: 10),
+        _IaKpi(label: 'Acertos hoje', value: '${ia.acertosHoje}', color: const Color(0xFF22C55E)),
+        const SizedBox(width: 10),
+        _IaKpi(label: 'Tokens usados', value: '${ia.tokensUsed}', color: const Color(0xFF8B5CF6)),
+      ],
+    );
+  }
+}
+
+class _IaKpi extends StatelessWidget {
+  const _IaKpi({required this.label, required this.value, required this.color});
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 9.5,
+              ),
+            ),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IaEventLine extends StatelessWidget {
+  const _IaEventLine({required this.event});
+  final IaBridgeEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = event.requerAprovacao && event.aprovado == null;
+    final (icon, color) = switch (event.type) {
+      IaEventType.sugestao => (Icons.lightbulb_outline_rounded, const Color(0xFFF59E0B)),
+      IaEventType.acao     => (Icons.play_circle_outline_rounded, const Color(0xFF176EEB)),
+      IaEventType.alerta   => (Icons.warning_amber_rounded, const Color(0xFFEF4444)),
+      IaEventType.status   => (Icons.info_outline_rounded, const Color(0xFF22C55E)),
+    };
+    final h = event.timestamp.toLocal().hour.toString().padLeft(2, '0');
+    final m = event.timestamp.toLocal().minute.toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: pending
+            ? const Color(0xFF176EEB).withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: pending
+              ? const Color(0xFF176EEB).withValues(alpha: 0.3)
+              : const Color(0xFFDDE6F2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  event.titulo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11.5,
+                  ),
+                ),
+                Text(
+                  event.descricao,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF52627C),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (pending)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF176EEB).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'Pendente',
+                style: TextStyle(
+                  color: Color(0xFF176EEB),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 9.5,
+                ),
+              ),
+            )
+          else
+            Text(
+              '$h:$m',
+              style: const TextStyle(
+                color: Color(0xFF60718D),
+                fontWeight: FontWeight.w700,
+                fontSize: 10.8,
+              ),
+            ),
+        ],
       ),
     );
   }

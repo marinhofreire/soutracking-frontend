@@ -1588,7 +1588,7 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                         constraints: const BoxConstraints(maxWidth: 340),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.94),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: const Color(0xFFD6E0EE)),
                           boxShadow: [
@@ -1666,7 +1666,7 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.94),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: const Color(0xFFD6E0EE)),
                           boxShadow: [
@@ -1760,7 +1760,7 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.96),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: const Color(0xFFD6E0EE)),
                           boxShadow: [
@@ -2092,7 +2092,7 @@ class _ReportsReplayPanelState extends State<_ReportsReplayPanel> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
@@ -2510,7 +2510,7 @@ class _ReplayMapCard extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.88),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: const Color(0xFFD6E0EE)),
                   ),
@@ -2596,7 +2596,7 @@ class _ReplayMapCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.94),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: const Color(0xFFD6E0EE)),
                   ),
@@ -2656,7 +2656,7 @@ class _ReplayPointDetailsCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.96),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFD6E0EE)),
           boxShadow: [
@@ -3209,7 +3209,7 @@ class _ReplayStatePanel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
@@ -3247,7 +3247,7 @@ class _ReplayLoadingPanel extends StatelessWidget {
       width: double.infinity,
       height: 280,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
@@ -4293,7 +4293,7 @@ class _LoadingPanel extends StatelessWidget {
           width: double.infinity,
           height: 60,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.84),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFD6E0EE)),
           ),
@@ -4303,7 +4303,7 @@ class _LoadingPanel extends StatelessWidget {
           width: double.infinity,
           height: 116,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.84),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFD6E0EE)),
           ),
@@ -4347,7 +4347,7 @@ class _ErrorPanel extends StatelessWidget {
           child: Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.84),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFD6E0EE)),
             ),

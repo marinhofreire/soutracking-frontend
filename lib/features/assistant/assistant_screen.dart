@@ -1020,10 +1020,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         Text('Assistente IA', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          'Escreva livremente o que voce precisa. A IA interpreta sua solicitacao e executa a automacao.',
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+          'Escreva livremente o que você precisa. A IA interpreta sua solicitação e executa a automação.',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
         Expanded(
@@ -1042,8 +1040,10 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 final message = _messages[index];
                 final bubbleColor = message.isUser
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.white10;
-                final textColor = message.isUser ? Colors.black : Colors.white;
+                    : const Color(0xFFEDF2FA);
+                final textColor = message.isUser
+                    ? Colors.white
+                    : const Color(0xFF1F2A44);
                 final alignment = message.isUser
                     ? Alignment.centerRight
                     : Alignment.centerLeft;

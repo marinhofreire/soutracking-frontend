@@ -9,7 +9,8 @@ import '../../state/session_state.dart';
 enum _CommunicationTab { conversations, notifications }
 
 class ZproCommunicationScreen extends ConsumerStatefulWidget {
-  const ZproCommunicationScreen({super.key});
+  const ZproCommunicationScreen({super.key, this.onClose});
+  final VoidCallback? onClose;
 
   @override
   ConsumerState<ZproCommunicationScreen> createState() =>
@@ -19,6 +20,7 @@ class ZproCommunicationScreen extends ConsumerStatefulWidget {
 class _ZproCommunicationScreenState
     extends ConsumerState<ZproCommunicationScreen> {
   final _messageController = TextEditingController();
+  final _searchController = TextEditingController();
 
   _CommunicationTab _activeTab = _CommunicationTab.conversations;
   String _selectedChannel = 'Todos';
@@ -39,6 +41,7 @@ class _ZproCommunicationScreenState
   @override
   void dispose() {
     _messageController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -51,7 +54,7 @@ class _ZproCommunicationScreenState
     }
 
     final text = formatDisplayText(_messageController.text, fallback: '')
-        .replaceAll('N\u00E3o informado', '')
+        .replaceAll('Não informado', '')
         .trim();
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -91,10 +94,7 @@ class _ZproCommunicationScreenState
     }
   }
 
-  void _setQuickCommand({
-    required String type,
-    required String message,
-  }) {
+  void _setQuickCommand({required String type, required String message}) {
     setState(() {
       _pendingCommandType = type;
       _messageController.text = message;
@@ -118,7 +118,7 @@ class _ZproCommunicationScreenState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Hist\u00F3rico copiado para a \u00E1rea de transfer\u00EAncia.'),
+        content: Text('Histórico copiado para a área de transferência.'),
       ),
     );
   }
@@ -127,11 +127,11 @@ class _ZproCommunicationScreenState
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hist\u00F3rico de envios'),
+        title: const Text('Histórico de envios'),
         content: SizedBox(
           width: 640,
           child: rows.isEmpty
-              ? const Text('N\u00E3o informado')
+              ? const Text('Não informado')
               : ListView.separated(
                   shrinkWrap: true,
                   itemCount: rows.length.clamp(0, 20),
@@ -215,6 +215,13 @@ class _ZproCommunicationScreenState
           : notificationRows,
     );
 
+    final search = _searchController.text.trim().toLowerCase();
+    final filteredRows = search.isEmpty
+        ? activeRows
+        : activeRows.where((r) =>
+            r.deviceName.toLowerCase().contains(search) ||
+            r.message.toLowerCase().contains(search)).toList();
+
     final selectedDevice = devicesById[_selectedDeviceId];
     final selectedPosition =
         selectedDevice == null ? null : latestByDevice[selectedDevice.id];
@@ -227,41 +234,209 @@ class _ZproCommunicationScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _headerBar(
-          onExport: () => _exportRows(activeRows),
-          onHistory: () => _openHistoryDialog(activeRows),
-          onNewMessage: () {
-            setState(() {
-              _pendingCommandType = 'custom';
-              _messageController.text = '';
-            });
-          },
+        // ── Header ──────────────────────────────────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF176EEB).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.forum_rounded,
+                color: Color(0xFF176EEB),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Comunicação',
+                    style: TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                  SizedBox(height: 1),
+                  Text(
+                    'Mensagens e atendimento via WhatsApp',
+                    style: TextStyle(
+                      color: Color(0xFF60718D),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                ref.invalidate(commandsProvider);
+                ref.invalidate(notificationsProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Atualizar',
+              style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+            ),
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close_rounded),
+              tooltip: 'Fechar',
+              style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
-        _implementationBanner(),
+
+        // ── Toolbar ─────────────────────────────────────────────────────────
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE5F0)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Search
+              SizedBox(
+                width: 180,
+                height: 36,
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar...',
+                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9DB1CC)),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: Color(0xFF9DB1CC)),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    filled: true,
+                    fillColor: const Color(0xFFF7F9FD),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF176EEB)),
+                    ),
+                  ),
+                ),
+              ),
+              _filterDropdown<String>(
+                label: 'Canal',
+                value: _selectedChannel,
+                options: const ['Todos', 'Comando', 'Mensagem', 'Notificação'],
+                width: 136,
+                onChanged: (v) => setState(() => _selectedChannel = v),
+              ),
+              _filterDropdown<int?>(
+                label: 'Equipamento',
+                value: _selectedDeviceId,
+                options: [null, ...devices.map((e) => e.id)],
+                width: 176,
+                optionLabel: (id) {
+                  if (id == null) return 'Todos';
+                  return formatDisplayText(devices.where((d) => d.id == id).firstOrNull?.name);
+                },
+                onChanged: (v) => setState(() => _selectedDeviceId = v),
+              ),
+              _filterDropdown<String>(
+                label: 'Status',
+                value: _selectedStatus,
+                options: const ['Todos', 'Enviado', 'Pendente', 'Falha'],
+                width: 124,
+                onChanged: (v) => setState(() => _selectedStatus = v),
+              ),
+              _filterDropdown<String>(
+                label: 'Período',
+                value: _selectedPeriod,
+                options: const ['Hoje', '7 dias', '30 dias'],
+                width: 116,
+                onChanged: (v) => setState(() => _selectedPeriod = v),
+              ),
+              // Tabs inline
+              _tabChip(
+                label: 'Conversas',
+                count: conversationRows.length,
+                active: _activeTab == _CommunicationTab.conversations,
+                onTap: () => setState(() => _activeTab = _CommunicationTab.conversations),
+              ),
+              _tabChip(
+                label: 'Notificações',
+                count: notificationRows.length,
+                active: _activeTab == _CommunicationTab.notifications,
+                onTap: () => setState(() => _activeTab = _CommunicationTab.notifications),
+              ),
+              // Actions
+              OutlinedButton.icon(
+                onPressed: () => _exportRows(activeRows),
+                icon: const Icon(Icons.file_download_outlined, size: 15),
+                label: const Text('Exportar', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  foregroundColor: const Color(0xFF526684),
+                  side: const BorderSide(color: Color(0xFFDDE5F0)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openHistoryDialog(activeRows),
+                icon: const Icon(Icons.history_rounded, size: 15),
+                label: const Text('Histórico', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  foregroundColor: const Color(0xFF526684),
+                  side: const BorderSide(color: Color(0xFFDDE5F0)),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () => setState(() {
+                  _pendingCommandType = 'custom';
+                  _messageController.text = '';
+                }),
+                icon: const Icon(Icons.add_rounded, size: 15),
+                label: const Text('Nova mensagem', style: TextStyle(fontSize: 12)),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  backgroundColor: const Color(0xFF176EEB),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 10),
-        _filterBar(devices),
-        const SizedBox(height: 10),
-        _tabBar(),
-        const SizedBox(height: 10),
+
+        // ── Two-panel layout ─────────────────────────────────────────────────
         Expanded(
           child: Row(
             children: [
               Expanded(
-                flex: 6,
+                flex: 5,
                 child: _leftListPanel(
-                  rows: activeRows,
-                  onSelect: (row) {
-                    setState(() {
-                      _selectedRow = row;
-                      _selectedDeviceId = row.deviceId;
-                    });
-                  },
+                  rows: filteredRows,
+                  onSelect: (row) => setState(() {
+                    _selectedRow = row;
+                    _selectedDeviceId = row.deviceId;
+                  }),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                flex: 5,
+                flex: 4,
                 child: _rightConversationPanel(
                   selectedDevice: selectedDevice,
                   selectedPosition: selectedPosition,
@@ -277,201 +452,28 @@ class _ZproCommunicationScreenState
     );
   }
 
-  Widget _headerBar({
-    required VoidCallback onExport,
-    required VoidCallback onHistory,
-    required VoidCallback onNewMessage,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: _panelDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Comunica\u00E7\u00E3o Operacional',
-            style: TextStyle(
-              color: Color(0xFF1F2A44),
-              fontWeight: FontWeight.w900,
-              fontSize: 15.5,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            formatDisplayText(
-              'Envio de comandos, mensagens e notifica\u00E7\u00F5es para dispositivos',
-            ),
-            style: const TextStyle(
-              color: Color(0xFF60718D),
-              fontWeight: FontWeight.w600,
-              fontSize: 11.8,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _topActionButton(
-                label: 'Exportar',
-                icon: Icons.file_download_outlined,
-                onTap: onExport,
-              ),
-              _topActionButton(
-                label: 'Hist\u00F3rico de envios',
-                icon: Icons.history_rounded,
-                onTap: onHistory,
-              ),
-              _topActionButton(
-                label: 'Nova mensagem',
-                icon: Icons.add_rounded,
-                onTap: onNewMessage,
-                primary: true,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _filterBar(List<TraccarDevice> devices) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-      decoration: _panelDecoration(),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          _filterDropdown<String>(
-            label: 'Canal',
-            value: _selectedChannel,
-            options: const ['Todos', 'Comando', 'Mensagem', 'Notifica\u00E7\u00E3o'],
-            width: 146,
-            onChanged: (value) => setState(() => _selectedChannel = value),
-          ),
-          _filterDropdown<int?>(
-            label: 'Equipamento',
-            value: _selectedDeviceId,
-            options: [null, ...devices.map((e) => e.id)],
-            width: 188,
-            optionLabel: (id) {
-              if (id == null) return 'Todos';
-              final device = devices.where((d) => d.id == id).firstOrNull;
-              return formatDisplayText(device?.name);
-            },
-            onChanged: (value) => setState(() => _selectedDeviceId = value),
-          ),
-          _filterDropdown<String>(
-            label: 'Status',
-            value: _selectedStatus,
-            options: const ['Todos', 'Enviado', 'Pendente', 'Falha'],
-            width: 132,
-            onChanged: (value) => setState(() => _selectedStatus = value),
-          ),
-          _filterDropdown<String>(
-            label: 'Per\u00EDodo',
-            value: _selectedPeriod,
-            options: const ['Hoje', '7 dias', '30 dias'],
-            width: 124,
-            onChanged: (value) => setState(() => _selectedPeriod = value),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              setState(() {
-                _selectedChannel = 'Todos';
-                _selectedDeviceId = null;
-                _selectedStatus = 'Todos';
-                _selectedPeriod = 'Hoje';
-              });
-            },
-            icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: const Text('Limpar filtros'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Configuracoes avancadas de comunicacao ainda dependem de backend proprio.',
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.tune_rounded, size: 16),
-            label: const Text('Configura\u00E7\u00F5es'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _implementationBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
-      child: const Text(
-        'Modulo em implantacao: a tela usa comandos e notificacoes reais do tracking, '
-        'mas ainda nao representa chat/WhatsApp bidirecional com recebida/lida.',
-        style: TextStyle(
-          color: Color(0xFF92400E),
-          fontWeight: FontWeight.w700,
-          fontSize: 12.2,
-        ),
-      ),
-    );
-  }
-
-  Widget _tabBar() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-      decoration: _panelDecoration(),
-      child: Row(
-        children: [
-          _tabChip(
-            label: 'Conversas',
-            active: _activeTab == _CommunicationTab.conversations,
-            onTap: () =>
-                setState(() => _activeTab = _CommunicationTab.conversations),
-          ),
-          const SizedBox(width: 8),
-          _tabChip(
-            label: 'Notifica\u00E7\u00F5es',
-            active: _activeTab == _CommunicationTab.notifications,
-            onTap: () =>
-                setState(() => _activeTab = _CommunicationTab.notifications),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Left panel ─────────────────────────────────────────────────────────────
 
   Widget _leftListPanel({
     required List<_CommunicationRow> rows,
     required ValueChanged<_CommunicationRow> onSelect,
   }) {
     return Container(
-      decoration: _panelDecoration(),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
       child: Column(
         children: [
+          // Column headers
           Container(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
             decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Color(0xFFDDE6F2)),
-              ),
+              border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
             ),
-            child: const Row(
-              children: [
+            child: Row(
+              children: const [
                 Expanded(flex: 3, child: _HeaderLabel('Data / Hora')),
                 Expanded(flex: 3, child: _HeaderLabel('Dispositivo')),
                 Expanded(flex: 2, child: _HeaderLabel('Canal')),
@@ -489,10 +491,8 @@ class _ZproCommunicationScreenState
                   )
                 : ListView.separated(
                     itemCount: rows.length,
-                    separatorBuilder: (_, __) => const Divider(
-                      height: 1,
-                      color: Color(0xFFE6EDF7),
-                    ),
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, color: Color(0xFFF0F4FA)),
                     itemBuilder: (context, index) {
                       final row = rows[index];
                       final selected = _selectedRow?.id == row.id;
@@ -503,24 +503,37 @@ class _ZproCommunicationScreenState
                         child: InkWell(
                           onTap: () => onSelect(row),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                            padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
                             child: Row(
                               children: [
                                 Expanded(
                                   flex: 3,
-                                  child:
-                                      _BodyLabel(_formatDateTime(row.dateTime)),
+                                  child: _BodyLabel(_formatDateTime(row.dateTime)),
                                 ),
                                 Expanded(
-                                    flex: 3, child: _BodyLabel(row.deviceName)),
+                                  flex: 3,
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        margin: const EdgeInsets.only(right: 6),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: _statusColor(row.onlineStatus),
+                                        ),
+                                      ),
+                                      Expanded(child: _BodyLabel(row.deviceName)),
+                                    ],
+                                  ),
+                                ),
                                 Expanded(
-                                    flex: 2, child: _BodyLabel(row.channel)),
+                                  flex: 2,
+                                  child: _channelChip(row.channel),
+                                ),
                                 Expanded(
                                   flex: 5,
-                                  child: _BodyLabel(
-                                    row.message,
-                                    maxLines: 2,
-                                  ),
+                                  child: _BodyLabel(row.message, maxLines: 2),
                                 ),
                                 Expanded(
                                   flex: 2,
@@ -537,10 +550,27 @@ class _ZproCommunicationScreenState
                     },
                   ),
           ),
+          // Footer count
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
+            ),
+            child: Text(
+              '${rows.length} registro${rows.length == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: Color(0xFF9DB1CC),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  // ── Right panel ────────────────────────────────────────────────────────────
 
   Widget _rightConversationPanel({
     required TraccarDevice? selectedDevice,
@@ -550,141 +580,159 @@ class _ZproCommunicationScreenState
     required List<_CommunicationRow> history,
   }) {
     final deviceName = formatDisplayText(selectedDevice?.name);
-    final statusText = formatDisplayText(selectedStatus);
     final address = formatDisplayText(selectedPosition?.address);
 
     return Container(
-      decoration: _panelDecoration(),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
       child: Column(
         children: [
+          // Contact header
           Container(
-            width: double.infinity,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFDDE6F2))),
+              border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        deviceName,
-                        style: const TextStyle(
-                          color: Color(0xFF1F2A44),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: selectedStatusColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: selectedStatusColor.withValues(alpha: 0.34),
-                        ),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: TextStyle(
-                          color: selectedStatusColor,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Endereço: $address',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF60718D),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF176EEB).withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.directions_car_rounded,
+                    color: Color(0xFF176EEB),
+                    size: 17,
                   ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        selectedDevice == null ? 'Selecione um contato' : deviceName,
+                        style: const TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (selectedDevice != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          address.isNotEmpty ? address : 'Endereço não disponível',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF60718D),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (selectedDevice != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: selectedStatusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: selectedStatusColor.withValues(alpha: 0.30)),
+                    ),
+                    child: Text(
+                      selectedStatus,
+                      style: TextStyle(
+                        color: selectedStatusColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
+
+          // Message history
           Expanded(
-            child: history.isEmpty
+            child: selectedDevice == null
                 ? const _EmptyMessage(
-                    icon: Icons.sms_outlined,
-                    title: 'Sem hist\u00F3rico desta conversa',
-                    subtitle:
-                        'Selecione outro equipamento ou envie uma mensagem',
+                    icon: Icons.forum_rounded,
+                    title: 'Nenhuma conversa selecionada',
+                    subtitle: 'Selecione um registro na lista ao lado',
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                    itemCount: history.length,
-                    itemBuilder: (context, index) {
-                      final row = history[index];
-                      return Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                          constraints: const BoxConstraints(maxWidth: 360),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8F1FF),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFCFE0FA)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                row.message,
-                                style: const TextStyle(
-                                  color: Color(0xFF1F2A44),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11.5,
-                                ),
+                : history.isEmpty
+                    ? const _EmptyMessage(
+                        icon: Icons.sms_outlined,
+                        title: 'Sem histórico desta conversa',
+                        subtitle: 'Envie uma mensagem para iniciar',
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        itemCount: history.length,
+                        itemBuilder: (context, index) {
+                          final row = history[index];
+                          return Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                              constraints: const BoxConstraints(maxWidth: 340),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F1FF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFCFE0FA)),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${_formatDateTime(row.dateTime)} • ${row.status}',
-                                style: const TextStyle(
-                                  color: Color(0xFF60718D),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 10.4,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    row.message,
+                                    style: const TextStyle(
+                                      color: Color(0xFF1F2A44),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_formatDateTime(row.dateTime)} • ${row.status}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF60718D),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10.4,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                            ),
+                          );
+                        },
+                      ),
           ),
+
+          // Input area
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFDDE6F2))),
+              border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 520;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
+                // Quick commands
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
                     _quickCommandButton(
                       label: 'Bloquear motor',
                       onTap: () => _setQuickCommand(
@@ -693,90 +741,89 @@ class _ZproCommunicationScreenState
                       ),
                     ),
                     _quickCommandButton(
-                      label: 'Desbloquear motor',
+                      label: 'Desbloquear',
                       onTap: () => _setQuickCommand(
                         type: 'engineResume',
                         message: 'Comando de desbloqueio de motor acionado.',
                       ),
                     ),
                     _quickCommandButton(
-                      label: 'Reiniciar dispositivo',
+                      label: 'Reiniciar',
                       onTap: () => _setQuickCommand(
                         type: 'custom',
-                        message: 'Solicita\u00E7\u00E3o de rein\u00EDcio remoto enviada.',
+                        message: 'Solicitação de reinício remoto enviada.',
                       ),
                     ),
                     _quickCommandButton(
-                      label: 'Mais comandos',
+                      label: 'Posição',
                       onTap: () => _setQuickCommand(
                         type: 'positionSingle',
-                        message:
-                            'Solicita\u00E7\u00E3o de atualiza\u00E7\u00E3o imediata de posi\u00E7\u00E3o.',
+                        message: 'Solicitação de atualização de posição.',
                       ),
                     ),
-                          ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Message input
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        minLines: 1,
+                        maxLines: 3,
+                        style: const TextStyle(fontSize: 12.5),
+                        decoration: InputDecoration(
+                          hintText: 'Digite uma mensagem ou comando...',
+                          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9DB1CC)),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF7F9FD),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFF176EEB)),
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        if (compact) ...[
-                          TextField(
-                            controller: _messageController,
-                            minLines: 1,
-                            maxLines: 3,
-                            decoration: const InputDecoration(
-                              hintText: 'Digite uma mensagem/comando...',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: _sending ? null : _sendMessage,
-                              icon: _sending
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.send_rounded, size: 16),
-                              label: Text(_sending ? 'Enviando...' : 'Enviar'),
-                            ),
-                          ),
-                        ] else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _messageController,
-                                  minLines: 1,
-                                  maxLines: 3,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Digite uma mensagem/comando...',
-                                    isDense: true,
-                                  ),
-                                ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _sending ? null : _sendMessage,
+                      icon: _sending
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
                               ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                onPressed: _sending ? null : _sendMessage,
-                                icon: _sending
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.send_rounded, size: 16),
-                                label: Text(_sending ? 'Enviando...' : 'Enviar'),
-                              ),
-                            ],
-                          ),
-                      ],
-                    );
-                  },
+                            )
+                          : const Icon(Icons.send_rounded, size: 16),
+                      label: Text(
+                        _sending ? 'Enviando...' : 'Enviar',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF176EEB),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -785,6 +832,8 @@ class _ZproCommunicationScreenState
       ),
     );
   }
+
+  // ── Builders ───────────────────────────────────────────────────────────────
 
   List<_CommunicationRow> _buildConversationRows({
     required List<Map<String, dynamic>> commands,
@@ -806,15 +855,14 @@ class _ZproCommunicationScreenState
       };
 
       final attrs = item['attributes'];
-      final attrMap = attrs is Map
-          ? attrs.cast<String, dynamic>()
-          : const <String, dynamic>{};
+      final attrMap =
+          attrs is Map ? attrs.cast<String, dynamic>() : const <String, dynamic>{};
       final message = formatDisplayText(
         item['description'] ??
             attrMap['message'] ??
             attrMap['data'] ??
             item['text'] ??
-            'N\u00E3o informado',
+            'Não informado',
       );
       final status = formatDisplayText(item['status'] ?? 'Enviado');
       final dateTime = _parseDateTime(
@@ -825,20 +873,17 @@ class _ZproCommunicationScreenState
           ) ??
           DateTime.now();
 
-      rows.add(
-        _CommunicationRow(
-          id: 'cmd-${item['id'] ?? rows.length}-$deviceId',
-          deviceId: deviceId,
-          deviceName: formatDisplayText(device?.name),
-          channel: channel,
-          message: message,
-          status: status,
-          dateTime: dateTime,
-          onlineStatus: _deviceStatusLabel(device, position),
-        ),
-      );
+      rows.add(_CommunicationRow(
+        id: 'cmd-${item['id'] ?? rows.length}-$deviceId',
+        deviceId: deviceId,
+        deviceName: formatDisplayText(device?.name),
+        channel: channel,
+        message: message,
+        status: status,
+        dateTime: dateTime,
+        onlineStatus: _deviceStatusLabel(device, position),
+      ));
     }
-
     rows.sort((a, b) => b.dateTime.compareTo(a.dateTime));
     return rows;
   }
@@ -851,9 +896,8 @@ class _ZproCommunicationScreenState
     final rows = <_CommunicationRow>[];
     for (final item in notifications) {
       final attrs = item['attributes'];
-      final attrMap = attrs is Map
-          ? attrs.cast<String, dynamic>()
-          : const <String, dynamic>{};
+      final attrMap =
+          attrs is Map ? attrs.cast<String, dynamic>() : const <String, dynamic>{};
       final deviceId = _toInt(
             item['deviceId'] ??
                 item['targetId'] ??
@@ -863,9 +907,6 @@ class _ZproCommunicationScreenState
           -1;
       final device = devicesById[deviceId];
       final position = latestByDevice[deviceId];
-      final status = formatDisplayText(
-        item['status'] ?? attrMap['status'] ?? 'Enviado',
-      );
       final dateTime = _parseDateTime(
             item['serverTime'] ??
                 item['eventTime'] ??
@@ -874,25 +915,22 @@ class _ZproCommunicationScreenState
           ) ??
           DateTime.now();
 
-      rows.add(
-        _CommunicationRow(
-          id: 'not-${item['id'] ?? rows.length}-$deviceId',
-          deviceId: deviceId,
-          deviceName: formatDisplayText(device?.name),
-          channel: 'Notificação',
-          message: formatDisplayText(
-            item['message'] ??
-                attrMap['message'] ??
-                item['type'] ??
-                'N\u00E3o informado',
-          ),
-          status: status,
-          dateTime: dateTime,
-          onlineStatus: _deviceStatusLabel(device, position),
+      rows.add(_CommunicationRow(
+        id: 'not-${item['id'] ?? rows.length}-$deviceId',
+        deviceId: deviceId,
+        deviceName: formatDisplayText(device?.name),
+        channel: 'Notificação',
+        message: formatDisplayText(
+          item['message'] ??
+              attrMap['message'] ??
+              item['type'] ??
+              'Não informado',
         ),
-      );
+        status: formatDisplayText(item['status'] ?? attrMap['status'] ?? 'Enviado'),
+        dateTime: dateTime,
+        onlineStatus: _deviceStatusLabel(device, position),
+      ));
     }
-
     rows.sort((a, b) => b.dateTime.compareTo(a.dateTime));
     return rows;
   }
@@ -904,7 +942,6 @@ class _ZproCommunicationScreenState
       '30 dias' => now.subtract(const Duration(days: 30)),
       _ => DateTime(now.year, now.month, now.day),
     };
-
     return rows.where((row) {
       final channelOk =
           _selectedChannel == 'Todos' || row.channel == _selectedChannel;
@@ -917,25 +954,24 @@ class _ZproCommunicationScreenState
     }).toList(growable: false);
   }
 
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
   String _deviceStatusLabel(TraccarDevice? device, TraccarPosition? position) {
-    if (device == null) return 'N\u00E3o informado';
+    if (device == null) return 'Não informado';
     final status = device.status.trim().toLowerCase();
     final at = _parseDateTime(device.lastUpdate ?? position?.fixTime);
     if (at == null) return 'Sem comunicação';
-    final stale = DateTime.now().difference(at).inHours >= 12;
-    if (stale) return 'Sem comunicação';
+    if (DateTime.now().difference(at).inHours >= 12) return 'Sem comunicação';
     if (status == 'offline' || status == 'unknown') return 'Offline';
     return 'Online';
   }
 
   Color _statusColor(String status) {
-    final normalized = status.toLowerCase();
-    if (normalized.contains('online')) return const Color(0xFF16A34A);
-    if (normalized.contains('offline')) return const Color(0xFF64748B);
-    if (normalized.contains('falha') || normalized.contains('erro')) {
-      return const Color(0xFFEF4444);
-    }
-    if (normalized.contains('comunica')) return const Color(0xFFF59E0B);
+    final s = status.toLowerCase();
+    if (s.contains('online')) return const Color(0xFF16A34A);
+    if (s.contains('offline')) return const Color(0xFF64748B);
+    if (s.contains('falha') || s.contains('erro')) return const Color(0xFFEF4444);
+    if (s.contains('comunica')) return const Color(0xFFF59E0B);
     return const Color(0xFF176EEB);
   }
 
@@ -953,13 +989,13 @@ class _ZproCommunicationScreenState
     return int.tryParse('${raw ?? ''}');
   }
 
-  String _formatDateTime(DateTime value) {
-    final d = value.day.toString().padLeft(2, '0');
-    final m = value.month.toString().padLeft(2, '0');
-    final y = value.year.toString().padLeft(4, '0');
-    final hh = value.hour.toString().padLeft(2, '0');
-    final mm = value.minute.toString().padLeft(2, '0');
-    return '$d/$m/$y $hh:$mm';
+  String _formatDateTime(DateTime v) {
+    final d = v.day.toString().padLeft(2, '0');
+    final mo = v.month.toString().padLeft(2, '0');
+    final y = v.year.toString();
+    final h = v.hour.toString().padLeft(2, '0');
+    final mi = v.minute.toString().padLeft(2, '0');
+    return '$d/$mo/$y $h:$mi';
   }
 
   String _escapeCsv(String value) {
@@ -970,68 +1006,56 @@ class _ZproCommunicationScreenState
     return safe;
   }
 
-  Decoration _panelDecoration() {
-    return BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.84),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFDDE6F2)),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFF13273F).withValues(alpha: 0.05),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
-        ),
-      ],
-    );
-  }
-
-  Widget _topActionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-    bool primary = false,
-  }) {
-    if (primary) {
-      return FilledButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 16),
-        label: Text(label),
-      );
-    }
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-    );
-  }
+  // ── Small widgets ───────────────────────────────────────────────────────────
 
   Widget _tabChip({
     required String label,
+    required int count,
     required bool active,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: active ? const Color(0xFFE8F1FF) : const Color(0xFFF8FAFF),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: active ? const Color(0xFFAECFFF) : const Color(0xFFDDE6F2),
-            ),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF176EEB).withValues(alpha: 0.10) : const Color(0xFFF7F9FD),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? const Color(0xFF176EEB).withValues(alpha: 0.40) : const Color(0xFFDDE5F0),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? const Color(0xFF176EEB) : const Color(0xFF60718D),
-              fontWeight: FontWeight.w800,
-              fontSize: 11.5,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? const Color(0xFF176EEB) : const Color(0xFF60718D),
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
+              ),
             ),
-          ),
+            if (count > 0) ...[
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: active ? const Color(0xFF176EEB) : const Color(0xFF9DB1CC),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -1044,31 +1068,56 @@ class _ZproCommunicationScreenState
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.34)),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
       ),
       child: Text(
         formatDisplayText(status),
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 10.3,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 10.3),
       ),
     );
   }
 
-  Widget _quickCommandButton({
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return OutlinedButton(
-      onPressed: onTap,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11.2, fontWeight: FontWeight.w700),
+  Widget _channelChip(String channel) {
+    final (color, icon) = switch (channel) {
+      'Comando' => (const Color(0xFF7C3AED), Icons.terminal_rounded),
+      'Notificação' => (const Color(0xFFF59E0B), Icons.notifications_outlined),
+      _ => (const Color(0xFF176EEB), Icons.chat_bubble_outline_rounded),
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            channel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickCommandButton({required String label, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F9FD),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFDDE5F0)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF526684),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -1088,9 +1137,24 @@ class _ZproCommunicationScreenState
         isDense: true,
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF60718D)),
           isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          filled: true,
+          fillColor: const Color(0xFFF7F9FD),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+          ),
+        ),
+        style: const TextStyle(
+          color: Color(0xFF1F2A44),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
         items: [
           for (final option in options)
@@ -1111,6 +1175,8 @@ class _ZproCommunicationScreenState
     );
   }
 }
+
+// ── Data model ─────────────────────────────────────────────────────────────────
 
 class _CommunicationRow {
   const _CommunicationRow({
@@ -1134,9 +1200,10 @@ class _CommunicationRow {
   final String onlineStatus;
 }
 
+// ── Shared widgets ──────────────────────────────────────────────────────────────
+
 class _HeaderLabel extends StatelessWidget {
   const _HeaderLabel(this.text);
-
   final String text;
 
   @override
@@ -1144,20 +1211,16 @@ class _HeaderLabel extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFF60718D),
+        color: Color(0xFF9DB1CC),
         fontWeight: FontWeight.w700,
-        fontSize: 11.2,
+        fontSize: 11,
       ),
     );
   }
 }
 
 class _BodyLabel extends StatelessWidget {
-  const _BodyLabel(
-    this.text, {
-    this.maxLines = 1,
-  });
-
+  const _BodyLabel(this.text, {this.maxLines = 1});
   final String text;
   final int maxLines;
 
@@ -1170,7 +1233,7 @@ class _BodyLabel extends StatelessWidget {
       style: const TextStyle(
         color: Color(0xFF1F2A44),
         fontWeight: FontWeight.w600,
-        fontSize: 11.2,
+        fontSize: 11.5,
       ),
     );
   }
@@ -1191,28 +1254,36 @@ class _EmptyMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: const Color(0xFF9DB1CC), size: 22),
-            const SizedBox(height: 8),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF176EEB).withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF9DB1CC), size: 20),
+            ),
+            const SizedBox(height: 10),
             Text(
               title,
               style: const TextStyle(
                 color: Color(0xFF334155),
                 fontWeight: FontWeight.w800,
-                fontSize: 12,
+                fontSize: 12.5,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               subtitle,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFF60718D),
                 fontWeight: FontWeight.w600,
-                fontSize: 11,
+                fontSize: 11.5,
               ),
             ),
           ],

@@ -22,7 +22,7 @@ class PlaceholderScreen extends StatelessWidget {
           ),
           child: Text(
             subtitle ?? 'Em construção',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
       ],

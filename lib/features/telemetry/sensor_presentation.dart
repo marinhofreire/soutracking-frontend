@@ -535,7 +535,9 @@ String? _formatByCanonicalKey(String key, dynamic raw) {
     case 'rssi':
       final number = _toDouble(raw);
       if (number == null) return _formatGenericValue(raw);
-      return '${number.toStringAsFixed(0)} dBm';
+      // Positive values = absolute dBm (device omits minus sign) → negate
+      final dBm = number > 0 ? -number : number;
+      return '${dBm.toStringAsFixed(0)} dBm';
     case 'satellites':
       final number = _toDouble(raw);
       if (number == null) return _formatGenericValue(raw);

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -241,7 +243,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   Widget _buildTemplateCatalog() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFDDE6F2)),
       ),
@@ -265,17 +267,12 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
           LayoutBuilder(
             builder: (context, constraints) {
               final maxWidth = constraints.maxWidth;
-              final columns = maxWidth >= 1120
-                  ? 4
-                  : maxWidth >= 780
-                      ? 3
-                      : maxWidth >= 520
-                          ? 2
-                          : 1;
-              const spacing = 10.0;
-              final cardWidth = columns == 1
-                  ? maxWidth
-                  : (maxWidth - (spacing * (columns - 1))) / columns;
+              const spacing = 8.0;
+              const minCardWidth = 150.0;
+              final columns = math.max(
+                  1, (maxWidth + spacing) ~/ (minCardWidth + spacing));
+              final cardWidth =
+                  (maxWidth - spacing * (columns - 1)) / columns;
 
               return Wrap(
                 spacing: spacing,
@@ -336,7 +333,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             return Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.78),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: const Color(0xFFDDE6F2),
@@ -397,7 +394,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     final form = Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFDDE6F2)),
       ),
@@ -613,12 +610,12 @@ class _MaintenanceTemplateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(9),
+      padding: const EdgeInsets.all(7),
       decoration: BoxDecoration(
         color: selected
             ? const Color(0xFFEAF3FF)
-            : Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(10),
+            : Colors.white,
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: selected ? const Color(0xFFBBD7FF) : const Color(0xFFDDE6F2),
         ),
@@ -645,44 +642,36 @@ class _MaintenanceTemplateCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             template.name,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontWeight: FontWeight.w700,
+              fontSize: 12,
               color: Color(0xFF25344A),
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             metricLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: Color(0xFF4D5D78),
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            template.formula,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF6A7A95),
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerRight,
             child: OutlinedButton(
               onPressed: onUse,
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                minimumSize: const Size(0, 28),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                textStyle: const TextStyle(fontSize: 11),
               ),
               child: const Text('Usar'),
             ),

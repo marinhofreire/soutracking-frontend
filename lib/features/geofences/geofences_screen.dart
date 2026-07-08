@@ -432,6 +432,10 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       context: context,
       builder: (dialogContext) {
         return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           insetPadding:
               const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
           child: ConstrainedBox(
@@ -605,78 +609,40 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.84),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFD6E0EE)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF3FF),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.grid_on_rounded,
-                    size: 18,
-                    color: Color(0xFF2D8CFF),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Cercas Eletrônicas',
-                        style: TextStyle(
-                          color: Color(0xFF25344A),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cercas Eletrônicas',
+                      style: TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
                       ),
-                      Text(
-                        'Gerencie áreas de segurança e monitore violações em tempo real',
-                        style: TextStyle(
-                          color: Color(0xFF5F738F),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Gerencie áreas de segurança e monitore violações em tempo real.',
+                      style: TextStyle(color: Color(0xFF5A6B84), fontSize: 13),
+                    ),
+                  ],
                 ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Exportacao de cercas fica bloqueada ate concluir o fluxo de exportacao.',
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Exportar'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _openCreateEditorDialog,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Adicionar cerca'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2D8CFF),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () {},
+                icon: const Icon(Icons.file_download_outlined, size: 18),
+                label: const Text('Exportar'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: _saving ? null : _openCreateEditorDialog,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Adicionar cerca'),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Row(
@@ -685,7 +651,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.84),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFD6E0EE)),
                   ),
@@ -886,7 +852,7 @@ class _GeofenceKpiCard extends StatelessWidget {
       width: 200,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),
@@ -1022,7 +988,7 @@ class _GeofenceTable extends StatelessWidget {
       return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.84),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFD6E0EE)),
         ),
@@ -1058,7 +1024,7 @@ class _GeofenceTable extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),

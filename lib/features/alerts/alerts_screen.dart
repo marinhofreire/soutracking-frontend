@@ -4,11 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/display_text_formatter.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
-import '../admin/admin_reference_ui.dart';
 import 'models/alert_models.dart';
-import 'widgets/alerts_filters_bar.dart';
-import 'widgets/alerts_kpi_row.dart';
-import 'widgets/alerts_table.dart';
 
 final alertsEventsByPeriodProvider =
     FutureProvider.family<List<Map<String, dynamic>>, String>(
@@ -50,6 +46,18 @@ final alertsRealDevicesProvider =
   }
 });
 
+final notificationsManagementProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (!session.isAuthenticated) return [];
+  final client = ref.watch(traccarClientProvider);
+  return await client.getList(
+    path: '/notifications',
+    cookie: session.cookie,
+    authHeader: session.authHeader,
+  );
+});
+
 DateTime _periodStart(String period, DateTime now) {
   switch (period) {
     case 'Hoje':
@@ -72,15 +80,38 @@ class AlertsScreen extends ConsumerStatefulWidget {
 
 class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   String _period = 'Hoje';
-  String _type = 'Todos';
-  String _severity = 'Todas';
-  String _status = 'Todos';
-  String _vehicle = 'Todos';
+  String _typeFilter = 'Todos';
+  String _vehicleFilter = 'Todos';
+  bool _saving = false;
+
+  String? _dlgType;
+  bool _dlgWeb = true;
+  bool _dlgMail = false;
+  bool _dlgSms = false;
+  bool _dlgAlways = true;
+
+  static const List<MapEntry<String, String>> _notifTypes = [
+    MapEntry('deviceOverspeed', 'Excesso de velocidade'),
+    MapEntry('geofenceEnter', 'Entrada em cerca'),
+    MapEntry('geofenceExit', 'Saída de cerca'),
+    MapEntry('alarm', 'Alarme'),
+    MapEntry('ignitionOn', 'Ignição ligada'),
+    MapEntry('ignitionOff', 'Ignição desligada'),
+    MapEntry('deviceMoving', 'Veículo em movimento'),
+    MapEntry('deviceStopped', 'Veículo parado'),
+    MapEntry('deviceOffline', 'Dispositivo offline'),
+    MapEntry('deviceOnline', 'Dispositivo online'),
+    MapEntry('deviceFuelDrop', 'Queda de combustível'),
+    MapEntry('maintenance', 'Manutenção programada'),
+    MapEntry('textMessage', 'Mensagem de texto'),
+    MapEntry('driverChanged', 'Troca de motorista'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(alertsRealDevicesProvider);
-    final listAsync = ref.watch(alertsEventsByPeriodProvider(_period));
+    final eventsAsync = ref.watch(alertsEventsByPeriodProvider(_period));
+    final notifRulesAsync = ref.watch(notificationsManagementProvider);
     final notificationsAsync = ref.watch(notificationsProvider);
     final permissionsAsync = ref.watch(permissionsProvider);
     final ruleFilter = _resolveRuleFilter(
@@ -88,115 +119,368 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       permissionsAsync: permissionsAsync,
     );
 
-    return AdminReferenceScaffold(
-      title: 'Alertas',
-      breadcrumbs: const ['Operação', 'Alertas'],
-      selectedMenu: 'alerts',
-      child: devicesAsync.when(
-        data: (devices) => listAsync.when(
-          data: (events) {
-            final records = _mapEvents(
-              events,
-              devices,
-              ruleFilter: ruleFilter,
-            );
-            final summary = _buildSummary(records);
-            final filtered = _applyFilters(records);
+    final devices = devicesAsync.valueOrNull ?? [];
+    final events = eventsAsync.valueOrNull ?? [];
+    final records = _mapEvents(events, devices, ruleFilter: ruleFilter);
+    final summary = _buildSummary(records);
 
-            final periodOptions = const <String>['Hoje', '7 dias', '30 dias'];
-            final typeOptions = <String>[
-              'Todos',
-              ...{for (final item in records) item.type},
-            ];
-            final severityOptions = <String>[
-              'Todas',
-              ...{for (final item in records) item.severity.label},
-            ];
-            final statusOptions = <String>[
-              'Todos',
-              ...{
-                for (final item in records)
-                  item.status?.label ?? 'Não informado',
-              },
-            ];
-            final vehicleOptions = <String>[
-              'Todos',
-              ...{for (final item in records) item.vehicle},
-            ];
+    final vehicleOptions = <String>[
+      'Todos',
+      ...{for (final r in records) r.vehicle},
+    ];
+    final typeOptions = <String>[
+      'Todos',
+      ...{for (final r in records) r.type},
+    ];
+    final selVehicle =
+        vehicleOptions.contains(_vehicleFilter) ? _vehicleFilter : 'Todos';
+    final selType =
+        typeOptions.contains(_typeFilter) ? _typeFilter : 'Todos';
+    final filtered = records.where((r) {
+      if (selType != 'Todos' && r.type != selType) return false;
+      if (selVehicle != 'Todos' && r.vehicle != selVehicle) return false;
+      return true;
+    }).toList();
 
-            final selectedType =
-                typeOptions.contains(_type) ? _type : typeOptions.first;
-            final selectedSeverity = severityOptions.contains(_severity)
-                ? _severity
-                : severityOptions.first;
-            final selectedStatus =
-                statusOptions.contains(_status) ? _status : statusOptions.first;
-            final selectedVehicle = vehicleOptions.contains(_vehicle)
-                ? _vehicle
-                : vehicleOptions.first;
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AlertsKpiRow(summary: summary),
-                const SizedBox(height: 12),
-                AlertsFiltersBar(
-                  period: _period,
-                  type: selectedType,
-                  severity: selectedSeverity,
-                  status: selectedStatus,
-                  vehicle: selectedVehicle,
-                  periodOptions: periodOptions,
-                  typeOptions: typeOptions,
-                  severityOptions: severityOptions,
-                  statusOptions: statusOptions,
-                  vehicleOptions: vehicleOptions,
-                  onPeriodChanged: (value) {
-                    setState(() {
-                      _period = value;
-                      _type = 'Todos';
-                      _severity = 'Todas';
-                      _status = 'Todos';
-                      _vehicle = 'Todos';
-                    });
-                  },
-                  onTypeChanged: (value) => setState(() => _type = value),
-                  onSeverityChanged: (value) =>
-                      setState(() => _severity = value),
-                  onStatusChanged: (value) => setState(() => _status = value),
-                  onVehicleChanged: (value) => setState(() => _vehicle = value),
-                ),
-                const SizedBox(height: 12),
-                AlertsTable(records: filtered),
-              ],
-            );
-          },
-          loading: () => const _LoadingPanel(),
-          error: (error, _) => _ErrorPanel(
-            message: 'N\u00e3o foi poss\u00edvel carregar alertas',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Alertas',
+                    style: TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 22,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Gerencie regras de notificação e visualize eventos.',
+                    style: TextStyle(color: Color(0xFF5A6B84), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => _openCreateAlertDialog(devices),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Criar Alerta'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _AlertsKpiRow(summary: summary),
+        const SizedBox(height: 20),
+        _SectionCard(
+          icon: Icons.notifications_outlined,
+          iconColor: const Color(0xFF176EEB),
+          title: 'Regras de Notificação',
+          subtitle: 'Alertas configurados no sistema',
+          action: IconButton(
+            tooltip: 'Atualizar',
+            onPressed: () => ref.invalidate(notificationsManagementProvider),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+          ),
+          child: notifRulesAsync.when(
+            data: (rules) =>
+                _NotifRulesTable(rules: rules, onDelete: _deleteNotification),
+            loading: () => const _InlineLoader(),
+            error: (_, __) => const _InlineError(
+                message: 'Não foi possível carregar regras'),
           ),
         ),
-        loading: () => const _LoadingPanel(),
-        error: (error, _) => _ErrorPanel(
-          message: 'N\u00e3o foi poss\u00edvel carregar alertas',
+        const SizedBox(height: 16),
+        _SectionCard(
+          icon: Icons.history_rounded,
+          iconColor: const Color(0xFF7B2FC4),
+          title: 'Eventos Recentes',
+          subtitle: 'Histórico de alertas disparados',
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PeriodChips(
+                selected: _period,
+                options: const ['Hoje', '7 dias', '30 dias'],
+                onChanged: (v) => setState(() {
+                  _period = v;
+                  _typeFilter = 'Todos';
+                  _vehicleFilter = 'Todos';
+                }),
+              ),
+              if (typeOptions.length > 1) ...[
+                const SizedBox(width: 8),
+                _DropFilter(
+                  label: 'Tipo',
+                  value: selType,
+                  options: typeOptions,
+                  onChanged: (v) => setState(() => _typeFilter = v),
+                ),
+              ],
+              if (vehicleOptions.length > 1) ...[
+                const SizedBox(width: 8),
+                _DropFilter(
+                  label: 'Veículo',
+                  value: selVehicle,
+                  options: vehicleOptions,
+                  onChanged: (v) => setState(() => _vehicleFilter = v),
+                ),
+              ],
+            ],
+          ),
+          child: eventsAsync.when(
+            data: (_) => _EventsTable(records: filtered),
+            loading: () => const _InlineLoader(),
+            error: (_, __) => const _InlineError(
+                message: 'Não foi possível carregar eventos'),
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Future<void> _openCreateAlertDialog(List<TraccarDevice> devices) async {
+    setState(() {
+      _dlgType = null;
+      _dlgWeb = true;
+      _dlgMail = false;
+      _dlgSms = false;
+      _dlgAlways = true;
+    });
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: StatefulBuilder(
+              builder: (ctx, setModal) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Criar Alerta',
+                              style: TextStyle(
+                                color: Color(0xFF1F2A44),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 20,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Configure uma regra de notificação no Traccar.',
+                              style: TextStyle(
+                                  color: Color(0xFF5A6B84), fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1, color: Color(0xFFE8EEF6)),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _AlertFormSection(
+                            icon: Icons.warning_amber_rounded,
+                            iconColor: const Color(0xFFE67E22),
+                            title: 'Tipo de Evento',
+                            children: [
+                              DropdownButtonFormField<String>(
+                                initialValue: _dlgType,
+                                decoration: const InputDecoration(
+                                  labelText: 'Selecione o tipo de alerta *',
+                                ),
+                                items: _notifTypes
+                                    .map((e) => DropdownMenuItem(
+                                        value: e.key, child: Text(e.value)))
+                                    .toList(),
+                                onChanged: (v) =>
+                                    setModal(() => _dlgType = v),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _AlertFormSection(
+                            icon: Icons.tune_rounded,
+                            iconColor: const Color(0xFF176EEB),
+                            title: 'Configurações',
+                            children: [
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Sempre notificar'),
+                                subtitle: const Text(
+                                    'Aplica a todos os dispositivos'),
+                                value: _dlgAlways,
+                                onChanged: (v) =>
+                                    setModal(() => _dlgAlways = v),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _AlertFormSection(
+                            icon: Icons.notifications_active_rounded,
+                            iconColor: const Color(0xFF18A558),
+                            title: 'Canais de Notificação',
+                            children: [
+                              _ChannelToggle(
+                                icon: Icons.web_rounded,
+                                label: 'Web (plataforma)',
+                                value: _dlgWeb,
+                                onChanged: (v) =>
+                                    setModal(() => _dlgWeb = v),
+                              ),
+                              _ChannelToggle(
+                                icon: Icons.email_outlined,
+                                label: 'Email',
+                                value: _dlgMail,
+                                onChanged: (v) =>
+                                    setModal(() => _dlgMail = v),
+                              ),
+                              _ChannelToggle(
+                                icon: Icons.sms_rounded,
+                                label: 'SMS',
+                                value: _dlgSms,
+                                onChanged: (v) =>
+                                    setModal(() => _dlgSms = v),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        onPressed: (_saving || _dlgType == null)
+                            ? null
+                            : () async {
+                                final ok = await _saveNotification();
+                                if (ok && dialogContext.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                              },
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save_outlined, size: 18),
+                        label:
+                            Text(_saving ? 'Salvando...' : 'Salvar Alerta'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  List<AlertRecord> _applyFilters(List<AlertRecord> records) {
-    return records.where((record) {
-      if (_type != 'Todos' && record.type != _type) return false;
-      if (_severity != 'Todas' && record.severity.label != _severity) {
-        return false;
-      }
-      if (_status != 'Todos') {
-        final label = record.status?.label ?? 'Não informado';
-        if (label != _status) return false;
-      }
-      if (_vehicle != 'Todos' && record.vehicle != _vehicle) return false;
+  Future<bool> _saveNotification() async {
+    if (_dlgType == null) return false;
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    setState(() => _saving = true);
+    final notificators = <String>[
+      if (_dlgWeb) 'web',
+      if (_dlgMail) 'mail',
+      if (_dlgSms) 'sms',
+    ];
+    try {
+      await client.createEntity(
+        path: '/notifications',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+        body: {
+          'type': _dlgType!,
+          'always': _dlgAlways,
+          'notificators': notificators.join(','),
+          'web': _dlgWeb,
+          'mail': _dlgMail,
+          'sms': _dlgSms,
+        },
+      );
+      ref.invalidate(notificationsManagementProvider);
+      ref.invalidate(notificationsProvider);
+      if (!mounted) return true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alerta criado com sucesso.')),
+      );
       return true;
-    }).toList();
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao salvar: $e')),
+      );
+      return false;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _deleteNotification(int id) async {
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      await client.deleteEntity(
+        path: '/notifications/$id',
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+      );
+      ref.invalidate(notificationsManagementProvider);
+      ref.invalidate(notificationsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alerta removido.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao remover: $e')),
+      );
+    }
   }
 
   List<AlertRecord> _mapEvents(
@@ -909,41 +1193,563 @@ class _AlertRuleFilter {
   }
 }
 
-class _LoadingPanel extends StatelessWidget {
-  const _LoadingPanel();
+
+class _AlertsKpiRow extends StatelessWidget {
+  const _AlertsKpiRow({required this.summary});
+
+  final AlertKpiSummary summary;
 
   @override
   Widget build(BuildContext context) {
-    return const AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator()),
+    return Row(
+      children: [
+        _KpiCard(
+          label: 'Hoje',
+          value: summary.today,
+          icon: Icons.today_rounded,
+          color: const Color(0xFF176EEB),
+        ),
+        const SizedBox(width: 12),
+        _KpiCard(
+          label: 'Críticos',
+          value: summary.critical,
+          icon: Icons.priority_high_rounded,
+          color: const Color(0xFFE53935),
+        ),
+        const SizedBox(width: 12),
+        _KpiCard(
+          label: 'Em análise',
+          value: summary.inAnalysis,
+          icon: Icons.manage_search_rounded,
+          color: const Color(0xFFE67E22),
+        ),
+        const SizedBox(width: 12),
+        _KpiCard(
+          label: 'Resolvidos',
+          value: summary.resolved,
+          icon: Icons.check_circle_outline_rounded,
+          color: const Color(0xFF18A558),
+        ),
+      ],
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  const _KpiCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE8EEF6)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x08000000),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$value',
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF5A6B84),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _ErrorPanel extends StatelessWidget {
-  const _ErrorPanel({required this.message});
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    this.action,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8EEF6)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF5A6B84),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (action != null) action!,
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE8EEF6)),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotifRulesTable extends StatelessWidget {
+  const _NotifRulesTable({required this.rules, required this.onDelete});
+
+  final List<Map<String, dynamic>> rules;
+  final void Function(int id) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rules.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Text(
+            'Nenhuma regra configurada.',
+            style: TextStyle(color: Color(0xFF8A99B0), fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: rules.map((rule) {
+        final id = rule['id'] as int? ?? 0;
+        final type = rule['type']?.toString() ?? '-';
+        final always = rule['always'] == true;
+        final notificators = rule['notificators']?.toString() ?? '';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFD),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE8EEF6)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF176EEB).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.notifications_outlined,
+                    color: Color(0xFF176EEB), size: 16),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      '${always ? 'Global' : 'Específico'} · $notificators',
+                      style: const TextStyle(
+                          color: Color(0xFF5A6B84), fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remover',
+                onPressed: () => onDelete(id),
+                icon: const Icon(Icons.delete_outline_rounded,
+                    size: 18, color: Color(0xFFE53935)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _EventsTable extends StatelessWidget {
+  const _EventsTable({required this.records});
+
+  final List<AlertRecord> records;
+
+  @override
+  Widget build(BuildContext context) {
+    if (records.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Text(
+            'Nenhum evento no período.',
+            style: TextStyle(color: Color(0xFF8A99B0), fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: records.take(50).map((rec) {
+        final severityColor = switch (rec.severity) {
+          AlertSeverity.critical => const Color(0xFFE53935),
+          AlertSeverity.high => const Color(0xFFE67E22),
+          AlertSeverity.medium => const Color(0xFFF59E0B),
+          AlertSeverity.low => const Color(0xFF18A558),
+        };
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE8EEF6)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: severityColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      rec.type,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      rec.vehicle,
+                      style: const TextStyle(
+                          color: Color(0xFF5A6B84), fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  rec.description,
+                  style: const TextStyle(
+                      color: Color(0xFF5A6B84), fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatTime(rec.dateTime),
+                style: const TextStyle(
+                    color: Color(0xFF8A99B0), fontSize: 11),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final mo = dt.month.toString().padLeft(2, '0');
+    return '$d/$mo ${h}h$m';
+  }
+}
+
+class _InlineLoader extends StatelessWidget {
+  const _InlineLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 60,
+      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+}
+
+class _InlineError extends StatelessWidget {
+  const _InlineError({required this.message});
 
   final String message;
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF5F738F),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+    return SizedBox(
+      height: 60,
+      child: Center(
+        child: Text(
+          message,
+          style: const TextStyle(color: Color(0xFF8A99B0), fontSize: 13),
         ),
       ),
+    );
+  }
+}
+
+class _PeriodChips extends StatelessWidget {
+  const _PeriodChips({
+    required this.selected,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String selected;
+  final List<String> options;
+  final void Function(String) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: options.map((opt) {
+        final isSelected = opt == selected;
+        return Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: GestureDetector(
+            onTap: () => onChanged(opt),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF176EEB)
+                    : const Color(0xFFF0F4FA),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                opt,
+                style: TextStyle(
+                  color:
+                      isSelected ? Colors.white : const Color(0xFF5A6B84),
+                  fontSize: 12,
+                  fontWeight:
+                      isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _DropFilter extends StatelessWidget {
+  const _DropFilter({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final List<String> options;
+  final void Function(String) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButton<String>(
+      value: value,
+      isDense: true,
+      underline: const SizedBox(),
+      style: const TextStyle(
+          color: Color(0xFF1F2A44), fontSize: 13),
+      items: options
+          .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+          .toList(),
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+}
+
+class _AlertFormSection extends StatelessWidget {
+  const _AlertFormSection({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.children,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: iconColor, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...children,
+      ],
+    );
+  }
+}
+
+class _ChannelToggle extends StatelessWidget {
+  const _ChannelToggle({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool value;
+  final void Function(bool) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF5A6B84)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+                color: Color(0xFF1F2A44), fontSize: 13),
+          ),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: Colors.white,
+          activeTrackColor: const Color(0xFF176EEB),
+        ),
+      ],
     );
   }
 }

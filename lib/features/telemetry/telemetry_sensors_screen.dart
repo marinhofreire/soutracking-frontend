@@ -1,4 +1,6 @@
-﻿import 'package:flutter/foundation.dart';
+﻿import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,7 +39,9 @@ final _telemetryDeviceHistoryProvider =
 );
 
 class TelemetrySensorsScreen extends ConsumerStatefulWidget {
-  const TelemetrySensorsScreen({super.key});
+  const TelemetrySensorsScreen({super.key, this.onClose});
+
+  final VoidCallback? onClose;
 
   @override
   ConsumerState<TelemetrySensorsScreen> createState() =>
@@ -103,31 +107,84 @@ class _TelemetrySensorsScreenState
     final historyAsync = _deviceId == null
         ? const AsyncData<List<TraccarPosition>>(<TraccarPosition>[])
         : ref.watch(_telemetryDeviceHistoryProvider(_deviceId!));
-    final eventsAsync = _deviceId == null
-        ? const AsyncData<List<Map<String, dynamic>>>(
-            <Map<String, dynamic>>[],
-          )
-        : ref.watch(deviceEventsProvider(_deviceId!));
     final deviceHistory =
         historyAsync.valueOrNull ?? const <TraccarPosition>[];
 
-    return ListView(
-      padding: EdgeInsets.zero,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildToolbar(devices, rowsCount),
+        // ── Header ──────────────────────────────────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF176EEB).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.space_dashboard_outlined,
+                color: Color(0xFF176EEB),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Telemetria',
+                    style: TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                  SizedBox(height: 1),
+                  Text(
+                    'Sensores e dados operacionais',
+                    style: TextStyle(color: Color(0xFF60718D), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                ref.invalidate(devicesProvider);
+                ref.invalidate(positionsProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Atualizar',
+              style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+            ),
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close_rounded),
+              tooltip: 'Fechar',
+              style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
-        _buildTelemetryGrid(snapshots),
+        _buildToolbar(devices, rowsCount),
         if (selectedSnapshot != null) ...[
           const SizedBox(height: 10),
-          _buildSelectedVehicleHeader(selectedSnapshot),
+          _buildQuickStatsBar(selectedSnapshot),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 200,
+            child: _buildGaugesRow(
+              snapshot: selectedSnapshot,
+              history: deviceHistory,
+              loading: historyAsync.isLoading,
+            ),
+          ),
         ],
         const SizedBox(height: 10),
-        _buildSensorDetails(
-          selectedSnapshot: selectedSnapshot,
-          filteredSections: filteredSections,
-          deviceHistory: deviceHistory,
-          historyLoading: historyAsync.isLoading,
-          eventsAsync: eventsAsync,
+        Expanded(
+          child: _buildSensorGrid(filteredSections, selectedSnapshot),
         ),
       ],
     );
@@ -140,34 +197,35 @@ class _TelemetrySensorsScreenState
         runSpacing: 10,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-            SizedBox(
-              width: 320,
-              child: DropdownButtonFormField<int>(
-                key: ValueKey<int?>(_deviceId),
-                initialValue: _deviceId,
-                items: [
-                  for (final d in devices)
-                    DropdownMenuItem(
-                      value: d.id,
-                      child: Text(formatDisplayText(d.name)),
-                    ),
-                ],
-                onChanged: (value) => setState(() => _deviceId = value),
-                decoration: const InputDecoration(
-                  labelText: 'Equipamento',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+          SizedBox(
+            width: 260,
+            child: DropdownButtonFormField<int>(
+              key: ValueKey<int?>(_deviceId),
+              initialValue: _deviceId,
+              items: [
+                for (final d in devices)
+                  DropdownMenuItem(
+                    value: d.id,
+                    child: Text(formatDisplayText(d.name)),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _deviceId = value),
+              decoration: const InputDecoration(
+                labelText: 'Equipamento',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
           ),
           SizedBox(
-            width: 280,
+            width: 300,
             child: TextField(
               onChanged: (value) => setState(() => _search = value),
               decoration: const InputDecoration(
                 hintText: 'Buscar sensor (ex: ignição, bateria)',
                 border: OutlineInputBorder(),
                 isDense: true,
+                prefixIcon: Icon(Icons.search_rounded, size: 18),
               ),
             ),
           ),
@@ -176,8 +234,13 @@ class _TelemetrySensorsScreenState
               ref.invalidate(devicesProvider);
               ref.invalidate(positionsProvider);
             },
-            icon: const Icon(Icons.refresh_outlined),
+            icon: const Icon(Icons.refresh_rounded, size: 16),
             label: const Text('Atualizar'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF176EEB),
+              side: const BorderSide(color: Color(0xFF176EEB)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
           ),
           Text(
             'Sensores recebidos: $rowsCount',
@@ -199,7 +262,7 @@ class _TelemetrySensorsScreenState
           Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FBFF).withValues(alpha: 0.75),
+              color: const Color(0xFFF8FAFD),
               border: const Border(
                 bottom: BorderSide(color: Color(0xFFDDE5F0)),
               ),
@@ -243,7 +306,7 @@ class _TelemetrySensorsScreenState
                           padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
                           decoration: BoxDecoration(
                             color: selected
-                                ? const Color(0xFFEAF3FF).withValues(alpha: 0.72)
+                                ? const Color(0xFFEAF3FF)
                                 : Colors.transparent,
                             border: selected
                                 ? Border(
@@ -368,6 +431,252 @@ class _TelemetrySensorsScreenState
                 ],
               ],
             ),
+        ],
+      ),
+    );
+  }
+
+  // ── Quick stats bar (5 metrics row) ─────────────────────────────────────
+  Widget _buildQuickStatsBar(_TelemetryDeviceSnapshot snapshot) {
+    final attrs = snapshot.position?.attributes ?? const <String, dynamic>{};
+    final isOnline = snapshot.device.status.trim().toLowerCase() == 'online';
+    final gpsOk = _attrBool(attrs, const ['gpsTracking', 'gps']) ?? (snapshot.position != null);
+    final odometer = _attrDouble(attrs, const ['totalDistance', 'odometer', 'distance']);
+    final odometerLabel = odometer != null
+        ? '${(odometer / 1000).toStringAsFixed(2)} km'
+        : '--';
+
+    return _TranslucentCard(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            _QuickStatCell(
+              icon: Icons.circle,
+              iconColor: isOnline ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+              iconSize: 10,
+              label: isOnline ? 'Online' : 'Offline',
+              subtitle: isOnline ? 'Equipamento conectado' : 'Sem comunicação',
+            ),
+            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+            _QuickStatCell(
+              icon: Icons.power_settings_new_rounded,
+              iconColor: _ignitionColor(snapshot.ignition),
+              label: 'Ignição',
+              subtitle: snapshot.ignition == null
+                  ? '--'
+                  : snapshot.ignition!
+                      ? 'Ligada'
+                      : 'Desligada',
+            ),
+            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+            _QuickStatCell(
+              icon: Icons.gps_fixed_rounded,
+              iconColor: gpsOk ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+              label: 'GPS ativo',
+              subtitle: gpsOk ? 'Sinal OK' : 'Sem sinal',
+            ),
+            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+            _QuickStatCell(
+              icon: Icons.access_time_rounded,
+              iconColor: const Color(0xFF526684),
+              label: 'Última conexão',
+              subtitle: snapshot.lastConnectionLabel,
+            ),
+            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+            _QuickStatCell(
+              icon: Icons.speed_rounded,
+              iconColor: const Color(0xFF526684),
+              label: 'Odômetro',
+              subtitle: odometerLabel,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Gauges row (fluid, fills available width) ─────────────────────────────
+  Widget _buildGaugesRow({
+    required _TelemetryDeviceSnapshot snapshot,
+    required List<TraccarPosition> history,
+    required bool loading,
+  }) {
+    final attrs = snapshot.position?.attributes ?? const <String, dynamic>{};
+    final rpmRaw = _attrDouble(attrs, const ['rpm', 'engineRpm', 'RPM']);
+    final rpmKilo = rpmRaw != null ? rpmRaw / 1000 : null;
+    final batPct = _batteryPct(snapshot);
+    final gsmQuality = _gsmQualityPct(snapshot.gsmLevel);
+
+    return Row(
+      children: [
+        Expanded(
+          child: _DialGauge(
+            label: 'Velocidade',
+            unit: 'km/h',
+            value: snapshot.speedKmh,
+            max: 240,
+            color: snapshot.speedKmh >= 1
+                ? const Color(0xFF16A34A)
+                : const Color(0xFF94A3B8),
+            ticks: const [0, 60, 120, 180, 240],
+            loading: loading,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _DialGauge(
+            label: 'RPM',
+            unit: 'x1000',
+            value: rpmKilo ?? 0,
+            max: 8,
+            color: (rpmKilo != null && rpmKilo > 0)
+                ? const Color(0xFF176EEB)
+                : const Color(0xFF94A3B8),
+            ticks: const [0, 2, 4, 6, 8],
+            loading: loading,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ArcGauge(
+            label: 'Bateria',
+            value: batPct,
+            displayText: snapshot.batteryLabel,
+            color: _batteryColor(snapshot),
+            icon: Icons.battery_full_rounded,
+            loading: loading,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ArcGauge(
+            label: 'Sinal GSM',
+            value: snapshot.gsmLevel == _GsmLevel.unknown ? null : gsmQuality,
+            displayText: snapshot.gsmLabel,
+            color: _gsmColor(snapshot.gsmLevel),
+            icon: Icons.signal_cellular_alt_rounded,
+            qualityLabel: _gsmQualityStr(snapshot.gsmLevel),
+            loading: loading,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Sensor sections grid (4 columns, no scroll) ───────────────────────────
+  Widget _buildSensorGrid(
+    List<SensorDisplaySection> sections,
+    _TelemetryDeviceSnapshot? snapshot,
+  ) {
+    if (snapshot == null) {
+      return const _TranslucentCard(
+        child: Center(
+          child: Text(
+            'Selecione um equipamento para visualizar a telemetria',
+            style: TextStyle(color: Color(0xFF526684), fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    }
+    if (sections.isEmpty) {
+      return const _TranslucentCard(
+        child: Center(
+          child: Text(
+            'Sensores não recebidos para o dispositivo selecionado.',
+            style: TextStyle(color: Color(0xFF526684), fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (int i = 0; i < sections.length; i++) ...[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                    child: Text(
+                      sections[i].title,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE8EFF7)),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (int j = 0; j < sections[i].items.length; j++) ...[
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              child: Row(
+                                children: [
+                                  _BlinkingIcon(
+                                    enabled: _sensorShouldBlink(sections[i].items[j]),
+                                    child: Icon(
+                                      sections[i].items[j].icon,
+                                      size: 15,
+                                      color: _sensorColor(sections[i].items[j]),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Expanded(
+                                    child: Text(
+                                      sections[i].items[j].label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Color(0xFF526684),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    sections[i].items[j].value,
+                                    style: TextStyle(
+                                      color: _sensorValueColor(sections[i].items[j]),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (j < sections[i].items.length - 1)
+                              const Divider(
+                                height: 1,
+                                color: Color(0xFFF0F4FA),
+                                indent: 12,
+                                endIndent: 12,
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (i < sections.length - 1)
+              const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+          ],
         ],
       ),
     );
@@ -536,80 +845,95 @@ class _TelemetrySensorsScreenState
     );
   }
 
+  double? _batteryPct(_TelemetryDeviceSnapshot snapshot) {
+    if (snapshot.batteryLevel == null) return null;
+    final v = snapshot.batteryLevel!;
+    return (v <= 1 ? v * 100 : v).clamp(0.0, 100.0);
+  }
+
+  double _gsmQualityPct(_GsmLevel level) {
+    switch (level) {
+      case _GsmLevel.good:
+        return 85;
+      case _GsmLevel.medium:
+        return 55;
+      case _GsmLevel.low:
+        return 25;
+      case _GsmLevel.critical:
+        return 8;
+      case _GsmLevel.unknown:
+        return 0;
+    }
+  }
+
+  String _gsmQualityStr(_GsmLevel level) {
+    switch (level) {
+      case _GsmLevel.good:
+        return 'Excelente';
+      case _GsmLevel.medium:
+        return 'Regular';
+      case _GsmLevel.low:
+        return 'Fraco';
+      case _GsmLevel.critical:
+        return 'Crítico';
+      case _GsmLevel.unknown:
+        return '--';
+    }
+  }
+
   Widget _buildTelemetryOverviewGrid({
     required _TelemetryDeviceSnapshot snapshot,
     required List<TraccarPosition> history,
     required bool loading,
   }) {
-    final recentRows = history.take(24).toList(growable: false);
-    final speedSeries = [
-      for (final row in recentRows.reversed) (row.speed ?? 0) * 1.852,
-    ];
-    final batterySeries = [
-      for (final row in recentRows.reversed)
-        _attrDouble(
-              row.attributes ?? const <String, dynamic>{},
-              const ['batteryLevel', 'batteryPercent', 'deviceBatteryLevel'],
-            ) ??
-            0,
-    ];
-    final gsmSeries = [
-      for (final row in recentRows.reversed)
-        _attrDouble(
-              row.attributes ?? const <String, dynamic>{},
-              const ['gsm', 'signal', 'gsmSignal'],
-            ) ??
-            0,
-    ];
-    final ignitionSeries = [
-      for (final row in recentRows.reversed)
-        _attrBool(
-              row.attributes ?? const <String, dynamic>{},
-              const ['ignition', 'ignitionOn'],
-            ) ==
-            true
-            ? 1.0
-            : 0.0,
-    ];
+    final attrs = snapshot.position?.attributes ?? const <String, dynamic>{};
+    final rpmRaw = _attrDouble(attrs, const ['rpm', 'engineRpm', 'RPM']);
+    final rpmKilo = rpmRaw != null ? rpmRaw / 1000 : null;
+    final batPct = _batteryPct(snapshot);
+    final gsmQuality = _gsmQualityPct(snapshot.gsmLevel);
+    final gsmLabel = _gsmQualityStr(snapshot.gsmLevel);
 
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        _TelemetryMetricSparkCard(
-          title: 'Velocidade',
-          value: snapshot.speedLabel,
-          color: const Color(0xFF16A34A),
-          points: speedSeries,
-          maxY: 160,
+        _DialGauge(
+          label: 'Velocidade',
+          unit: 'km/h',
+          value: snapshot.speedKmh,
+          max: 240,
+          color: snapshot.speedKmh >= 1
+              ? const Color(0xFF16A34A)
+              : const Color(0xFF94A3B8),
+          ticks: const [0, 60, 120, 180, 240],
           loading: loading,
         ),
-        _TelemetryMetricSparkCard(
-          title: 'Bateria',
-          value: snapshot.batteryLabel,
+        _DialGauge(
+          label: 'RPM',
+          unit: 'x1000',
+          value: rpmKilo ?? 0,
+          max: 8,
+          color: (rpmKilo != null && rpmKilo > 0)
+              ? const Color(0xFF176EEB)
+              : const Color(0xFF94A3B8),
+          ticks: const [0, 2, 4, 6, 8],
+          loading: loading,
+        ),
+        _ArcGauge(
+          label: 'Bateria',
+          value: batPct,
+          displayText: snapshot.batteryLabel,
           color: _batteryColor(snapshot),
-          points: batterySeries,
-          maxY: 100,
+          icon: Icons.battery_full_rounded,
           loading: loading,
         ),
-        _TelemetryMetricSparkCard(
-          title: 'Sinal GSM',
-          value: snapshot.gsmLabel,
+        _ArcGauge(
+          label: 'Sinal GSM',
+          value: snapshot.gsmLevel == _GsmLevel.unknown ? null : gsmQuality,
+          displayText: snapshot.gsmLabel,
           color: _gsmColor(snapshot.gsmLevel),
-          points: gsmSeries,
-          maxY: 32,
-          loading: loading,
-        ),
-        _TelemetryMetricSparkCard(
-          title: 'Ignição',
-          value: snapshot.ignition == null
-              ? 'Não informado'
-              : snapshot.ignition!
-                  ? 'Ligada'
-                  : 'Desligada',
-          color: _ignitionColor(snapshot.ignition),
-          points: ignitionSeries,
-          maxY: 1,
+          icon: Icons.signal_cellular_alt_rounded,
+          qualityLabel: gsmLabel,
           loading: loading,
         ),
       ],
@@ -623,7 +947,7 @@ class _TelemetrySensorsScreenState
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFF).withValues(alpha: 0.85),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
@@ -1002,6 +1326,63 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+class _QuickStatCell extends StatelessWidget {
+  const _QuickStatCell({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.subtitle,
+    this.iconSize = 18,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String subtitle;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor, size: iconSize),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF60718D),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HeaderQuickMetric extends StatelessWidget {
   const _HeaderQuickMetric({
     required this.label,
@@ -1071,7 +1452,7 @@ class _TelemetryMetricSparkCard extends StatelessWidget {
       width: 208,
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
@@ -1200,7 +1581,7 @@ class _TranslucentCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.86),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
@@ -1410,30 +1791,38 @@ bool? _attrBool(Map<String, dynamic> attrs, List<String> keys) {
   return null;
 }
 
+// GSM/RSSI note: dBm scale is inverted — closer to 0 = better signal.
+// Many Traccar device parsers store RSSI as a positive absolute value
+// (e.g., 80 meaning -80 dBm). We normalise: positive rssi → negate.
+// Reference thresholds (dBm): ≥-70 good, -70..-85 medium, -85..-100 low, <-100 critical.
 _GsmLevel _resolveGsmLevel({required double? gsm, required double? rssi}) {
   if (rssi != null) {
-    if (rssi <= -100) return _GsmLevel.critical;
-    if (rssi <= -92) return _GsmLevel.low;
-    if (rssi <= -80) return _GsmLevel.medium;
+    // Normalise: positive absolute value → actual negative dBm
+    final dBm = rssi > 0 ? -rssi : rssi;
+    if (dBm <= -100) return _GsmLevel.critical;
+    if (dBm <= -85) return _GsmLevel.low;
+    if (dBm <= -70) return _GsmLevel.medium;
     return _GsmLevel.good;
   }
 
   if (gsm == null) return _GsmLevel.unknown;
 
+  // GSM ASU (0–31) or percentage (0–100): higher = better
   final value = gsm <= 1 ? gsm * 100 : gsm;
-  if (value < 8) return _GsmLevel.critical;
-  if (value < 16) return _GsmLevel.low;
-  if (value < 26) return _GsmLevel.medium;
+  if (value < 5) return _GsmLevel.critical;
+  if (value < 12) return _GsmLevel.low;
+  if (value < 20) return _GsmLevel.medium;
   return _GsmLevel.good;
 }
 
 String _gsmDisplayLabel({required double? gsm, required double? rssi}) {
   if (rssi != null) {
-    return '${rssi.toStringAsFixed(0)} dBm';
+    final dBm = rssi > 0 ? -rssi : rssi;
+    return '${dBm.toStringAsFixed(0)} dBm';
   }
   if (gsm == null) return '--';
   final value = gsm <= 1 ? gsm * 100 : gsm;
-  return value.toStringAsFixed(0);
+  return '${value.toStringAsFixed(0)}%';
 }
 
 String _relativeTimeLabel(String? raw) {
@@ -1447,4 +1836,369 @@ String _relativeTimeLabel(String? raw) {
   if (diff.inHours < 24) return 'há ${diff.inHours} h';
   if (diff.inDays == 1) return 'há 1 dia';
   return 'há ${diff.inDays} dias';
+}
+
+// ── Circular Gauge Widgets ─────────────────────────────────────────────────
+
+const double _gaugeStartAngle = math.pi * 3 / 4; // 135° — bottom-left
+const double _gaugeSweep = math.pi * 3 / 2; // 270°
+
+class _DialGauge extends StatelessWidget {
+  const _DialGauge({
+    required this.label,
+    required this.unit,
+    required this.value,
+    required this.max,
+    required this.color,
+    required this.ticks,
+    required this.loading,
+  });
+
+  final String label;
+  final String unit;
+  final double value;
+  final double max;
+  final Color color;
+  final List<double> ticks;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: loading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : CustomPaint(
+                painter: _DialPainter(
+                  label: label,
+                  unit: unit,
+                  value: value.clamp(0.0, max),
+                  max: max,
+                  color: color,
+                  ticks: ticks,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _DialPainter extends CustomPainter {
+  const _DialPainter({
+    required this.label,
+    required this.unit,
+    required this.value,
+    required this.max,
+    required this.color,
+    required this.ticks,
+  });
+
+  final String label;
+  final String unit;
+  final double value;
+  final double max;
+  final Color color;
+  final List<double> ticks;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final d = math.min(size.width, size.height);
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = d / 2 - 10;
+    const strokeW = 10.0;
+
+    // Background track
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      _gaugeStartAngle,
+      _gaugeSweep,
+      false,
+      Paint()
+        ..color = const Color(0xFFE8EFF7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeW
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Value arc
+    final frac = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
+    if (frac > 0.005) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        _gaugeStartAngle,
+        _gaugeSweep * frac,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeW
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Tick marks
+    final innerEdge = radius - strokeW / 2 - 1;
+    final majorPaint = Paint()..color = const Color(0xFFB0BEC5)..strokeWidth = 1.2;
+    final minorPaint = Paint()..color = const Color(0xFFCDD5E0)..strokeWidth = 0.8;
+    const int totalTicks = 48;
+    final int majorEvery = totalTicks ~/ (ticks.length - 1);
+    for (int i = 0; i <= totalTicks; i++) {
+      final angle = _gaugeStartAngle + _gaugeSweep * i / totalTicks;
+      final isMajor = i % majorEvery == 0;
+      final outerR = innerEdge - 2;
+      final innerR = outerR - (isMajor ? 9.0 : 4.0);
+      final c = math.cos(angle);
+      final s = math.sin(angle);
+      canvas.drawLine(
+        Offset(center.dx + c * outerR, center.dy + s * outerR),
+        Offset(center.dx + c * innerR, center.dy + s * innerR),
+        isMajor ? majorPaint : minorPaint,
+      );
+    }
+
+    // Scale labels
+    final lblR = innerEdge - 22;
+    for (int i = 0; i < ticks.length; i++) {
+      final angle = _gaugeStartAngle + _gaugeSweep * i / (ticks.length - 1);
+      final lx = center.dx + math.cos(angle) * lblR;
+      final ly = center.dy + math.sin(angle) * lblR;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: ticks[i].toStringAsFixed(0),
+          style: const TextStyle(color: Color(0xFF5A6B84), fontSize: 10, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(lx - tp.width / 2, ly - tp.height / 2));
+    }
+
+    // Needle
+    final needleAngle = _gaugeStartAngle + _gaugeSweep * frac;
+    final needleLen = innerEdge - 26;
+    const halfBase = 5.0;
+    final perp = needleAngle + math.pi / 2;
+    final tip = Offset(center.dx + math.cos(needleAngle) * needleLen,
+        center.dy + math.sin(needleAngle) * needleLen);
+    final b1 = Offset(center.dx + math.cos(perp) * halfBase,
+        center.dy + math.sin(perp) * halfBase);
+    final b2 = Offset(center.dx - math.cos(perp) * halfBase,
+        center.dy - math.sin(perp) * halfBase);
+    canvas.drawPath(Path()..moveTo(tip.dx, tip.dy)..lineTo(b1.dx, b1.dy)..lineTo(b2.dx, b2.dy)..close(),
+        Paint()..color = color);
+
+    // Hub
+    canvas.drawCircle(center, 7, Paint()..color = const Color(0xFF1F2A44));
+    canvas.drawCircle(center, 4, Paint()..color = Colors.white);
+
+    // Value + unit inside circle (bottom half)
+    final valStr = max <= 10 ? value.toStringAsFixed(1) : value.toStringAsFixed(0);
+    final valTp = TextPainter(
+      text: TextSpan(
+        text: valStr,
+        style: TextStyle(
+          color: value > (max <= 10 ? 0.05 : 0.5) ? color : const Color(0xFF94A3B8),
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final valY = center.dy + radius * 0.24;
+    valTp.paint(canvas, Offset(center.dx - valTp.width / 2, valY));
+
+    final unitTp = TextPainter(
+      text: TextSpan(
+        text: unit,
+        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    unitTp.paint(canvas, Offset(center.dx - unitTp.width / 2, valY + 25));
+
+    // Label text (Velocidade / RPM) at top-center inside
+    final lblTp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(color: Color(0xFF526684), fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    lblTp.paint(canvas, Offset(center.dx - lblTp.width / 2, center.dy - radius * 0.52));
+  }
+
+  @override
+  bool shouldRepaint(_DialPainter old) =>
+      old.value != value || old.color != color || old.label != label;
+}
+
+class _ArcGauge extends StatelessWidget {
+  const _ArcGauge({
+    required this.label,
+    required this.value,
+    required this.displayText,
+    required this.color,
+    required this.icon,
+    required this.loading,
+    this.qualityLabel,
+  });
+
+  final String label;
+  final double? value; // 0–100 percentage, null = unknown
+  final String displayText;
+  final Color color;
+  final IconData icon;
+  final bool loading;
+  final String? qualityLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: loading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _ArcPainter(value: value, color: color, label: label),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, color: color, size: 22),
+                        const SizedBox(height: 6),
+                        Text(
+                          displayText,
+                          style: TextStyle(
+                            color: value != null
+                                ? const Color(0xFF1F2A44)
+                                : const Color(0xFF94A3B8),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (qualityLabel != null && qualityLabel != '--')
+                          Text(
+                            qualityLabel!,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _ArcPainter extends CustomPainter {
+  const _ArcPainter({required this.value, required this.color, required this.label});
+
+  final double? value;
+  final Color color;
+  final String label;
+
+  // Same 270° arc as dial gauges
+  static const List<String> _scaleLabels = ['0', '25', '50', '75', '100'];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final d = math.min(size.width, size.height);
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = d / 2 - 14;
+    const strokeW = 10.0;
+
+    // Background track
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      _gaugeStartAngle,
+      _gaugeSweep,
+      false,
+      Paint()
+        ..color = const Color(0xFFE8EFF7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeW
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Value arc
+    final frac = value != null ? (value! / 100).clamp(0.0, 1.0) : 0.0;
+    if (frac > 0.005) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        _gaugeStartAngle,
+        _gaugeSweep * frac,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeW
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Indicator dot at current value
+    if (value != null) {
+      final dotAngle = _gaugeStartAngle + _gaugeSweep * frac;
+      final dotX = center.dx + math.cos(dotAngle) * radius;
+      final dotY = center.dy + math.sin(dotAngle) * radius;
+      canvas.drawCircle(Offset(dotX, dotY), 8,
+          Paint()..color = color.withValues(alpha: 0.2));
+      canvas.drawCircle(Offset(dotX, dotY), 5, Paint()..color = color);
+      canvas.drawCircle(Offset(dotX, dotY), 3, Paint()..color = Colors.white);
+    }
+
+    // Scale labels (0, 25, 50, 75, 100)
+    final lblR = radius + strokeW / 2 + 10;
+    for (int i = 0; i < _scaleLabels.length; i++) {
+      final angle = _gaugeStartAngle + _gaugeSweep * i / (_scaleLabels.length - 1);
+      final lx = center.dx + math.cos(angle) * lblR;
+      final ly = center.dy + math.sin(angle) * lblR;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: _scaleLabels[i],
+          style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 9, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(lx - tp.width / 2, ly - tp.height / 2));
+    }
+
+    // Label at top-center (Bateria / Sinal GSM)
+    final titleTp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(color: Color(0xFF526684), fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    titleTp.paint(canvas, Offset(center.dx - titleTp.width / 2, center.dy - radius * 0.52));
+  }
+
+  @override
+  bool shouldRepaint(_ArcPainter old) =>
+      old.value != value || old.color != color;
 }
