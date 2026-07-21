@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:http/http.dart' as http;
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'models/report_models.dart';
@@ -169,7 +171,7 @@ List<ReportRecord> _mapReportRecords({
     for (final device in devices) device.id: device,
   };
 
-  final records = <ReportRecord>[];
+  final groups = <String, _ReportRecordGroup>{};
   final selectedType = _typeFromLabel(selectedTypeLabel);
 
   for (final raw in rawRecords) {
@@ -186,32 +188,83 @@ List<ReportRecord> _mapReportRecords({
             ? ReportType.alerts
             : selectedType;
 
-    records.add(
-      ReportRecord(
-        name: _resolveName(raw, type),
-        type: type,
-        vehicle: _resolveVehicleName(deviceId, devicesById),
-        driver: _resolveDriver(raw),
-        period: _resolvePeriod(raw, from, to),
-        status: _resolveStatus(raw),
-        createdAt: createdAt,
-        format: ReportFormat.screen,
-        totalRecords: _resolveCount(raw),
-        deviceId: deviceId,
-        latitude: _resolveLatitude(raw, attributes),
-        longitude: _resolveLongitude(raw, attributes),
-        speedKnots: _resolveSpeedKnots(raw, attributes),
-        ignition: _resolveIgnition(raw, attributes),
-        battery: _resolveBattery(raw, attributes),
-        eventType: eventType,
-        address: _resolveAddress(raw, attributes),
-        attributes: attributes,
-      ),
+    final record = ReportRecord(
+      name: _resolveName(raw, type),
+      type: type,
+      vehicle: _resolveVehicleName(deviceId, devicesById),
+      driver: _resolveDriver(raw),
+      period: _resolvePeriod(raw, from, to),
+      status: _resolveStatus(raw),
+      createdAt: createdAt,
+      format: ReportFormat.screen,
+      totalRecords: _resolveCount(raw),
+      deviceId: deviceId,
+      latitude: _resolveLatitude(raw, attributes),
+      longitude: _resolveLongitude(raw, attributes),
+      speedKnots: _resolveSpeedKnots(raw, attributes),
+      ignition: _resolveIgnition(raw, attributes),
+      battery: _resolveBattery(raw, attributes),
+      eventType: eventType,
+      address: _resolveAddress(raw, attributes),
+      attributes: attributes,
     );
+
+    // Eventos brutos de conexão (online/offline/unknown/moving) repetem
+    // várias vezes por dispositivo no período — agrupa em 1 linha por
+    // (dispositivo + tipo de evento) em vez de 1 linha por ocorrência.
+    final groupKey = type == ReportType.events
+        ? '${deviceId ?? 'sem-dispositivo'}|${eventType ?? record.name}'
+        : 'individual|${groups.length}|${record.name}|${record.createdAt}';
+
+    final existing = groups[groupKey];
+    if (existing == null) {
+      groups[groupKey] = _ReportRecordGroup(latest: record, occurrences: 1);
+    } else if (createdAt.isAfter(existing.latest.createdAt)) {
+      groups[groupKey] =
+          _ReportRecordGroup(latest: record, occurrences: existing.occurrences + 1);
+    } else {
+      groups[groupKey] = _ReportRecordGroup(
+        latest: existing.latest,
+        occurrences: existing.occurrences + 1,
+      );
+    }
   }
+
+  final records = <ReportRecord>[
+    for (final group in groups.values)
+      group.occurrences == 1
+          ? group.latest
+          : ReportRecord(
+              name: group.latest.name,
+              type: group.latest.type,
+              vehicle: group.latest.vehicle,
+              driver: group.latest.driver,
+              period: group.latest.period,
+              status: group.latest.status,
+              createdAt: group.latest.createdAt,
+              format: group.latest.format,
+              totalRecords: group.occurrences,
+              deviceId: group.latest.deviceId,
+              latitude: group.latest.latitude,
+              longitude: group.latest.longitude,
+              speedKnots: group.latest.speedKnots,
+              ignition: group.latest.ignition,
+              battery: group.latest.battery,
+              eventType: group.latest.eventType,
+              address: group.latest.address,
+              attributes: group.latest.attributes,
+            ),
+  ];
 
   records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return records;
+}
+
+class _ReportRecordGroup {
+  const _ReportRecordGroup({required this.latest, required this.occurrences});
+
+  final ReportRecord latest;
+  final int occurrences;
 }
 
 DateTime? _resolveDateTime(Map<String, dynamic> raw) {
@@ -593,7 +646,9 @@ DateTime _defaultReportsFrom() =>
     _defaultReportsTo().subtract(const Duration(days: 30));
 
 class ReportsScreen extends ConsumerStatefulWidget {
-  const ReportsScreen({super.key});
+  const ReportsScreen({super.key, this.onClose});
+
+  final VoidCallback? onClose;
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -811,20 +866,247 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       return;
     }
 
-    final replayFuture = _loadReplayDataForDevice(
+    final data = await _loadReplayDataForDevice(
       deviceId: deviceId,
       vehicleLabel: record.vehicle,
     );
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => _ReportReplayDialog(
-        vehicleName: record.vehicle,
-        periodLabel:
-            '${_formatReplayDateTime(_appliedStartDateTime)} - ${_formatReplayDateTime(_appliedEndDateTime)}',
-        replayFuture: replayFuture,
-      ),
+    if (!mounted) {
+      return;
+    }
+    if (data.points.isEmpty) {
+      _showAction(data.message ?? 'Sem posições válidas neste período.');
+      return;
+    }
+
+    final mapPoints = [
+      for (final point in data.points)
+        ReportRouteMapPoint(
+          latitude: point.latitude,
+          longitude: point.longitude,
+          effectiveTime: point.effectiveTime,
+          course: point.course,
+          address: point.address,
+          speedKmh: point.speedKmh,
+          rpm: point.rpm,
+          ignition: point.ignition,
+          batteryLabel: point.battery,
+          satellites: point.satellites,
+          odometerKm: point.odometerKm,
+          hourmeterHours: point.hourmeterHours,
+          motion: point.motion,
+          signalLabel: point.signal,
+        ),
+    ];
+    final requestNonce = DateTime.now().microsecondsSinceEpoch.toString();
+
+    // Abre o replay na hora com os pontos brutos — não espera o OSRM.
+    ref.read(reportRouteMapSelectionProvider.notifier).state =
+        ReportRouteMapSelection(
+      deviceId: deviceId,
+      vehicleName: record.vehicle,
+      from: _appliedStartDateTime,
+      to: _appliedEndDateTime,
+      requestNonce: requestNonce,
+      points: mapPoints,
     );
+    widget.onClose?.call();
+
+    // Em segundo plano, manda pro OSRM e, quando terminar, atualiza a linha
+    // do trajeto — só se o usuário ainda estiver vendo esse mesmo replay
+    // (não trocou pra outro enquanto isso rodava).
+    unawaited(() async {
+      final matchedPath = await _matchPointsWithOsrm(data.points);
+      if (!mounted) return;
+      final current = ref.read(reportRouteMapSelectionProvider);
+      if (current?.requestNonce != requestNonce) return;
+      ref.read(reportRouteMapSelectionProvider.notifier).state =
+          ReportRouteMapSelection(
+        deviceId: deviceId,
+        vehicleName: record.vehicle,
+        from: _appliedStartDateTime,
+        to: _appliedEndDateTime,
+        requestNonce: requestNonce,
+        matchedPath: matchedPath,
+        points: mapPoints,
+      );
+    }());
+  }
+
+  /// Distância aproximada (km) entre dois pontos, fórmula de haversine.
+  double _haversineKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadiusKm = 6371.0;
+    final dLat = (lat2 - lat1) * (math.pi / 180.0);
+    final dLon = (lon2 - lon1) * (math.pi / 180.0);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * (math.pi / 180.0)) *
+            math.cos(lat2 * (math.pi / 180.0)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  /// Quebra o trajeto bruto em pedaços contínuos, cortando exatamente onde
+  /// há um buraco de conexão do rastreador (distância grande entre dois
+  /// pontos consecutivos). Cada pedaço vira uma linha separada no mapa —
+  /// assim um buraco real vira um buraco visual, não uma reta falsa
+  /// conectando dois trechos sem relação.
+  List<List<_RouteReplayPoint>> _splitRouteIntoContinuousSegments(
+    List<_RouteReplayPoint> points,
+  ) {
+    const maxGapKm = 0.6;
+    final segments = <List<_RouteReplayPoint>>[];
+    var current = <_RouteReplayPoint>[];
+    for (final point in points) {
+      if (current.isNotEmpty) {
+        final last = current.last;
+        final distanceKm = _haversineKm(
+          last.latitude,
+          last.longitude,
+          point.latitude,
+          point.longitude,
+        );
+        if (distanceKm > maxGapKm) {
+          if (current.length > 1) segments.add(current);
+          current = <_RouteReplayPoint>[];
+        }
+      }
+      current.add(point);
+    }
+    if (current.length > 1) segments.add(current);
+    return segments;
+  }
+
+  /// Manda um pedaço contínuo do trajeto pro serviço OSRM (self-hosted,
+  /// Sudeste do Brasil), que "gruda" os pontos no asfalto real. Se o serviço
+  /// falhar ou não achar match, cai de volta pros pontos originais desse
+  /// pedaço (sem quebrar o replay).
+  Future<List<MatchedLatLng>> _matchSegmentWithOsrm(
+    List<_RouteReplayPoint> segment,
+    http.Client client,
+  ) async {
+    final sampled = _downsampleRouteForMatching(segment, targetCount: 200);
+    if (sampled.length < 2) {
+      return [
+        for (final p in sampled) MatchedLatLng(p.latitude, p.longitude),
+      ];
+    }
+
+    const batchSize = 90;
+    final matched = <MatchedLatLng>[];
+    var start = 0;
+    while (start < sampled.length - 1) {
+      final end = math.min(start + batchSize, sampled.length);
+      final batch = sampled.sublist(start, end);
+      if (batch.length < 2) break;
+
+      final coords =
+          batch.map((p) => '${p.longitude},${p.latitude}').join(';');
+      final radiuses = List.filled(batch.length, '30').join(';');
+      final uri = Uri.parse(
+        'http://204.168.191.10:5333/match/v1/driving/$coords'
+        '?geometries=geojson&overview=full&radiuses=$radiuses',
+      );
+
+      var matchedThisBatch = false;
+      try {
+        final response =
+            await client.get(uri).timeout(const Duration(seconds: 12));
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body) as Map<String, dynamic>;
+          final matchings = json['matchings'] as List<dynamic>?;
+          if (matchings != null && matchings.isNotEmpty) {
+            // Mesmo dentro de um pedaço já contínuo, o OSRM pode ocasionalmente
+            // devolver mais de um trecho (baixa confiança de match). Usa só o
+            // maior, pra não criar conexão falsa entre pedaços sem relação.
+            final largest = matchings.cast<Map<String, dynamic>>().reduce(
+              (a, b) {
+                final aCoords =
+                    (a['geometry'] as Map<String, dynamic>)['coordinates']
+                        as List<dynamic>;
+                final bCoords =
+                    (b['geometry'] as Map<String, dynamic>)['coordinates']
+                        as List<dynamic>;
+                return aCoords.length >= bCoords.length ? a : b;
+              },
+            );
+            final geometry = largest['geometry'] as Map<String, dynamic>;
+            final coordinates = geometry['coordinates'] as List<dynamic>;
+            for (final pair in coordinates) {
+              final lonLat = pair as List<dynamic>;
+              matched.add(MatchedLatLng(
+                (lonLat[1] as num).toDouble(),
+                (lonLat[0] as num).toDouble(),
+              ));
+            }
+            matchedThisBatch = true;
+          }
+        }
+      } catch (_) {
+        // Sem internet/serviço fora do ar: cai pro fallback abaixo.
+      }
+
+      if (!matchedThisBatch) {
+        for (final p in batch) {
+          matched.add(MatchedLatLng(p.latitude, p.longitude));
+        }
+      }
+
+      if (end >= sampled.length) break;
+      start = end - 1; // sobrepõe 1 ponto entre lotes pra continuidade
+    }
+    return matched;
+  }
+
+  /// Ponto de entrada: quebra o trajeto em pedaços contínuos e manda cada um
+  /// pro OSRM separadamente. Retorna uma lista de trechos (não uma linha só)
+  /// — cada trecho é desenhado como sua própria polyline no mapa.
+  Future<List<List<MatchedLatLng>>> _matchPointsWithOsrm(
+    List<_RouteReplayPoint> points,
+  ) async {
+    final segments = _splitRouteIntoContinuousSegments(points);
+    if (segments.isEmpty) {
+      return [
+        [for (final p in points) MatchedLatLng(p.latitude, p.longitude)],
+      ];
+    }
+
+    final client = http.Client();
+    final result = <List<MatchedLatLng>>[];
+    try {
+      for (final segment in segments) {
+        result.add(await _matchSegmentWithOsrm(segment, client));
+      }
+    } finally {
+      client.close();
+    }
+    return result;
+  }
+
+  /// Reduz a quantidade de pontos antes de mandar pro OSRM (rotas de replay
+  /// podem ter milhares de pontos; não precisamos de todos pra desenhar uma
+  /// linha suave — reduz o número de chamadas HTTP necessárias).
+  List<_RouteReplayPoint> _downsampleRouteForMatching(
+    List<_RouteReplayPoint> points, {
+    required int targetCount,
+  }) {
+    if (points.length <= targetCount) {
+      return points;
+    }
+    final step = points.length / targetCount;
+    final sampled = <_RouteReplayPoint>[];
+    for (var i = 0.0; i < points.length; i += step) {
+      sampled.add(points[i.floor()]);
+    }
+    if (sampled.last != points.last) {
+      sampled.add(points.last);
+    }
+    return sampled;
   }
 
   Future<void> _exportRecords(
@@ -985,17 +1267,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(reportsRealDevicesProvider);
-    final listAsync = ref.watch(
-      reportsListProvider(
-        _ReportsQueryParams(
-          from: _appliedStartDateTime,
-          to: _appliedEndDateTime,
-          type: _appliedType,
-          vehicle: _appliedVehicle,
-          revision: _revision,
-        ),
-      ),
-    );
+    // Só busca quando o usuário clicar em "Buscar" — antes disso, a tela
+    // abria já disparando uma consulta pesada (frota inteira, 30 dias) sem
+    // pedir nada, e isso segurava a abertura do painel.
+    final listAsync = !_hasSearched
+        ? const AsyncValue<List<ReportRecord>>.data(<ReportRecord>[])
+        : ref.watch(
+            reportsListProvider(
+              _ReportsQueryParams(
+                from: _appliedStartDateTime,
+                to: _appliedEndDateTime,
+                type: _appliedType,
+                vehicle: _appliedVehicle,
+                revision: _revision,
+              ),
+            ),
+          );
 
     return SizedBox.expand(
       child: listAsync.when(
@@ -1186,17 +1473,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _categoryDescription(ReportType type) {
     switch (type) {
       case ReportType.routes:
-        return 'Endpoint /reports/route';
+        return 'Trajeto percorrido pelo veículo';
       case ReportType.trips:
-        return 'Endpoint /reports/trips';
+        return 'Viagens realizadas no período';
       case ReportType.stops:
-        return 'Endpoint /reports/stops';
+        return 'Paradas registradas no período';
       case ReportType.events:
-        return 'Endpoint /reports/events';
+        return 'Eventos do dispositivo no período';
       case ReportType.distance:
-        return 'Endpoint /reports/summary';
+        return 'Resumo consolidado do período';
       case ReportType.alerts:
-        return 'Endpoint /reports/events (alertas)';
+        return 'Alertas e ocorrências críticas';
       default:
         return 'Categoria operacional.';
     }
@@ -3341,7 +3628,7 @@ class _RouteDetailDialogState extends State<_RouteDetailDialog> {
                           value: widget.vehicleName,
                         ),
                         _RouteInfoChip(
-                          label: 'Periodo',
+                          label: 'Período',
                           value: widget.periodLabel,
                         ),
                         _RouteInfoChip(
@@ -3860,6 +4147,9 @@ class _RouteReplayPoint {
     required this.rpm,
     required this.odometerKm,
     required this.address,
+    required this.satellites,
+    required this.hours,
+    required this.motion,
   });
 
   static _RouteReplayPoint? fromMap(Map<String, dynamic> raw) {
@@ -3879,6 +4169,9 @@ class _RouteReplayPoint {
       rpm: base.rpm,
       odometerKm: base.odometerKm,
       address: base.address,
+      satellites: base.satellites,
+      hours: base.hours,
+      motion: base.motion,
     );
   }
 
@@ -3893,6 +4186,12 @@ class _RouteReplayPoint {
   final double? rpm;
   final double? odometerKm;
   final String? address;
+  final double? satellites;
+  final double? hours;
+  final bool? motion;
+
+  double? get hourmeterHours =>
+      hours == null ? null : hours! / 3600000.0;
 
   double? get speedKmh => speedKnots == null ? null : speedKnots! * 1.852;
 
@@ -4170,7 +4469,14 @@ class _RouteDetailPoint {
     required this.rpm,
     required this.odometerKm,
     required this.address,
+    required this.satellites,
+    required this.hours,
+    required this.motion,
   });
+
+  final double? satellites;
+  final double? hours;
+  final bool? motion;
 
   final double latitude;
   final double longitude;
@@ -4213,6 +4519,7 @@ class _RouteDetailPoint {
       ignition: _asBool(
         raw['ignition'] ?? attributes['ignition'] ?? attributes['ignitionOn'],
       ),
+      motion: _asBool(raw['motion'] ?? attributes['motion']),
       battery: _resolveBattery(raw, attributes),
       signal: _resolveSignal(raw, attributes),
       rpm: _resolveSensorDouble(
@@ -4228,6 +4535,18 @@ class _RouteDetailPoint {
         const ['odometer', 'totalDistance', 'mileage'],
       ),
       address: _resolveAddress(raw, attributes),
+      satellites: _resolveSensorDouble(
+        raw,
+        attributes,
+        const ['satellites'],
+        const ['sat', 'satellites'],
+      ),
+      hours: _resolveSensorDouble(
+        raw,
+        attributes,
+        const ['hours'],
+        const ['hours'],
+      ),
     );
   }
 

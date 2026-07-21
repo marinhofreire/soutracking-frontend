@@ -1207,7 +1207,7 @@ class _VehicleDetailPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            'Sensores NT20/X22',
+            'Sensores do equipamento',
             style: TextStyle(
               color: Color(0xFF25344A),
               fontWeight: FontWeight.w700,

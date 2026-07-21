@@ -18,6 +18,7 @@ import '../../data/bridge_client.dart';
 import '../../data/models.dart';
 import '../../data/openf1_client.dart';
 import '../../state/session_state.dart';
+import '../../widgets/dial_gauge.dart';
 import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
 import '../calls/calls_screen.dart';
@@ -211,7 +212,11 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _replayTick = Duration(milliseconds: 80);
-  static const Duration _replaySegment = Duration(milliseconds: 720);
+  static const Duration _replaySegment = Duration(milliseconds: 1400);
+  // Segmentos com distância maior que isso (ex: buraco de conexão do
+  // rastreador) não são animados suavemente — o marcador salta direto pro
+  // próximo ponto em vez de "correr" por um trecho gigante em pouco tempo.
+  static const double _replaySegmentMaxAnimatedDistanceKm = 0.6;
   static const Duration _operationalRefreshInterval = Duration(seconds: 30);
   static const Duration _positionRefreshInterval = Duration(seconds: 3);
 
@@ -229,9 +234,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String? _lastFollowedReplayKey;
   String? _lastFollowedReportRouteReplayKey;
   double? _lastResolvedReportRouteBearing;
-  ReportRouteMapSelection? _reportRouteSelection;
-  bool _reportRouteReplay3dEnabled = false;
+  bool _reportRouteReplay3dEnabled = true;
   String? _lastFocusedReportRouteKey;
+  String? _lastReportRouteMapTypeNonce;
+  int? _lastVehicleTapDeviceId;
+  DateTime? _lastVehicleTapTime;
+  int? _liveGaugesDeviceId;
 
   final bool _showHighlightsRail = false;
 
@@ -248,8 +256,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   bool _copilotPanelOpen = false;
   _VisualDiagnosis? _lastVisualDiagnosis;
   double _currentZoom = 13.0;
-  gmaps.MapType _mapViewType = gmaps.MapType.normal;
-  bool _mapTrafficEnabled = false;
+  gmaps.MapType _mapViewType = gmaps.MapType.hybrid;
+  bool _mapTrafficEnabled = true;
   DateTime _blockSurfaceClearUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -429,7 +437,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   void _openKpi(_KpiFilter filter) {
     setState(() {
-      _reportRouteSelection = null;
+      ref.read(reportRouteMapSelectionProvider.notifier).state = null;
       _lastFocusedReportRouteKey = null;
       _lastFollowedReportRouteReplayKey = null;
       _routeReplaySegmentProgress = 0;
@@ -457,7 +465,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const Duration(milliseconds: 700),
       );
       setState(() {
-        _reportRouteSelection = null;
+        ref.read(reportRouteMapSelectionProvider.notifier).state = null;
         _lastFocusedReportRouteKey = null;
         _lastFollowedReportRouteReplayKey = null;
         _routeReplaySegmentProgress = 0;
@@ -480,7 +488,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       const Duration(milliseconds: 700),
     );
     setState(() {
-      _reportRouteSelection = null;
+      ref.read(reportRouteMapSelectionProvider.notifier).state = null;
       _lastFocusedReportRouteKey = null;
       _lastFollowedReportRouteReplayKey = null;
       _routeReplaySegmentProgress = 0;
@@ -506,7 +514,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       const Duration(milliseconds: 1200),
     );
     setState(() {
-      _reportRouteSelection = null;
+      ref.read(reportRouteMapSelectionProvider.notifier).state = null;
       _lastFocusedReportRouteKey = null;
       _lastFollowedReportRouteReplayKey = null;
       _replayTimer?.cancel();
@@ -530,6 +538,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _selectVehicleOnMap(_VehicleSnapshot snapshot) {
+    // Detecta duplo clique manualmente (Marker do Google Maps só tem onTap).
+    final now = DateTime.now();
+    final isDoubleTap = _lastVehicleTapDeviceId == snapshot.device.id &&
+        _lastVehicleTapTime != null &&
+        now.difference(_lastVehicleTapTime!) < const Duration(milliseconds: 400);
+    _lastVehicleTapDeviceId = snapshot.device.id;
+    _lastVehicleTapTime = now;
+
+    if (isDoubleTap) {
+      setState(() {
+        _liveGaugesDeviceId = snapshot.device.id;
+        _selectedVehicle = snapshot.device;
+      });
+      _focusVehicle(snapshot);
+      _googleMapController?.hideMarkerInfoWindow(
+        gmaps.MarkerId('vehicle-${snapshot.device.id}'),
+      );
+      return;
+    }
+
     _blockSurfaceClearUntil = DateTime.now().add(
       const Duration(milliseconds: 700),
     );
@@ -547,6 +575,40 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
+  void _closeLiveGauges() {
+    setState(() => _liveGaugesDeviceId = null);
+  }
+
+  double? _attrAsDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  bool? _attrAsBool(Object? value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    final text = value.toString().toLowerCase();
+    if (text == 'true' || text == '1') return true;
+    if (text == 'false' || text == '0') return false;
+    return null;
+  }
+
+  // Zoom estilo "chase cam": aproxima em baixa velocidade (detalhe de manobra),
+  // afasta suavemente em velocidade alta (visão de contexto da via).
+  static double _chaseCamZoomForSpeed(double? speedKmh) {
+    final speed = speedKmh ?? 0;
+    const zoomSlow = 18.0;
+    const zoomFast = 15.5;
+    const speedSlowThreshold = 30.0;
+    const speedFastThreshold = 80.0;
+    if (speed <= speedSlowThreshold) return zoomSlow;
+    if (speed >= speedFastThreshold) return zoomFast;
+    final t = (speed - speedSlowThreshold) /
+        (speedFastThreshold - speedSlowThreshold);
+    return zoomSlow - (zoomSlow - zoomFast) * t;
+  }
+
   void _focusVehicle(_VehicleSnapshot snapshot) {
     final latLng = snapshot.latLngOrNull;
     if (latLng == null) return;
@@ -554,8 +616,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       gmaps.CameraUpdate.newCameraPosition(
         gmaps.CameraPosition(
           target: latLng,
-          zoom: 16,
-          tilt: 45,
+          zoom: _chaseCamZoomForSpeed(snapshot.speedKmh),
+          tilt: 55,
           bearing: snapshot.mapBearing,
         ),
       ),
@@ -772,6 +834,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     double? bearing,
   ) {
     final safeT = t.clamp(0.0, 1.0);
+    double? lerpNullable(double? a, double? b) {
+      if (a == null && b == null) return null;
+      final start = a ?? b!;
+      final end = b ?? a!;
+      return start + ((end - start) * safeT);
+    }
+
     return ReportRouteMapPoint(
       latitude: from.latitude + ((to.latitude - from.latitude) * safeT),
       longitude: from.longitude + ((to.longitude - from.longitude) * safeT),
@@ -779,6 +848,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           _interpolateDateTime(from.effectiveTime, to.effectiveTime, safeT),
       course: bearing ?? from.course ?? to.course,
       address: from.address ?? to.address,
+      speedKmh: lerpNullable(from.speedKmh, to.speedKmh),
+      rpm: lerpNullable(from.rpm, to.rpm),
+      batteryVoltage: lerpNullable(from.batteryVoltage, to.batteryVoltage),
+      ignition: safeT < 0.5 ? from.ignition : to.ignition,
+      batteryLabel: safeT < 0.5 ? from.batteryLabel : to.batteryLabel,
+      satellites: lerpNullable(from.satellites, to.satellites),
+      odometerKm: lerpNullable(from.odometerKm, to.odometerKm),
+      hourmeterHours: lerpNullable(from.hourmeterHours, to.hourmeterHours),
+      motion: safeT < 0.5 ? from.motion : to.motion,
+      signalLabel: safeT < 0.5 ? from.signalLabel : to.signalLabel,
     );
   }
 
@@ -874,12 +953,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ((normalizedBearing / debugBucketSize).round() * debugBucketSize) % 360;
     final finalAngle = segmentBucket.toDouble();
 
-    if (!playing || isLastPoint) {
+    final isLargeGap =
+        segmentDistanceKm > _replaySegmentMaxAnimatedDistanceKm;
+
+    if (!playing || isLastPoint || isLargeGap) {
       final bearing = _resolveReportRouteBearing(
         points,
         segmentIndex,
         lockToCurrentSegment: true,
       );
+      // Buraco de conexão do rastreador (distância grande num "segmento" só):
+      // não anima a câmera correndo por ele — só troca de ponto direto,
+      // evitando o efeito de sumir/pular na tela.
       return _ReportRouteReplayFrame(
         point: isLastPoint ? points.last : current,
         bearing: bearing,
@@ -1028,12 +1113,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _googleMapController?.moveCamera(
+      _googleMapController?.animateCamera(
         gmaps.CameraUpdate.newCameraPosition(
           gmaps.CameraPosition(
             target: gmaps.LatLng(point.latitude, point.longitude),
-            zoom: camera3dEnabled ? 15.5 : 14.6,
-            tilt: camera3dEnabled ? 45 : 0,
+            zoom: camera3dEnabled
+                ? _chaseCamZoomForSpeed(point.speedKmh)
+                : 14.6,
+            tilt: camera3dEnabled ? 55 : 0,
             bearing: camera3dEnabled ? (bearing ?? 0) : 0,
           ),
         ),
@@ -1257,21 +1344,53 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           .cast<_VehicleSnapshot?>()
           .firstOrNull,
     );
-    final bottomSnapshot =
-        (_showBottomVehiclePanel ? selectedSnapshot : null) ??
+    final reportRouteSelection = ref.watch(reportRouteMapSelectionProvider);
+    final liveGaugesSnapshot = _liveGaugesDeviceId == null
+        ? null
+        : snapshots
+            .cast<_VehicleSnapshot?>()
+            .firstWhere((s) => s?.device.id == _liveGaugesDeviceId,
+                orElse: () => null);
+    final showLiveGauges =
+        liveGaugesSnapshot != null && reportRouteSelection == null;
+    final reportRouteReplayActive = reportRouteSelection != null;
+    // Efeito Waze: ao ENTRAR num replay novo, troca uma única vez pro mapa
+    // normal (vetorial, com prédio 3D de verdade) — mas sem travar o seletor
+    // de mapa depois: o usuário pode trocar livremente durante o replay.
+    if (reportRouteSelection != null &&
+        reportRouteSelection.requestNonce != _lastReportRouteMapTypeNonce) {
+      _lastReportRouteMapTypeNonce = reportRouteSelection.requestNonce;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _mapViewType = gmaps.MapType.normal);
+      });
+    }
+    final bottomSnapshot = reportRouteReplayActive
+        ? null
+        : (_showBottomVehiclePanel ? selectedSnapshot : null) ??
             (_showBottomVehiclePanel && !_activePanelVisible && !_kpiListOpen
                 ? defaultMapSnapshot
                 : null);
-    final showVehicleCompactPopup = selectedSnapshot != null &&
+    final showVehicleCompactPopup = !reportRouteReplayActive &&
+        selectedSnapshot != null &&
         !_showBottomVehiclePanel &&
         !_activePanelVisible &&
         !_kpiListOpen;
     _followSelectedVehicleIfNeeded(selectedSnapshot);
-    final reportRouteSelection = _reportRouteSelection;
     final reportRoutePoints =
         reportRouteSelection?.points ?? const <ReportRouteMapPoint>[];
     final reportRoutePath = reportRoutePoints
         .map((point) => gmaps.LatLng(point.latitude, point.longitude))
+        .toList(growable: false);
+    // Trajeto corrigido pelo OSRM, já dividido em trechos contínuos — cada
+    // trecho vira sua própria polyline, então um buraco de conexão real
+    // aparece como buraco visual, não como reta falsa conectando pedaços.
+    final reportRouteMatchedSegments = (reportRouteSelection?.matchedPath ??
+            const <List<MatchedLatLng>>[])
+        .map((segment) => segment
+            .map((point) => gmaps.LatLng(point.latitude, point.longitude))
+            .toList(growable: false))
+        .where((segment) => segment.length > 1)
         .toList(growable: false);
     final reportRouteReplayIndex = reportRoutePoints.isEmpty
         ? null
@@ -1397,6 +1516,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   selectedReplayPath: selectedReplayPath,
                   selectedReplayPoint: selectedReplayPoint,
                   reportRoutePath: reportRoutePath,
+                  reportRouteMatchedSegments: reportRouteMatchedSegments,
                   reportRouteStart: reportRouteStart,
                   reportRouteEnd: reportRouteEnd,
                   reportRouteActivePoint: reportRouteActivePoint,
@@ -1487,7 +1607,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onAiTap: _toggleCopilotPanel,
                   aiPanelOpen: _copilotPanelOpen,
                 ),
-              if (!pixelTelemetryMode)
+              if (!pixelTelemetryMode &&
+                  reportRouteSelection == null &&
+                  !showLiveGauges)
                 _MapRightControls(
                   onZoomIn: () => _zoomBy(1),
                   onZoomOut: () => _zoomBy(-1),
@@ -1549,6 +1671,70 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   ),
                 ),
               if (!pixelTelemetryMode)
+                _RouteReplaySpeedGauge(
+                  visible: reportRouteSelection != null,
+                  speedKmh: reportRouteActivePoint?.speedKmh,
+                  rpm: reportRouteActivePoint?.rpm == null
+                      ? null
+                      : reportRouteActivePoint!.rpm! / 1000,
+                  sidebarOpen: _menuOpen,
+                  sidebarVisible: sidebarVisible,
+                ),
+              if (!pixelTelemetryMode)
+                _RouteReplayStatusCard(
+                  visible: reportRouteSelection != null,
+                  ignition: reportRouteActivePoint?.ignition,
+                  motion: reportRouteActivePoint?.motion,
+                  batteryLabel: reportRouteActivePoint?.batteryLabel,
+                  satellites: reportRouteActivePoint?.satellites,
+                  signalLabel: reportRouteActivePoint?.signalLabel,
+                  odometerKm: reportRouteActivePoint?.odometerKm,
+                  hourmeterHours: reportRouteActivePoint?.hourmeterHours,
+                ),
+              if (!pixelTelemetryMode)
+                _RouteReplaySpeedGauge(
+                  visible: showLiveGauges,
+                  speedKmh: liveGaugesSnapshot?.speedKmh,
+                  rpm: _attrAsDouble(
+                        liveGaugesSnapshot?._mergedAttributes['rpm'],
+                      ) ==
+                          null
+                      ? null
+                      : _attrAsDouble(
+                            liveGaugesSnapshot?._mergedAttributes['rpm'],
+                          )! /
+                          1000,
+                  sidebarOpen: _menuOpen,
+                  sidebarVisible: sidebarVisible,
+                ),
+              if (!pixelTelemetryMode)
+                _RouteReplayStatusCard(
+                  visible: showLiveGauges,
+                  ignition: liveGaugesSnapshot?.ignition,
+                  motion: _attrAsBool(
+                    liveGaugesSnapshot?._mergedAttributes['motion'],
+                  ),
+                  batteryLabel: liveGaugesSnapshot?.batteryLabel,
+                  satellites: _attrAsDouble(
+                    liveGaugesSnapshot?._mergedAttributes['sat'],
+                  ),
+                  signalLabel: liveGaugesSnapshot?.gsmSignalLabel,
+                  odometerKm: _attrAsDouble(
+                    liveGaugesSnapshot?._mergedAttributes['odometer'],
+                  ),
+                  hourmeterHours: (() {
+                    final hours = _attrAsDouble(
+                      liveGaugesSnapshot?._mergedAttributes['hours'],
+                    );
+                    return hours == null ? null : hours / 3600000.0;
+                  })(),
+                ),
+              if (!pixelTelemetryMode && showLiveGauges)
+                _LiveGaugesBar(
+                  vehicleName: liveGaugesSnapshot?.device.name ?? '',
+                  onClose: _closeLiveGauges,
+                ),
+              if (!pixelTelemetryMode)
                 _KpiVehicleList(
                   open: _kpiListOpen,
                   cardDensity: visualSettings.cardDensity,
@@ -1577,6 +1763,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   cardDensity: visualSettings.cardDensity,
                   sidebarOpen: _menuOpen,
                   onDetails: () => _openVehicleDetails(selectedSnapshot),
+                  onTelemetry: () => setState(
+                    () => _liveGaugesDeviceId = selectedSnapshot.device.id,
+                  ),
                   onAlerts: () => _openPanel(
                     _operationalMenu.firstWhere((item) => item.id == 'alerts'),
                   ),
@@ -2418,7 +2607,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildReportsPanel() {
-    return const ReportsScreen();
+    return ReportsScreen(onClose: _closePanel);
   }
 
   Widget _buildAutomationsPanel() {
@@ -2554,6 +2743,7 @@ class _OperationalMap extends StatelessWidget {
     required this.selectedReplayPath,
     required this.selectedReplayPoint,
     required this.reportRoutePath,
+    this.reportRouteMatchedSegments = const [],
     required this.reportRouteStart,
     required this.reportRouteEnd,
     required this.reportRouteActivePoint,
@@ -2574,6 +2764,7 @@ class _OperationalMap extends StatelessWidget {
   final List<gmaps.LatLng> selectedReplayPath;
   final _ReplayPoint? selectedReplayPoint;
   final List<gmaps.LatLng> reportRoutePath;
+  final List<List<gmaps.LatLng>> reportRouteMatchedSegments;
   final ReportRouteMapPoint? reportRouteStart;
   final ReportRouteMapPoint? reportRouteEnd;
   final ReportRouteMapPoint? reportRouteActivePoint;
@@ -2621,8 +2812,19 @@ class _OperationalMap extends StatelessWidget {
   static final Map<int, Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>>
       _vehicleMarkerIconsFutureByTier = {};
 
-  static int _zoomIconTier(double zoom) => zoom < 11 ? 0 : zoom < 14 ? 1 : 2;
-  static double _iconSizeForTier(int tier) => tier == 0 ? 44.0 : tier == 1 ? 64.0 : 80.0;
+  // Escala suave do ícone do veículo conforme o zoom (em vez de saltos
+  // grandes entre poucas faixas fixas) — mesmo espírito do zoom por
+  // velocidade da câmera chase-cam. Arredonda pro inteiro mais próximo só
+  // pra não gerar um bitmap novo a cada micro-variação de zoom.
+  static int _zoomIconTier(double zoom) => zoom.round().clamp(6, 20);
+  static double _iconSizeForTier(int tier) {
+    const minZoom = 9.0;
+    const maxZoom = 18.0;
+    const minSize = 36.0;
+    const maxSize = 58.0;
+    final t = ((tier - minZoom) / (maxZoom - minZoom)).clamp(0.0, 1.0);
+    return minSize + (maxSize - minSize) * t;
+  }
   static final Map<int, Future<gmaps.BitmapDescriptor>>
       _replayRouteMarkerFutureByBucket =
       <int, Future<gmaps.BitmapDescriptor>>{};
@@ -2894,7 +3096,9 @@ class _OperationalMap extends StatelessWidget {
   }
 
   static int _replayRotationBucket(double? bearing) {
-    const bucketSize = 15;
+    // Bucket fino (3°) para o marcador girar de forma suave em vez de "saltar"
+    // em degraus grandes — ainda cacheado por ângulo pra não recriar o bitmap à toa.
+    const bucketSize = 3;
     final normalized = ((bearing ?? 0) % 360 + 360) % 360;
     final bucket = ((normalized / bucketSize).round() * bucketSize) % 360;
     return bucket.toInt();
@@ -2913,60 +3117,93 @@ class _OperationalMap extends StatelessWidget {
   static Future<Uint8List> _buildReplayRouteMarkerBytes({
     required double rotationDegrees,
   }) async {
-    const iconSize = 96.0;
+    const iconSize = 64.0;
     const center = Offset(iconSize / 2, iconSize / 2);
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
     final shadowPaint = Paint()
-      ..color = const Color(0xFF0F172A).withValues(alpha: 0.22)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    final bodyPaint = Paint()..color = const Color(0xFF0F172A);
+      ..color = const Color(0xFF0F172A).withValues(alpha: 0.24)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    final bodyPaint = Paint()..color = const Color(0xFF2F80FF);
+    final roofPaint = Paint()..color = const Color(0xFF1B5FD6);
     final strokePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
+      ..strokeWidth = 2
       ..color = Colors.white;
-    final accentPaint = Paint()..color = const Color(0xFF2F80FF);
-    final accentSoftPaint = Paint()..color = const Color(0xFF7DD3FC);
-    final whiteSoftPaint = Paint()..color = Colors.white.withAlpha(235);
+    final glassPaint = Paint()..color = Colors.white.withAlpha(230);
+    final wheelPaint = Paint()..color = const Color(0xFF0F172A).withAlpha(210);
 
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(rotationDegrees * math.pi / 180.0);
 
-    final arrowPath = Path()
-      ..moveTo(0, -34)
-      ..lineTo(18, 12)
-      ..lineTo(6, 12)
-      ..lineTo(6, 30)
-      ..lineTo(-6, 30)
-      ..lineTo(-6, 12)
-      ..lineTo(-18, 12)
+    // Silhueta do carro visto de cima: capô mais estreito na frente (topo),
+    // alargando na traseira — traçada com curvas suaves em vez de retângulo puro.
+    final carBody = Path()
+      ..moveTo(-7, -17)
+      ..quadraticBezierTo(-9, -17, -9, -11)
+      ..lineTo(-11, -4)
+      ..quadraticBezierTo(-12, 6, -11, 13)
+      ..quadraticBezierTo(-10.5, 17, -6, 17)
+      ..lineTo(6, 17)
+      ..quadraticBezierTo(10.5, 17, 11, 13)
+      ..quadraticBezierTo(12, 6, 11, -4)
+      ..lineTo(9, -11)
+      ..quadraticBezierTo(9, -17, 7, -17)
       ..close();
-    canvas.drawPath(arrowPath.shift(const Offset(0, 3)), shadowPaint);
-    canvas.drawPath(arrowPath, bodyPaint);
-    canvas.drawPath(arrowPath, strokePaint);
+    canvas.drawPath(carBody.shift(const Offset(0, 2)), shadowPaint);
+    canvas.drawPath(carBody, bodyPaint);
+    canvas.drawPath(carBody, strokePaint);
 
-    final centerStripe = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: const Offset(0, 10), width: 8, height: 34),
-      const Radius.circular(4),
-    );
-    canvas.drawRRect(centerStripe, accentPaint);
+    // Rodas (visíveis nas laterais, discretas).
+    for (final dx in [-11.5, 11.5]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(dx, -6), width: 3, height: 8),
+          const Radius.circular(1.5),
+        ),
+        wheelPaint,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(dx, 8), width: 3, height: 8),
+          const Radius.circular(1.5),
+        ),
+        wheelPaint,
+      );
+    }
 
-    final noseChevron = Path()
-      ..moveTo(0, -26)
-      ..lineTo(8, -6)
-      ..lineTo(0, -11)
-      ..lineTo(-8, -6)
-      ..close();
-    canvas.drawPath(noseChevron, accentSoftPaint);
-
+    // Teto do carro (área central mais escura).
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: const Offset(0, 24), width: 20, height: 8),
-        const Radius.circular(4),
+        Rect.fromCenter(center: const Offset(0, 1), width: 13, height: 20),
+        const Radius.circular(6),
       ),
-      whiteSoftPaint,
+      roofPaint,
     );
+
+    // Para-brisa dianteiro.
+    canvas.drawPath(
+      Path()
+        ..moveTo(-5, -9)
+        ..lineTo(5, -9)
+        ..lineTo(4, -3)
+        ..lineTo(-4, -3)
+        ..close(),
+      glassPaint,
+    );
+
+    // Vidro traseiro.
+    canvas.drawPath(
+      Path()
+        ..moveTo(-4.5, 6)
+        ..lineTo(4.5, 6)
+        ..lineTo(5, 11)
+        ..lineTo(-5, 11)
+        ..close(),
+      glassPaint,
+    );
+
     canvas.restore();
 
     final image = await recorder
@@ -3002,28 +3239,32 @@ class _OperationalMap extends StatelessWidget {
       iconTier,
       () => _loadVehicleMarkerIcons(iconSize: _iconSizeForTier(iconTier)),
     );
-    final replayRouteBucket = _replayRotationBucket(reportRouteActiveBearing);
-    final replayRouteMarkerFuture =
-        _replayRouteMarkerFutureByBucket.putIfAbsent(
-      replayRouteBucket,
-      () => _loadReplayRouteMarkerIcon(reportRouteActiveBearing),
-    );
-
-    return FutureBuilder<List<Object>>(
-      future: Future.wait<Object>([
-        markerIconsFuture,
-        replayRouteMarkerFuture,
-      ]),
+    return FutureBuilder<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>(
+      future: markerIconsFuture,
       builder: (context, assetsSnapshot) {
         final markerIcons = assetsSnapshot.hasData
-            ? (assetsSnapshot.data![0]
-                as Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>)
+            ? assetsSnapshot.data!
             : const <_VehicleMarkerIconKey, gmaps.BitmapDescriptor>{};
-        final replayRouteMarkerIcon = assetsSnapshot.hasData
-            ? assetsSnapshot.data![1] as gmaps.BitmapDescriptor
-            : gmaps.BitmapDescriptor.defaultMarkerWithHue(
-                gmaps.BitmapDescriptor.hueAzure,
-              );
+        // Reaproveita o MESMO ícone do veículo usado no mapa ao vivo (imagem
+        // de verdade, não o carrinho desenhado à mão) — só troca a direção
+        // conforme o rumo do ponto ativo do replay.
+        final replayVehicleSnapshot = selectedDeviceId == null
+            ? null
+            : snapshots
+                .cast<_VehicleSnapshot?>()
+                .firstWhere((s) => s?.device.id == selectedDeviceId,
+                    orElse: () => null);
+        final replayMarkerType =
+            replayVehicleSnapshot?.markerType ?? _VehicleMarkerType.car;
+        final replayBearing8 = _courseToBucket8(reportRouteActiveBearing);
+        final replayRouteMarkerIcon = markerIcons[_VehicleMarkerIconKey(
+              replayMarkerType,
+              _VehicleOperationalStatus.moving,
+              replayBearing8,
+            )] ??
+            gmaps.BitmapDescriptor.defaultMarkerWithHue(
+              gmaps.BitmapDescriptor.hueAzure,
+            );
         final snapshotsWithPosition = snapshots
             .where((snapshot) => snapshot.hasValidGps)
             .toList(growable: false);
@@ -3162,7 +3403,20 @@ class _OperationalMap extends StatelessWidget {
             : (selectedReplayPath.length > 1
                 ? selectedReplayPath
                 : selectedTrail);
-        if (selectedDeviceId != null && routePoints.length > 1) {
+        if (selectedDeviceId != null && reportRouteMatchedSegments.isNotEmpty) {
+          // Trajeto corrigido pelo OSRM: um segmento por trecho contínuo —
+          // buraco de conexão real vira buraco visual, não reta falsa.
+          for (var i = 0; i < reportRouteMatchedSegments.length; i++) {
+            polylines.add(
+              gmaps.Polyline(
+                polylineId: gmaps.PolylineId('trail-$selectedDeviceId-seg$i'),
+                points: reportRouteMatchedSegments[i],
+                color: const Color(0xFF2F80FF).withValues(alpha: 0.62),
+                width: 4,
+              ),
+            );
+          }
+        } else if (selectedDeviceId != null && routePoints.length > 1) {
           polylines.add(
             gmaps.Polyline(
               polylineId: gmaps.PolylineId('trail-$selectedDeviceId'),
@@ -3620,6 +3874,391 @@ ThemeData _panelLightTheme(BuildContext context) {
   );
 }
 
+class _RouteReplayStatusCard extends StatelessWidget {
+  const _RouteReplayStatusCard({
+    required this.visible,
+    required this.ignition,
+    required this.motion,
+    required this.batteryLabel,
+    required this.satellites,
+    required this.signalLabel,
+    required this.odometerKm,
+    required this.hourmeterHours,
+  });
+
+  final bool visible;
+  final bool? ignition;
+  final bool? motion;
+  final String? batteryLabel;
+  final double? satellites;
+  final String? signalLabel;
+  final double? odometerKm;
+  final double? hourmeterHours;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      right: visible ? 20 : -220,
+      top: 100,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: visible ? 1 : 0,
+          child: PointerInterceptor(
+            child: Container(
+              width: 190,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFDDE5F0)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                    _ReplayStatusGroup(
+                      title: 'Status do veículo',
+                      rows: [
+                        _ReplayStatusRow(
+                          icon: Icons.power_settings_new_rounded,
+                          label: 'Ignição',
+                          active: ignition,
+                        ),
+                        const SizedBox(height: 6),
+                        _ReplayStatusRow(
+                          icon: Icons.directions_car_filled_rounded,
+                          label: 'Movimento',
+                          active: motion,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 10),
+                    _ReplayStatusGroup(
+                      title: 'Energia',
+                      rows: [
+                        _ReplayStatusValueRow(
+                          icon: Icons.battery_std_rounded,
+                          label: 'Bateria',
+                          value: (batteryLabel == null || batteryLabel!.trim().isEmpty)
+                              ? 'Sem dado'
+                              : batteryLabel!,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 10),
+                    _ReplayStatusGroup(
+                      title: 'Comunicação',
+                      rows: [
+                        _ReplayStatusValueRow(
+                          icon: Icons.satellite_alt_rounded,
+                          label: 'Satélites',
+                          value: satellites == null
+                              ? 'Sem dado'
+                              : satellites!.toStringAsFixed(0),
+                        ),
+                        _ReplayStatusValueRow(
+                          icon: Icons.signal_cellular_alt_rounded,
+                          label: 'Sinal',
+                          value: (signalLabel == null || signalLabel!.trim().isEmpty)
+                              ? 'Sem dado'
+                              : signalLabel!,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 10),
+                    _ReplayStatusGroup(
+                      title: 'Operacional',
+                      rows: [
+                        _ReplayStatusValueRow(
+                          icon: Icons.speed_outlined,
+                          label: 'Odômetro',
+                          value: odometerKm == null
+                              ? 'Sem dado'
+                              : '${odometerKm!.toStringAsFixed(1)} km',
+                        ),
+                        _ReplayStatusValueRow(
+                          icon: Icons.timer_outlined,
+                          label: 'Horímetro',
+                          value: hourmeterHours == null
+                              ? 'Sem dado'
+                              : '${hourmeterHours!.toStringAsFixed(1)} h',
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReplayStatusGroup extends StatelessWidget {
+  const _ReplayStatusGroup({required this.title, required this.rows});
+
+  final String title;
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1F2A44),
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final row in rows) ...[row, const SizedBox(height: 8)],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReplayStatusValueRow extends StatelessWidget {
+  const _ReplayStatusValueRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF4B5A72)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF243044),
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1F2A44),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReplayStatusRow extends StatelessWidget {
+  const _ReplayStatusRow({
+    required this.icon,
+    required this.label,
+    required this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool? active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active == null
+        ? const Color(0xFF94A3B8)
+        : (active! ? const Color(0xFF16A34A) : const Color(0xFFDC2626));
+    final text = active == null ? 'Sem dado' : (active! ? 'Ligada' : 'Desligada');
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF243044),
+            ),
+          ),
+        ),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LiveGaugesBar extends StatelessWidget {
+  const _LiveGaugesBar({
+    required this.vehicleName,
+    required this.onClose,
+  });
+
+  final String vehicleName;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      left: 222,
+      right: 20,
+      bottom: 20,
+      child: PointerInterceptor(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFD6E0EE)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF111827).withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      vehicleName.isEmpty
+                          ? 'Telemetria ao vivo'
+                          : 'Telemetria ao vivo • $vehicleName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1F2A44),
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: onClose,
+                    borderRadius: BorderRadius.circular(999),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: Color(0xFF5B6B84),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteReplaySpeedGauge extends StatelessWidget {
+  const _RouteReplaySpeedGauge({
+    required this.visible,
+    required this.speedKmh,
+    required this.rpm,
+    required this.sidebarOpen,
+    required this.sidebarVisible,
+  });
+
+  final bool visible;
+  final double? speedKmh;
+  final double? rpm;
+  final bool sidebarOpen;
+  final bool sidebarVisible;
+
+  @override
+  Widget build(BuildContext context) {
+    final sidebarLeft = !sidebarVisible ? 20.0 : (sidebarOpen ? 222.0 : 90.0);
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      left: visible ? sidebarLeft : sidebarLeft - 180,
+      top: 100,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: visible ? 1 : 0,
+          child: PointerInterceptor(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 170,
+                  height: 170,
+                  child: DialGauge(
+                    label: 'km/h',
+                    unit: '',
+                    value: speedKmh ?? 0,
+                    max: 240,
+                    color: const Color(0xFF2D8CFF),
+                    ticks: const [0, 40, 80, 120, 160, 200, 240],
+                    loading: false,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 170,
+                  height: 170,
+                  child: DialGauge(
+                    label: 'RPM',
+                    unit: 'x1000',
+                    value: rpm ?? 0,
+                    max: 8,
+                    color: const Color(0xFFEF4444),
+                    ticks: const [0, 2, 4, 6, 8],
+                    loading: false,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RouteReplayControls extends StatelessWidget {
   const _RouteReplayControls({
     required this.visible,
@@ -3819,7 +4458,7 @@ class _ReplayControlButton extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Ink(
+      child: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
@@ -5320,7 +5959,7 @@ class _KpiVehicleList extends StatelessWidget {
     final sidebarWidth = !sidebarVisible
         ? 0.0
         : (sidebarOpen ? (compactDensity ? 208.0 : 224.0) : 72.0);
-    final openedLeft = compactDensity ? 210.0 : 226.0;
+    final openedLeft = sidebarWidth + (compactDensity ? 12.0 : 16.0);
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
@@ -7323,6 +7962,7 @@ class _VehicleCompactPopup extends StatelessWidget {
     required this.onShare,
     required this.onMore,
     required this.onClose,
+    this.onTelemetry,
   });
 
   final _VehicleSnapshot snapshot;
@@ -7334,6 +7974,7 @@ class _VehicleCompactPopup extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onMore;
   final VoidCallback onClose;
+  final VoidCallback? onTelemetry;
 
   @override
   Widget build(BuildContext context) {
@@ -7479,6 +8120,10 @@ class _VehicleCompactPopup extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
+                          if (onTelemetry != null) ...[
+                            _PopupAction(icon: Icons.speed_rounded, tooltip: 'Telemetria ao vivo', onTap: onTelemetry!),
+                            const SizedBox(width: 6),
+                          ],
                           _PopupAction(icon: Icons.notifications_none_outlined, tooltip: 'Alertas', onTap: onAlerts),
                           const SizedBox(width: 6),
                           _PopupAction(icon: Icons.share_outlined, tooltip: 'Compartilhar', onTap: onShare),
@@ -18548,28 +19193,36 @@ class _VehicleSnapshot {
     return null;
   }
 
+  // Alerta é só o que o usuário decide que é — não um número fixo no código.
+  // Por isso só contam aqui os alarmes realmente graves/acionáveis (pânico,
+  // SOS, jammer, colisão/choque, corte de energia, excesso de velocidade
+  // reportado pelo próprio Traccar). Estados técnicos/informativos (ex:
+  // "gpsAntennaCut" — só significa "sem satélite agora", não é emergência)
+  // são ignorados aqui de propósito, pra não poluir o painel com ruído.
+  static const _seriousAlarmKeywords = [
+    'sos',
+    'panic',
+    'jamming',
+    'jammer',
+    'shock',
+    'vibration',
+    'accident',
+    'overspeed',
+    'powercut',
+    'powerdisconnect',
+    'tow',
+    'removing',
+  ];
+
   bool get _hasAlarmFlag {
-    final raw = _mergedAttributes['alarm'] ??
-        _mergedAttributes['alert'] ??
-        _mergedAttributes['alarmType'] ??
-        _mergedAttributes['panic'];
+    final raw = _mergedAttributes['alarm'] ?? _mergedAttributes['alarmType'];
     if (raw == null) return false;
-    if (raw is bool) return raw;
-    if (raw is num) return raw > 0;
     final text = raw.toString().trim().toLowerCase();
     if (text.isEmpty) return false;
-    if (text == 'false' ||
-        text == '0' ||
-        text == 'none' ||
-        text == 'normal' ||
-        text == 'ok') {
-      return false;
-    }
-    return true;
+    return _seriousAlarmKeywords.any(text.contains);
   }
 
-  bool get hasAlert =>
-      !hasNoCommunication && (_hasAlarmFlag || (speedKmh ?? 0) >= 80);
+  bool get hasAlert => !hasNoCommunication && _hasAlarmFlag;
 
   bool get isDriver =>
       (device.uniqueId ?? '').toLowerCase().startsWith('driver_');

@@ -663,6 +663,16 @@ class ReportRouteMapPoint {
     this.effectiveTime,
     this.course,
     this.address,
+    this.speedKmh,
+    this.batteryVoltage,
+    this.rpm,
+    this.ignition,
+    this.batteryLabel,
+    this.satellites,
+    this.odometerKm,
+    this.hourmeterHours,
+    this.motion,
+    this.signalLabel,
   });
 
   final double latitude;
@@ -670,6 +680,25 @@ class ReportRouteMapPoint {
   final DateTime? effectiveTime;
   final double? course;
   final String? address;
+  final double? speedKmh;
+  final double? batteryVoltage;
+  final double? rpm;
+  final bool? ignition;
+  final String? batteryLabel;
+  final double? satellites;
+  final double? odometerKm;
+  final double? hourmeterHours;
+  final bool? motion;
+  final String? signalLabel;
+}
+
+/// Ponto de latitude/longitude puro, sem depender do SDK do Google Maps —
+/// usado pelo trajeto corrigido do OSRM (map matching).
+class MatchedLatLng {
+  const MatchedLatLng(this.latitude, this.longitude);
+
+  final double latitude;
+  final double longitude;
 }
 
 class ReportRouteMapSelection {
@@ -680,6 +709,7 @@ class ReportRouteMapSelection {
     required this.to,
     required this.points,
     required this.requestNonce,
+    this.matchedPath,
   });
 
   final int deviceId;
@@ -688,6 +718,11 @@ class ReportRouteMapSelection {
   final DateTime to;
   final List<ReportRouteMapPoint> points;
   final String requestNonce;
+  /// Trajeto corrigido pelo OSRM (grudado nas ruas), dividido em trechos
+  /// contínuos (cada buraco de conexão vira um trecho novo, não uma reta
+  /// falsa conectando). Usado só pra desenhar a polyline — a navegação do
+  /// replay (índice, telemetria) continua usando [points].
+  final List<List<MatchedLatLng>>? matchedPath;
 
   String get requestKey {
     final first = points.isEmpty

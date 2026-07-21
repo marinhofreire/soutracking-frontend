@@ -114,7 +114,7 @@ class ReportsFiltersBar extends StatelessWidget {
                 onTap: onPickEndTime,
               ),
               _SelectOptionField(
-                label: 'Veiculo/equipamento',
+                label: 'Veículo/equipamento',
                 value: vehicle,
                 options: vehicleOptions,
                 onChanged: onVehicleChanged,
@@ -128,7 +128,7 @@ class ReportsFiltersBar extends StatelessWidget {
                 width: 190,
               ),
               _SelectField(
-                label: 'Tipo de relatorio',
+                label: 'Tipo de relatório',
                 value: type,
                 options: typeOptions,
                 onChanged: onTypeChanged,
