@@ -43,6 +43,7 @@ import '../automations/automations_screen.dart';
 import '../ia/ia_screen.dart';
 import '../telemetry/sensor_presentation.dart';
 import '../telemetry/telemetry_sensors_screen.dart';
+import '../telemetry/tpms_screen.dart';
 import '../vehicles/vehicles_screen.dart';
 import 'visual_settings_controller.dart';
 
@@ -240,6 +241,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   int? _lastVehicleTapDeviceId;
   DateTime? _lastVehicleTapTime;
   int? _liveGaugesDeviceId;
+
+  // Pacotes TPMS (E6) chegam bem mais raro que os pacotes de posição normais
+  // (AA), então o servidor não devolve os atributos tireXXBattery/Temp/Pressure
+  // em toda posição — só na posição exata em que o sensor reportou. Sem esse
+  // cache local, o desenho do pneu piscaria/sumiria a cada posição comum.
+  final Map<int, Map<String, dynamic>> _lastKnownTireAttributesByDevice = {};
 
   final bool _showHighlightsRail = false;
 
@@ -1728,6 +1735,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     );
                     return hours == null ? null : hours / 3600000.0;
                   })(),
+                  tireReadings:
+                      liveGaugesSnapshot?.tireReadings ?? const [],
                 ),
               if (!pixelTelemetryMode && showLiveGauges)
                 _LiveGaugesBar(
@@ -1863,6 +1872,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return 'Gestão operacional de rastreadores';
       case 'telemetry':
         return 'Sensores e dados operacionais';
+      case 'tpms':
+        return 'Sensores e dados operacionais dos pneus';
       case 'routes':
         return 'Hist\u00F3rico, replay e quilometragem';
       case 'alerts':
@@ -1919,12 +1930,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       }
     }
 
+    for (final entry in positionByDeviceId.entries) {
+      final attrs = entry.value.attributes;
+      if (attrs == null) continue;
+      final tireEntries = <String, dynamic>{
+        for (final attrEntry in attrs.entries)
+          if (attrEntry.key.startsWith('tire')) attrEntry.key: attrEntry.value,
+      };
+      if (tireEntries.isEmpty) continue;
+      final cached = _lastKnownTireAttributesByDevice.putIfAbsent(
+        entry.key,
+        () => {},
+      );
+      cached.addAll(tireEntries);
+    }
+
     return [
       for (var i = 0; i < devices.length; i++)
         _VehicleSnapshot(
           device: devices[i],
           position: positionByDeviceId[devices[i].id],
           index: i,
+          tireAttributes:
+              _lastKnownTireAttributesByDevice[devices[i].id] ?? const {},
         ),
     ];
   }
@@ -2292,6 +2320,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return _buildDevicesPanel();
       case 'telemetry':
         return _buildTelemetryPanel();
+      case 'tpms':
+        return _buildTpmsPanel();
       case 'routes':
         return _buildRoutesPanel();
       case 'alerts':
@@ -2381,6 +2411,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _buildTelemetryPanel() {
     return TelemetrySensorsScreen(onClose: _closePanel);
+  }
+
+  Widget _buildTpmsPanel() {
+    return TpmsScreen(onClose: _closePanel);
   }
 
   Widget _buildRoutesPanel() {
@@ -3884,6 +3918,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
     required this.signalLabel,
     required this.odometerKm,
     required this.hourmeterHours,
+    this.tireReadings = const [],
   });
 
   final bool visible;
@@ -3894,6 +3929,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
   final String? signalLabel;
   final double? odometerKm;
   final double? hourmeterHours;
+  final List<TireReading> tireReadings;
 
   @override
   Widget build(BuildContext context) {
@@ -3994,11 +4030,103 @@ class _RouteReplayStatusCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (tireReadings.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      const SizedBox(height: 10),
+                      _TireDiagramGroup(readings: tireReadings),
+                    ],
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TireDiagramGroup extends StatelessWidget {
+  const _TireDiagramGroup({required this.readings});
+
+  final List<TireReading> readings;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Pneus (TPMS)',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1F2A44),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final reading in readings) _TireChip(reading: reading),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TireChip extends StatelessWidget {
+  const _TireChip({required this.reading});
+
+  final TireReading reading;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        reading.isLowBattery ? const Color(0xFFE0533D) : const Color(0xFF2F9E5C);
+    return Container(
+      width: 78,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.tire_repair_rounded, size: 16, color: color),
+          const SizedBox(height: 2),
+          Text(
+            'Pneu ${reading.index}',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1F2A44),
+            ),
+          ),
+          Text(
+            reading.pressureRaw == null ? '—' : '${reading.pressureRaw} psi',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+          Text(
+            reading.temperatureC == null ? '—' : '${reading.temperatureC}°C',
+            style: const TextStyle(
+              fontSize: 9,
+              color: Color(0xFF4B5A72),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -19023,6 +19151,24 @@ class _VehicleMarkerIconKey {
   int get hashCode => Object.hash(type, status, bearing8);
 }
 
+class TireReading {
+  const TireReading({
+    required this.index,
+    required this.rawId,
+    required this.batteryVolts,
+    required this.temperatureC,
+    required this.pressureRaw,
+  });
+
+  final int index;
+  final String rawId;
+  final double? batteryVolts;
+  final int? temperatureC;
+  final int? pressureRaw;
+
+  bool get isLowBattery => batteryVolts != null && batteryVolts! < 2.8;
+}
+
 class _VehicleSnapshot {
   static const Duration _offlineStaleThreshold = Duration(minutes: 30);
   static const List<String> _defaultSensorKeys = [
@@ -19052,6 +19198,7 @@ class _VehicleSnapshot {
     required this.index,
     this.resolvedAddress,
     this.recentEvents = const [],
+    this.tireAttributes = const {},
   });
 
   final TraccarDevice device;
@@ -19059,6 +19206,7 @@ class _VehicleSnapshot {
   final int index;
   final String? resolvedAddress;
   final List<Map<String, dynamic>> recentEvents;
+  final Map<String, dynamic> tireAttributes;
 
   _VehicleSnapshot copyWith({
     String? resolvedAddress,
@@ -19070,7 +19218,32 @@ class _VehicleSnapshot {
       index: index,
       resolvedAddress: resolvedAddress ?? this.resolvedAddress,
       recentEvents: recentEvents ?? this.recentEvents,
+      tireAttributes: tireAttributes,
     );
+  }
+
+  // IDs vêm crus do sensor (ex: "11", "21", "14", "24" — eixo+posição, não
+  // documentado pelo fabricante ainda). Por enquanto só numeramos 1..N na
+  // ordem crescente do ID pra dar uma posição visual estável no desenho.
+  List<TireReading> get tireReadings {
+    final ids = <String>{
+      for (final key in tireAttributes.keys)
+        if (key.startsWith('tire') && key.length >= 6) key.substring(4, 6),
+    }.toList()
+      ..sort();
+    return [
+      for (var i = 0; i < ids.length; i++)
+        TireReading(
+          index: i + 1,
+          rawId: ids[i],
+          batteryVolts: (tireAttributes['tire${ids[i]}Battery'] as num?)
+              ?.toDouble(),
+          temperatureC: (tireAttributes['tire${ids[i]}Temp'] as num?)
+              ?.toInt(),
+          pressureRaw: (tireAttributes['tire${ids[i]}Pressure'] as num?)
+              ?.toInt(),
+        ),
+    ];
   }
 
   gmaps.LatLng? get latLngOrNull {
@@ -19879,6 +20052,12 @@ const List<_OperationalMenuItem> _operationalMenu = [
     label: 'Telemetria',
     icon: Icons.sensors_outlined,
     color: Color(0xFF2563EB),
+  ),
+  _OperationalMenuItem(
+    id: 'tpms',
+    label: 'TPMS',
+    icon: Icons.tire_repair_outlined,
+    color: Color(0xFF0EA5E9),
   ),
   _OperationalMenuItem(
     id: 'logs',
