@@ -1399,11 +1399,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 ? defaultMapSnapshot
                 : null);
     final showVehicleCompactPopup = !reportRouteReplayActive &&
+        !showLiveGauges &&
         selectedSnapshot != null &&
         !_showBottomVehiclePanel &&
         !_activePanelVisible &&
         !_kpiListOpen;
     _followSelectedVehicleIfNeeded(selectedSnapshot);
+    if (showLiveGauges) {
+      _followSelectedVehicleIfNeeded(liveGaugesSnapshot);
+    }
     final reportRoutePoints =
         reportRouteSelection?.points ?? const <ReportRouteMapPoint>[];
     final reportRoutePath = reportRoutePoints
@@ -1746,9 +1750,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     liveGaugesSnapshot?._mergedAttributes['sat'],
                   ),
                   signalLabel: liveGaugesSnapshot?.gsmSignalLabel,
-                  odometerKm: _attrAsDouble(
-                    liveGaugesSnapshot?._mergedAttributes['odometer'],
-                  ),
+                  odometerKm: (() {
+                    final meters = _attrAsDouble(
+                      liveGaugesSnapshot?._mergedAttributes['odometer'],
+                    );
+                    return meters == null ? null : meters / 1000.0;
+                  })(),
                   hourmeterHours: (() {
                     final hours = _attrAsDouble(
                       liveGaugesSnapshot?._mergedAttributes['hours'],
