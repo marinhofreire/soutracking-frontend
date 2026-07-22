@@ -232,6 +232,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   int _replayDebugLinesEmitted = 0;
   Duration _replayWindow = const Duration(hours: 24);
   int? _replayDeviceId;
+  int? _replayQueryAnchorDeviceId;
+  DateTime? _replayQueryAnchorTo;
   String? _lastFollowedReplayKey;
   String? _lastFollowedReportRouteReplayKey;
   double? _lastResolvedReportRouteBearing;
@@ -689,9 +691,27 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _focusReportRoute(selection);
   }
 
+  // Nao usar DateTime.now() direto aqui: isso gera um _ReplayQuery diferente
+  // a cada rebuild (o widget reconstroi a cada frame enquanto o mapa anima),
+  // e como vehicleReplayProvider e um FutureProvider.family, cada instancia
+  // "nova" da query dispara uma busca de rede nova — vira um loop infinito
+  // de chamadas a /api/reports/route. O "to" so avanca a cada 30s ou quando
+  // o veiculo selecionado muda.
   _ReplayQuery? _buildReplayQuery(int? deviceId) {
-    if (deviceId == null) return null;
-    final to = DateTime.now();
+    if (deviceId == null) {
+      _replayQueryAnchorDeviceId = null;
+      _replayQueryAnchorTo = null;
+      return null;
+    }
+    final now = DateTime.now();
+    final anchor = _replayQueryAnchorTo;
+    if (_replayQueryAnchorDeviceId != deviceId ||
+        anchor == null ||
+        now.difference(anchor) > const Duration(seconds: 30)) {
+      _replayQueryAnchorDeviceId = deviceId;
+      _replayQueryAnchorTo = now;
+    }
+    final to = _replayQueryAnchorTo!;
     final from = to.subtract(_replayWindow);
     return _ReplayQuery(deviceId: deviceId, from: from, to: to);
   }
