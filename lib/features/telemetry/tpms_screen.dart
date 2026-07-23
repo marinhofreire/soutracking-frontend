@@ -435,11 +435,40 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
         .toList(growable: false);
   }
 
+  // Altura fixa por card: é o que permite calcular o ponto de saída da
+  // linha conectora sem precisar medir o layout renderizado.
+  static const double _diagramCardHeight = 92;
+  static const double _diagramCardGap = 12;
+  static const double _diagramBodyWidth = 92;
+
   Widget _buildCarDiagram(List<_TireReading> readings) {
     final left = <_TireReading>[];
     final right = <_TireReading>[];
     for (var i = 0; i < readings.length; i++) {
       (i.isEven ? left : right).add(readings[i]);
+    }
+    final rows = left.length > right.length ? left.length : right.length;
+    final columnHeight = rows == 0
+        ? 0.0
+        : rows * _diagramCardHeight + (rows - 1) * _diagramCardGap;
+
+    Widget buildColumn(List<_TireReading> items) {
+      return SizedBox(
+        width: 200,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              SizedBox(
+                height: _diagramCardHeight,
+                child: _TireCard(reading: items[i]),
+              ),
+              if (i != items.length - 1)
+                const SizedBox(height: _diagramCardGap),
+            ],
+          ],
+        ),
+      );
     }
 
     return Container(
@@ -449,48 +478,35 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final reading in left) ...[
-                  _TireCard(reading: reading),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(
-            width: 96,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(
-                  Icons.directions_car_filled_rounded,
-                  size: 96,
-                  color: Color(0xFF1F2A44),
+      child: Center(
+        child: SizedBox(
+          height: columnHeight == 0 ? null : columnHeight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              buildColumn(left),
+              SizedBox(
+                width: _diagramBodyWidth + _diagramCardGap * 2,
+                height: columnHeight == 0 ? 220 : columnHeight,
+                child: CustomPaint(
+                  painter: _TruckDiagramPainter(
+                    leftCount: left.length,
+                    rightCount: right.length,
+                    cardHeight: _diagramCardHeight,
+                    cardGap: _diagramCardGap,
+                    bodyWidth: _diagramBodyWidth,
+                  ),
                 ),
-              ],
-            ),
+              ),
+              buildColumn(right),
+            ],
           ),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final reading in right) ...[
-                  _TireCard(reading: reading),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+
 
   Widget _buildAveragesAndAlerts(List<_TireReading> readings) {
     final pressures = readings
@@ -751,4 +767,105 @@ Map<int, TraccarPosition> _latestPositionByDevice(List<TraccarPosition> rows) {
     }
   }
   return latest;
+}
+
+/// Desenha a silhueta do veiculo visto de cima (cabine + carroceria) e as
+/// linhas conectando cada eixo/roda ao card correspondente nas colunas
+/// esquerda/direita. Alturas fixas (cardHeight/cardGap) permitem calcular o
+/// ponto de saida da linha sem medir o layout renderizado.
+class _TruckDiagramPainter extends CustomPainter {
+  const _TruckDiagramPainter({
+    required this.leftCount,
+    required this.rightCount,
+    required this.cardHeight,
+    required this.cardGap,
+    required this.bodyWidth,
+  });
+
+  final int leftCount;
+  final int rightCount;
+  final double cardHeight;
+  final double cardGap;
+  final double bodyWidth;
+
+  double _rowCenterY(int index, int count, double totalHeight) {
+    final columnHeight = count * cardHeight + (count - 1) * cardGap;
+    final offset = (totalHeight - columnHeight) / 2;
+    return offset + index * (cardHeight + cardGap) + cardHeight / 2;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bodyLeft = (size.width - bodyWidth) / 2;
+    final bodyRight = bodyLeft + bodyWidth;
+    final bodyRect = Rect.fromLTRB(bodyLeft, 8, bodyRight, size.height - 8);
+
+    final bodyPaint = Paint()
+      ..color = const Color(0xFFE7ECF4)
+      ..style = PaintingStyle.fill;
+    final bodyBorder = Paint()
+      ..color = const Color(0xFFC3CEDD)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+
+    // Carroceria (retangulo com cantos levemente arredondados).
+    final bodyRRect = RRect.fromRectAndRadius(bodyRect, const Radius.circular(14));
+    canvas.drawRRect(bodyRRect, bodyPaint);
+    canvas.drawRRect(bodyRRect, bodyBorder);
+
+    // Cabine, no topo — um pouco mais estreita que a carroceria.
+    final cabWidth = bodyWidth * 0.72;
+    final cabRect = Rect.fromLTWH(
+      size.width / 2 - cabWidth / 2,
+      bodyRect.top,
+      cabWidth,
+      36,
+    );
+    final cabRRect = RRect.fromRectAndCorners(
+      cabRect,
+      topLeft: const Radius.circular(12),
+      topRight: const Radius.circular(12),
+      bottomLeft: const Radius.circular(4),
+      bottomRight: const Radius.circular(4),
+    );
+    final cabPaint = Paint()..color = const Color(0xFF1F2A44);
+    canvas.drawRRect(cabRRect, cabPaint);
+
+    // Para-brisa: uma linha fina perto do topo da cabine.
+    final windshieldPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.35)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(
+      Offset(cabRect.left + 8, cabRect.top + 9),
+      Offset(cabRect.right - 8, cabRect.top + 9),
+      windshieldPaint,
+    );
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFB7C3D6)
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke;
+    final dotPaint = Paint()..color = const Color(0xFF176EEB);
+
+    for (var i = 0; i < leftCount; i++) {
+      final y = _rowCenterY(i, leftCount, size.height);
+      canvas.drawLine(Offset(0, y), Offset(bodyLeft, y), linePaint);
+      canvas.drawCircle(Offset(bodyLeft, y), 3.2, dotPaint);
+    }
+    for (var i = 0; i < rightCount; i++) {
+      final y = _rowCenterY(i, rightCount, size.height);
+      canvas.drawLine(Offset(bodyRight, y), Offset(size.width, y), linePaint);
+      canvas.drawCircle(Offset(bodyRight, y), 3.2, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TruckDiagramPainter oldDelegate) {
+    return oldDelegate.leftCount != leftCount ||
+        oldDelegate.rightCount != rightCount ||
+        oldDelegate.cardHeight != cardHeight ||
+        oldDelegate.cardGap != cardGap ||
+        oldDelegate.bodyWidth != bodyWidth;
+  }
 }
