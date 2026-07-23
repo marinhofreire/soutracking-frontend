@@ -254,6 +254,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   bool _menuOpen = true;
   bool _sidebarHidden = false;
+  // Em telas estreitas a régua lateral flutuante do desktop nunca some de
+  // verdade (só encolhe pra ícones por cima do mapa) — no mobile ela vira
+  // um menu de tela cheia à parte, começando fechado.
+  bool _mobileMenuOpen = false;
   bool _kpiListOpen = false;
   _KpiFilter _activeKpiFilter = _KpiFilter.online;
   _VehicleBottomTab _activeBottomTab = _VehicleBottomTab.overview;
@@ -442,6 +446,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         _sidebarHidden = true;
       }
     });
+  }
+
+  void _toggleMobileMenu() {
+    setState(() => _mobileMenuOpen = !_mobileMenuOpen);
   }
 
   void _openKpi(_KpiFilter filter) {
@@ -1523,8 +1531,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final pixelTelemetryMode = _activePanelId == '__legacy_telemetry__';
     final fullMapVisible =
         _activePanelId == null && !_kpiListOpen && _selectedVehicle == null;
+    final isCompactScreen = MediaQuery.sizeOf(context).width < 760;
+    // Os cartões de KPI foram desenhados pra barra larga do desktop — em
+    // tela estreita eles cobriam o botão de menu (ícone de grade) no canto
+    // superior esquerdo. No mobile o resumo já aparece na Início/menu cheio.
     final showTopStatusCards =
-        _activePanelId == null || _activePanelId == 'dashboard';
+        (_activePanelId == null || _activePanelId == 'dashboard') &&
+            !isCompactScreen;
     final showMapQuickActions =
         (_activePanelId == null || _activePanelId == 'dashboard') &&
             !_kpiListOpen;
@@ -1606,9 +1619,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   kpis: kpis,
                   activeFilter: _kpiListOpen ? _activeKpiFilter : null,
                   onKpiTap: _openKpi,
-                  onMenuTap: _toggleSidebarCompact,
-                  menuOpen: _menuOpen,
-                  sidebarVisible: sidebarVisible,
+                  onMenuTap:
+                      isCompactScreen ? _toggleMobileMenu : _toggleSidebarCompact,
+                  menuOpen: isCompactScreen ? _mobileMenuOpen : _menuOpen,
+                  // No mobile a régua lateral nunca é desenhada, então o botão
+                  // de menu deve ficar encostado na esquerda (não deslocado
+                  // como se houvesse uma régua ao lado).
+                  sidebarVisible: sidebarVisible && !isCompactScreen,
                   alertCount: realAlertCount,
                   panelOpen: _activePanelVisible,
                   activeTitle: _activePanelTitle,
@@ -1637,6 +1654,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onClearFilters: _clearKpiSelection,
                   onAiTap: _toggleCopilotPanel,
                   aiPanelOpen: _copilotPanelOpen,
+                  isCompactScreen: isCompactScreen,
                 ),
               if (!pixelTelemetryMode &&
                   reportRouteSelection == null &&
@@ -1645,7 +1663,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onZoomIn: () => _zoomBy(1),
                   onZoomOut: () => _zoomBy(-1),
                 ),
-              if (!pixelTelemetryMode && sidebarVisible)
+              if (!pixelTelemetryMode && sidebarVisible && !isCompactScreen)
                 _SideMenu(
                   open: _menuOpen,
                   cardDensity: visualSettings.cardDensity,
@@ -1878,6 +1896,25 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   }),
                 ),
               // Copiloto removido do mapa — virou item de menu "IA Operacional"
+              // Overlay de tela cheia (mobile) — precisa ser o último filho
+              // da Stack pra ficar por cima do cartão do veículo e do mapa.
+              if (!pixelTelemetryMode && isCompactScreen && _mobileMenuOpen)
+                _MobileFullScreenMenu(
+                  brandName: brand.appName,
+                  brandLogoAsset: brand.logoAsset,
+                  items: menuItems,
+                  activeId: _activePanelId ?? 'map',
+                  onSelect: (item) {
+                    _openPanel(item);
+                    setState(() => _mobileMenuOpen = false);
+                  },
+                  onClose: () => setState(() => _mobileMenuOpen = false),
+                  userEmail: ref.watch(sessionProvider).email ?? '',
+                  onLogout: () {
+                    setState(() => _mobileMenuOpen = false);
+                    _handleLogout();
+                  },
+                ),
             ],
           ),
         ),
@@ -4674,6 +4711,7 @@ class _TopSearchBar extends StatelessWidget {
     this.onClearFilters,
     this.onAiTap,
     this.aiPanelOpen = false,
+    this.isCompactScreen = false,
   });
 
   final WhiteLabelConfig brand;
@@ -4710,6 +4748,7 @@ class _TopSearchBar extends StatelessWidget {
   final VoidCallback? onClearFilters;
   final VoidCallback? onAiTap;
   final bool aiPanelOpen;
+  final bool isCompactScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -4796,12 +4835,17 @@ class _TopSearchBar extends StatelessWidget {
                     ),
                   ),
                 ],
-                const SizedBox(width: 10),
-                _GlassButton(
-                  tooltip: 'Buscar',
-                  icon: Icons.search_rounded,
-                  onTap: () {},
-                ),
+                // Botão de busca (sem ação implementada ainda) escondido no
+                // mobile — em tela estreita ele empurrava o layout e chegava
+                // a estourar a borda direita da tela.
+                if (!isCompactScreen) ...[
+                  const SizedBox(width: 10),
+                  _GlassButton(
+                    tooltip: 'Buscar',
+                    icon: Icons.search_rounded,
+                    onTap: () {},
+                  ),
+                ],
               ],
             ),
           ),
@@ -4895,13 +4939,17 @@ class _TopSearchBar extends StatelessWidget {
                         ),
                       ),
                     )
-                  : _SurfaceGuard(
-                      child: _KpiStrip(
-                        kpis: kpis,
-                        activeFilter: activeFilter,
-                        onTap: onKpiTap,
-                      ),
-                    ),
+                  : (showStatusCards
+                      ? _SurfaceGuard(
+                          child: _KpiStrip(
+                            kpis: kpis,
+                            activeFilter: activeFilter,
+                            onTap: onKpiTap,
+                          ),
+                        )
+                      // Em tela estreita a faixa de KPIs cobria o botão de
+                      // menu no canto esquerdo — no mobile ela some daqui.
+                      : const SizedBox.shrink()),
             ),
           ),
         ),
@@ -5674,6 +5722,171 @@ class _SideMenu extends StatelessWidget {
     );
   }
 }
+
+// ── Menu de tela cheia (mobile) ───────────────────────────────────────────────
+// Em telas estreitas a régua lateral flutuante do desktop não cabe — vira um
+// overlay de tela cheia com os mesmos itens do menu, como "balões" tocáveis.
+class _MobileFullScreenMenu extends StatelessWidget {
+  const _MobileFullScreenMenu({
+    required this.items,
+    required this.activeId,
+    required this.onSelect,
+    required this.onClose,
+    required this.onLogout,
+    this.brandName,
+    this.brandLogoAsset,
+    this.userEmail = '',
+  });
+
+  final List<_OperationalMenuItem> items;
+  final String? activeId;
+  final ValueChanged<_OperationalMenuItem> onSelect;
+  final VoidCallback onClose;
+  final VoidCallback onLogout;
+  final String? brandName;
+  final String? brandLogoAsset;
+  final String userEmail;
+
+  @override
+  Widget build(BuildContext context) {
+    final logoAsset = brandLogoAsset?.trim() ?? '';
+    final hasLogo = logoAsset.isNotEmpty;
+    return Positioned.fill(
+      child: Material(
+        color: const Color(0xFFF2F6FC),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: hasLogo
+                          ? Image.asset(
+                              logoAsset,
+                              height: 26,
+                              fit: BoxFit.contain,
+                              alignment: Alignment.centerLeft,
+                            )
+                          : Text(
+                              brandName ?? 'SouTracking',
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1F2A44),
+                              ),
+                            ),
+                    ),
+                    IconButton(
+                      tooltip: 'Fechar',
+                      onPressed: onClose,
+                      icon: const Icon(Icons.close_rounded, color: Color(0xFF324968)),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 0.92,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final selected = item.id == activeId;
+                    return _MobileMenuTile(
+                      item: item,
+                      selected: selected,
+                      onTap: () => onSelect(item),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        userEmail,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF60718D),
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: onLogout,
+                      icon: const Icon(Icons.logout_rounded, size: 16),
+                      label: const Text('Sair'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMenuTile extends StatelessWidget {
+  const _MobileMenuTile({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _OperationalMenuItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = item.color ?? const Color(0xFF176EEB);
+    return Material(
+      color: color.withValues(alpha: selected ? 0.22 : 0.12),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(item.icon, color: color, size: 26),
+              const SizedBox(height: 8),
+              Text(
+                item.label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? color : const Color(0xFF334155),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Sidebar footer widgets ─────────────────────────────────────────────────────
 
 class _SideMenuFooter extends StatelessWidget {
@@ -8382,7 +8595,10 @@ class _VehicleBottomBar extends StatelessWidget {
             ? (compactDensity ? 208.0 : 224.0)
             : (compactDensity ? 68.0 : 72.0));
     final height = switch (effectivePanelMode) {
-      _VehiclePanelMode.collapsed => compactDensity ? 62.0 : 68.0,
+      // Cabeçalho colapsado (nome + placa + pílula de status) precisa de uns
+      // px a mais que a altura "nominal" do header — sem essa folga o card
+      // estourava embaixo (RenderFlex overflow) com o nome em 2 linhas.
+      _VehiclePanelMode.collapsed => compactDensity ? 72.0 : 78.0,
       _VehiclePanelMode.summary   => compactDensity ? 218.0 : 240.0,
       _VehiclePanelMode.full      => compactDensity ? 218.0 : 240.0,
     };
@@ -8623,12 +8839,17 @@ class _VehicleBottomContent extends StatelessWidget {
           ],
         );
 
-        // Reusable action buttons (IA + expand/collapse + close)
+        // Reusable action buttons (IA + expand/collapse + close). Em telas
+        // estreitas o botão de IA já aparece de novo no corpo (summaryBody/
+        // infoStrip) — repeti-lo aqui também duplicava o botão e era a causa
+        // do overflow residual no cabeçalho.
         Widget actionButtons() => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _AiAssistButton(onTap: onAiTap),
-            const SizedBox(width: 6),
+            if (!compact) ...[
+              _AiAssistButton(onTap: onAiTap),
+              const SizedBox(width: 6),
+            ],
             IconButton(
               tooltip: isCollapsed ? 'Expandir' : 'Recolher',
               onPressed: () => onModeChanged(isCollapsed ? _VehiclePanelMode.full : _VehiclePanelMode.collapsed),
