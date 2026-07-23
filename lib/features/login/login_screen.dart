@@ -84,7 +84,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = session.status == SessionStatus.loading;
     final whiteLabelAsync = ref.watch(whiteLabelProvider);
     final config = whiteLabelAsync.value ?? WhiteLabelConfig.fallback;
-    final usePixelReferenceLogin =
+    // A imagem de referencia (login_pixel_reference.png) e widescreen
+    // (1672x941, ~1.78:1) com os campos posicionados por coordenada absoluta
+    // em cima dela. Isso so funciona quando a proporcao da tela e parecida
+    // com a da imagem (desktop/web); num celular em retrato (proporcao
+    // ~0.5:1) o "cover" estica/corta a imagem de forma tao diferente que os
+    // campos saem posicionados fora da tela. Por isso so usamos esse layout
+    // em telas largas, caindo pro card responsivo padrao no celular.
+    final screenSize = MediaQuery.of(context).size;
+    final isWideEnoughForPixelReference = screenSize.width > screenSize.height;
+    final usePixelReferenceLogin = isWideEnoughForPixelReference &&
         config.appName.trim().toLowerCase().contains('soutracking');
 
     if (usePixelReferenceLogin) {
