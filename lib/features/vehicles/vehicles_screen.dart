@@ -301,7 +301,10 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
     ];
     final filteredVehicles = _applyFilters(vehicles);
 
-    return SizedBox.expand(
+    // Antes era SizedBox.expand + Column com Expanded no meio: em telas
+    // baixas/estreitas (painel mobile) o conteúdo fixo (header+kpis+filtros)
+    // já não cabia e o resto ficava cortado, sem como rolar até ele.
+    return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -331,17 +334,15 @@ class _VehiclesScreenState extends ConsumerState<VehiclesScreen> {
             onStatusChanged: (value) => setState(() => _statusFilter = value),
           ),
           const SizedBox(height: 10),
-          Expanded(
-            child: filteredVehicles.isEmpty
-                ? const _EmptyVehiclesPanel()
-                : _VehiclesListPanel(
-                    vehicles: filteredVehicles,
-                    selectedDeviceId: _selectedDeviceId,
-                    onSelect: (vehicle) {
-                      setState(() => _selectedDeviceId = vehicle.device.id);
-                    },
-                  ),
-          ),
+          filteredVehicles.isEmpty
+              ? const SizedBox(height: 240, child: _EmptyVehiclesPanel())
+              : _VehiclesListPanel(
+                  vehicles: filteredVehicles,
+                  selectedDeviceId: _selectedDeviceId,
+                  onSelect: (vehicle) {
+                    setState(() => _selectedDeviceId = vehicle.device.id);
+                  },
+                ),
           if (_selectedDeviceId != null && includeTechnical) ...[
             const SizedBox(height: 10),
             _VehicleDetailsInlinePanel(selectedDeviceId: _selectedDeviceId!),
@@ -972,58 +973,189 @@ class _VehiclesListPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xE6FFFFFF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD6E0EE)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xCCF8FBFF),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(14),
-                topRight: Radius.circular(14),
-              ),
-              border: Border(
-                bottom: BorderSide(
-                  color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A tabela de 6 colunas (Placa/Veiculo/Grupo/Motorista/Status/
+        // Atualizacao) so cabe legivel numa tela larga — em celular vira
+        // um card empilhado por veiculo.
+        final compact = constraints.maxWidth < 640;
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xE6FFFFFF),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFD6E0EE)),
+          ),
+          child: Column(
+            children: [
+              if (!compact)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCCF8FBFF),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      topRight: Radius.circular(14),
+                    ),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Expanded(flex: 3, child: _HeaderCell('Placa/ID')),
+                      Expanded(flex: 3, child: _HeaderCell('Veiculo')),
+                      Expanded(flex: 2, child: _HeaderCell('Grupo')),
+                      Expanded(flex: 2, child: _HeaderCell('Motorista')),
+                      Expanded(flex: 2, child: _HeaderCell('Status')),
+                      Expanded(
+                          flex: 3, child: _HeaderCell('Última atualizacao')),
+                    ],
+                  ),
+                ),
+              if (compact)
+                SizedBox(
+                  height: 128,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.all(10),
+                    itemCount: vehicles.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final vehicle = vehicles[index];
+                      final selected = vehicle.device.id == selectedDeviceId;
+                      return _VehicleCardTile(
+                        vehicle: vehicle,
+                        selected: selected,
+                        onTap: () => onSelect(vehicle),
+                      );
+                    },
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: vehicles.length,
+                  separatorBuilder: (_, __) => Divider(
+                    color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+                    height: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final vehicle = vehicles[index];
+                    final selected = vehicle.device.id == selectedDeviceId;
+                    return _VehicleTile(
+                      vehicle: vehicle,
+                      selected: selected,
+                      onTap: () => onSelect(vehicle),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _VehicleCardTile extends StatelessWidget {
+  const _VehicleCardTile({
+    required this.vehicle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _VehicleViewData vehicle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusLabel = vehicle.isMoving
+        ? 'Em movimento'
+        : (vehicle.isOperationalOnline
+            ? 'Parado'
+            : (vehicle.operationalStatusLabel.toLowerCase().contains('unknown')
+                ? 'Sem comunicação'
+                : 'Offline'));
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          width: 168,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFEAF2FF)
+                : const Color(0xFFF8FBFF),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF176EEB)
+                  : const Color(0xFFD6E0EE),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF176EEB).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.directions_car_filled_rounded,
+                  color: Color(0xFF176EEB),
+                  size: 17,
                 ),
               ),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderCell('Placa/ID')),
-                Expanded(flex: 3, child: _HeaderCell('Veiculo')),
-                Expanded(flex: 2, child: _HeaderCell('Grupo')),
-                Expanded(flex: 2, child: _HeaderCell('Motorista')),
-                Expanded(flex: 2, child: _HeaderCell('Status')),
-                Expanded(flex: 3, child: _HeaderCell('Última atualizacao')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: vehicles.length,
-              separatorBuilder: (_, __) => Divider(
-                color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
-                height: 1,
+              Text(
+                vehicle.nameLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF1F2A44),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
               ),
-              itemBuilder: (context, index) {
-                final vehicle = vehicles[index];
-                final selected = vehicle.device.id == selectedDeviceId;
-                return _VehicleTile(
-                  vehicle: vehicle,
-                  selected: selected,
-                  onTap: () => onSelect(vehicle),
-                );
-              },
-            ),
+              Text(
+                vehicle.identifier,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF5F738F),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10.5,
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(child: _StatusChip(label: statusLabel)),
+                ],
+              ),
+              Text(
+                vehicle.lastCommunicationAgoLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF8A99AD),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 9.5,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

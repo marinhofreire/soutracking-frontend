@@ -2694,12 +2694,13 @@ class _DevicesTable extends StatelessWidget {
                     ),
                   ),
                   const Divider(height: 1, color: Color(0xFFD8E3F1)),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: devices.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFDCE6F3)),
-                      itemBuilder: (context, index) {
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: devices.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, color: Color(0xFFDCE6F3)),
+                    itemBuilder: (context, index) {
                         final device = devices[index];
                         final position = latestByDevice[device.id];
                         final details = attrs(device, position);
@@ -2910,7 +2911,6 @@ class _DevicesTable extends StatelessWidget {
                         );
                       },
                     ),
-                  ),
                 ],
               ),
             ),
