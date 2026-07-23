@@ -1622,7 +1622,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     final devicesAsync = ref.watch(devicesManagementProvider);
     final positionsAsync = ref.watch(positionsProvider);
 
-    return SizedBox.expand(
+    return SingleChildScrollView(
       child: devicesAsync.when(
         data: (devices) {
           final positions =
@@ -1888,35 +1888,36 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                 ),
               ],
               const SizedBox(height: 10),
-              Expanded(
-                child: visible.isEmpty
-                    ? const _PanelMessageState(
+              visible.isEmpty
+                  ? const SizedBox(
+                      height: 240,
+                      child: _PanelMessageState(
                         icon: Icons.search_off_rounded,
                         message:
                             'Nenhum equipamento encontrado com os filtros atuais.',
-                      )
-                    : _DevicesTable(
-                        devices: visible,
-                        latestByDevice: latestByDevice,
-                        onEdit: (device) => _openDeviceDialog(editing: device),
-                        statusLabel: _statusLabel,
-                        statusColor: _statusColor,
-                        attrs: _attrs,
-                        vehicleLabel: _vehicleLabel,
-                        groupLabel: _groupLabel,
-                        formatDateTimeShort: _formatDateTimeShort,
-                        formatRelative: _formatRelative,
-                        speedKmh: _speedKmh,
-                        isMoving: _isMoving,
-                        ignitionLabel: _ignitionLabel,
-                        ignitionColor: _ignitionColor,
-                        batteryLabel: _batteryLabel,
-                        batteryColor: _batteryColor,
-                        gsmLabel: _gsmLabel,
-                        gsmColor: _gsmColor,
-                        communicationAt: _deviceCommunicationAt,
                       ),
-              ),
+                    )
+                  : _DevicesTable(
+                      devices: visible,
+                      latestByDevice: latestByDevice,
+                      onEdit: (device) => _openDeviceDialog(editing: device),
+                      statusLabel: _statusLabel,
+                      statusColor: _statusColor,
+                      attrs: _attrs,
+                      vehicleLabel: _vehicleLabel,
+                      groupLabel: _groupLabel,
+                      formatDateTimeShort: _formatDateTimeShort,
+                      formatRelative: _formatRelative,
+                      speedKmh: _speedKmh,
+                      isMoving: _isMoving,
+                      ignitionLabel: _ignitionLabel,
+                      ignitionColor: _ignitionColor,
+                      batteryLabel: _batteryLabel,
+                      batteryColor: _batteryColor,
+                      gsmLabel: _gsmLabel,
+                      gsmColor: _gsmColor,
+                      communicationAt: _deviceCommunicationAt,
+                    ),
             ],
           );
         },

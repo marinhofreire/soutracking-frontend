@@ -605,7 +605,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     final violationsToday =
         geofences.where((fence) => _geofenceType(fence) == 'Poligonal').length;
 
-    return SizedBox.expand(
+    return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -747,30 +747,26 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: _GeofenceTable(
-                    geofences: filtered,
-                    geofenceType: _geofenceType,
-                    geofenceAreaLabel: _geofenceAreaLabel,
-                    geofenceStatus: _geofenceStatus,
-                    deletingId: _deletingId,
-                    onDelete: _deleteGeofence,
+          Stack(
+            children: [
+              _GeofenceTable(
+                geofences: filtered,
+                geofenceType: _geofenceType,
+                geofenceAreaLabel: _geofenceAreaLabel,
+                geofenceStatus: _geofenceStatus,
+                deletingId: _deletingId,
+                onDelete: _deleteGeofence,
+              ),
+              if (geofencesAsync.isLoading)
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: LinearProgressIndicator(
+                    minHeight: 2,
                   ),
                 ),
-                if (geofencesAsync.isLoading)
-                  const Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: LinearProgressIndicator(
-                      minHeight: 2,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ],
       ),
@@ -1054,18 +1050,19 @@ class _GeofenceTable extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: geofences.length,
-              separatorBuilder: (_, __) => Divider(
-                color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
-                height: 1,
-              ),
-              itemBuilder: (context, index) {
-                final fence = geofences[index];
-                final status = geofenceStatus(fence);
-                final statusColor = status == 'Ativa'
-                    ? const Color(0xFF10B981)
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: geofences.length,
+            separatorBuilder: (_, __) => Divider(
+              color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
+              height: 1,
+            ),
+            itemBuilder: (context, index) {
+              final fence = geofences[index];
+              final status = geofenceStatus(fence);
+              final statusColor = status == 'Ativa'
+                  ? const Color(0xFF10B981)
                     : const Color(0xFF94A3B8);
 
                 return Padding(
@@ -1139,7 +1136,6 @@ class _GeofenceTable extends StatelessWidget {
                   ),
                 );
               },
-            ),
           ),
         ],
       ),

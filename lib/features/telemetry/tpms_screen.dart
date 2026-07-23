@@ -439,7 +439,7 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
   // linha conectora sem precisar medir o layout renderizado.
   static const double _diagramCardHeight = 92;
   static const double _diagramCardGap = 12;
-  static const double _diagramBodyWidth = 92;
+  static const double _diagramBodyWidth = 58;
 
   Widget _buildCarDiagram(List<_TireReading> readings) {
     final left = <_TireReading>[];
@@ -796,67 +796,121 @@ class _TruckDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final cabHeight = 34.0;
+    final bodyTop = 6.0 + cabHeight - 6;
     final bodyLeft = (size.width - bodyWidth) / 2;
     final bodyRight = bodyLeft + bodyWidth;
-    final bodyRect = Rect.fromLTRB(bodyLeft, 8, bodyRight, size.height - 8);
+    final bodyRect = Rect.fromLTRB(bodyLeft, bodyTop, bodyRight, size.height - 6);
 
-    final bodyPaint = Paint()
-      ..color = const Color(0xFFE7ECF4)
-      ..style = PaintingStyle.fill;
+    final bodyPaint = Paint()..color = const Color(0xFFDCE3ED);
     final bodyBorder = Paint()
-      ..color = const Color(0xFFC3CEDD)
+      ..color = const Color(0xFFAFBBCC)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4;
 
-    // Carroceria (retangulo com cantos levemente arredondados).
-    final bodyRRect = RRect.fromRectAndRadius(bodyRect, const Radius.circular(14));
+    // Carroceria: retangulo estreito e alongado (contêiner visto de cima).
+    final bodyRRect =
+        RRect.fromRectAndRadius(bodyRect, const Radius.circular(6));
     canvas.drawRRect(bodyRRect, bodyPaint);
     canvas.drawRRect(bodyRRect, bodyBorder);
 
-    // Cabine, no topo — um pouco mais estreita que a carroceria.
-    final cabWidth = bodyWidth * 0.72;
-    final cabRect = Rect.fromLTWH(
-      size.width / 2 - cabWidth / 2,
-      bodyRect.top,
-      cabWidth,
-      36,
-    );
-    final cabRRect = RRect.fromRectAndCorners(
-      cabRect,
-      topLeft: const Radius.circular(12),
-      topRight: const Radius.circular(12),
-      bottomLeft: const Radius.circular(4),
-      bottomRight: const Radius.circular(4),
-    );
-    final cabPaint = Paint()..color = const Color(0xFF1F2A44);
-    canvas.drawRRect(cabRRect, cabPaint);
+    // Linhas finas sugerindo as juntas da carroceria.
+    final seamPaint = Paint()
+      ..color = const Color(0xFFAFBBCC).withValues(alpha: 0.7)
+      ..strokeWidth = 1;
+    final seamCount = (bodyRect.height / 26).floor();
+    for (var i = 1; i < seamCount; i++) {
+      final y = bodyRect.top + (bodyRect.height / seamCount) * i;
+      canvas.drawLine(
+        Offset(bodyLeft + 4, y),
+        Offset(bodyRight - 4, y),
+        seamPaint,
+      );
+    }
 
-    // Para-brisa: uma linha fina perto do topo da cabine.
-    final windshieldPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.35)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(
-      Offset(cabRect.left + 8, cabRect.top + 9),
-      Offset(cabRect.right - 8, cabRect.top + 9),
-      windshieldPaint,
+    // Cabine: mais estreita na frente, com para-brisa e retrovisores —
+    // silhueta de caminhão visto de cima, nao um "dedo" com ponta redonda.
+    final cabWidth = bodyWidth * 0.86;
+    final cabTop = 6.0;
+    final cabPath = Path()
+      ..moveTo(size.width / 2 - cabWidth * 0.36, cabTop + cabHeight)
+      ..lineTo(size.width / 2 - cabWidth / 2, cabTop + 10)
+      ..quadraticBezierTo(
+        size.width / 2 - cabWidth / 2, cabTop,
+        size.width / 2 - cabWidth * 0.28, cabTop,
+      )
+      ..lineTo(size.width / 2 + cabWidth * 0.28, cabTop)
+      ..quadraticBezierTo(
+        size.width / 2 + cabWidth / 2, cabTop,
+        size.width / 2 + cabWidth / 2, cabTop + 10,
+      )
+      ..lineTo(size.width / 2 + cabWidth * 0.36, cabTop + cabHeight)
+      ..close();
+    canvas.drawPath(cabPath, Paint()..color = const Color(0xFF1F2A44));
+
+    // Para-brisa.
+    final windshieldPath = Path()
+      ..moveTo(size.width / 2 - cabWidth * 0.24, cabTop + 4)
+      ..lineTo(size.width / 2 - cabWidth * 0.34, cabTop + cabHeight * 0.62)
+      ..lineTo(size.width / 2 + cabWidth * 0.34, cabTop + cabHeight * 0.62)
+      ..lineTo(size.width / 2 + cabWidth * 0.24, cabTop + 4)
+      ..close();
+    canvas.drawPath(
+      windshieldPath,
+      Paint()..color = const Color(0xFF6FA3E8).withValues(alpha: 0.55),
+    );
+
+    // Retrovisores.
+    final mirrorPaint = Paint()..color = const Color(0xFF1F2A44);
+    final mirrorY = cabTop + cabHeight * 0.5;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(size.width / 2 - cabWidth / 2 - 3, mirrorY),
+          width: 6,
+          height: 10,
+        ),
+        const Radius.circular(2),
+      ),
+      mirrorPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(size.width / 2 + cabWidth / 2 + 3, mirrorY),
+          width: 6,
+          height: 10,
+        ),
+        const Radius.circular(2),
+      ),
+      mirrorPaint,
     );
 
     final linePaint = Paint()
       ..color = const Color(0xFFB7C3D6)
       ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
-    final dotPaint = Paint()..color = const Color(0xFF176EEB);
+    final wheelPaint = Paint()..color = const Color(0xFF2B3648);
+
+    void drawWheel(Offset center) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: center, width: 10, height: 16),
+          const Radius.circular(3),
+        ),
+        wheelPaint,
+      );
+    }
 
     for (var i = 0; i < leftCount; i++) {
       final y = _rowCenterY(i, leftCount, size.height);
       canvas.drawLine(Offset(0, y), Offset(bodyLeft, y), linePaint);
-      canvas.drawCircle(Offset(bodyLeft, y), 3.2, dotPaint);
+      drawWheel(Offset(bodyLeft, y));
     }
     for (var i = 0; i < rightCount; i++) {
       final y = _rowCenterY(i, rightCount, size.height);
       canvas.drawLine(Offset(bodyRight, y), Offset(size.width, y), linePaint);
-      canvas.drawCircle(Offset(bodyRight, y), 3.2, dotPaint);
+      drawWheel(Offset(bodyRight, y));
     }
   }
 
