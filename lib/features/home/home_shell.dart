@@ -4759,7 +4759,12 @@ class _TopSearchBar extends StatelessWidget {
         brand.appName.trim().isEmpty ? 'SouTracking' : brand.appName.trim();
     final brandLogoAsset = brand.logoAsset?.trim() ?? '';
     final hasBrandLogo = brandLogoAsset.isNotEmpty;
-    final hideBrand = sidebarVisible ||
+    // No mobile o grupo da esquerda (menu) e o da direita (sino/camadas/
+    // perfil) são posicionados de forma independente — com a logo no meio
+    // o grupo da esquerda ficava largo demais e colidia com o da direita
+    // em telas estreitas. A logo já aparece no login e no menu cheio.
+    final hideBrand = isCompactScreen ||
+        sidebarVisible ||
         (logoMode == VisualLogoMode.hideOnFullMap && hideLogoOnFullMap);
     final compactLogo = logoMode == VisualLogoMode.compact;
     final logoHeight = compactLogo ? 18.0 : 24.0;
