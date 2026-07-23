@@ -8673,34 +8673,47 @@ class _VehicleBottomContent extends StatelessWidget {
                     : _VehicleHeaderPhotoFallback(color: iconColor, icon: iconData),
               ),
               // ── Header always identical regardless of collapsed/expanded ──
-              SizedBox(
-                width: 190,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
-                  child: nameBlock(nameFontSize: 12.4),
-                ),
-              ),
-              const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFDDE5F0)),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  child: Row(
-                    children: [
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.speed_rounded, label: 'Velocidade', value: snapshot.speedLabel, accent: const Color(0xFF176EEB))),
-                      const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.power_settings_new_rounded, label: 'Ignição', value: snapshot.ignitionLabel, accent: const Color(0xFF16A34A))),
-                      const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.battery_charging_full_rounded, label: 'Bateria', value: snapshot.batteryLabel, accent: const Color(0xFF16A34A))),
-                      const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.network_cell_rounded, label: 'Sinal GSM', value: snapshot.gsmSignalLabel, accent: const Color(0xFF16A34A))),
-                      const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.schedule_rounded, label: 'Última atualização', value: snapshot.lastCommunicationLabel, subtitle: snapshot.relativeLastPoint, accent: const Color(0xFF334155))),
-                      const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                      Expanded(child: _VehicleMapMetricCell(icon: Icons.place_outlined, label: 'Endereço', value: snapshot.address, accent: const Color(0xFF334155), maxLines: 2)),
-                    ],
+              // Em telas estreitas (celular) o nome vira Expanded e a faixa
+              // de 6 metricas some daqui (ela ja aparece de novo mais embaixo,
+              // no summaryBody em modo compact) — do contrario a largura fixa
+              // de 190px + as 6 celulas nao cabem e estoura a tela.
+              compact
+                  ? Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+                        child: nameBlock(nameFontSize: 12.4),
+                      ),
+                    )
+                  : SizedBox(
+                      width: 190,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+                        child: nameBlock(nameFontSize: 12.4),
+                      ),
+                    ),
+              if (!compact) ...[
+                const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFDDE5F0)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.speed_rounded, label: 'Velocidade', value: snapshot.speedLabel, accent: const Color(0xFF176EEB))),
+                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.power_settings_new_rounded, label: 'Ignição', value: snapshot.ignitionLabel, accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.battery_charging_full_rounded, label: 'Bateria', value: snapshot.batteryLabel, accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.network_cell_rounded, label: 'Sinal GSM', value: snapshot.gsmSignalLabel, accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.schedule_rounded, label: 'Última atualização', value: snapshot.lastCommunicationLabel, subtitle: snapshot.relativeLastPoint, accent: const Color(0xFF334155))),
+                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(child: _VehicleMapMetricCell(icon: Icons.place_outlined, label: 'Endereço', value: snapshot.address, accent: const Color(0xFF334155), maxLines: 2)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                 child: actionButtons(),
@@ -10714,27 +10727,35 @@ class _VehicleTelemetryPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+        // SingleChildScrollView como rede de seguranca: em telas baixas
+        // (celular) o grid inteiro pode nao caber no espaco fixo do painel;
+        // em vez de estourar (RenderFlex overflow), ele rola em vez de cortar.
         Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              Row(children: [
-                Expanded(child: _TelCell(icon: Icons.satellite_alt_rounded, label: 'Satélites', value: _satLabel, color: const Color(0xFF176EEB))),
-                const SizedBox(width: 8),
-                Expanded(child: _TelCell(icon: Icons.terrain_rounded, label: 'Altitude', value: _altLabel, color: const Color(0xFF334155))),
-              ]),
-              Row(children: [
-                Expanded(child: _TelCell(icon: Icons.route_rounded, label: 'Odômetro', value: _odomLabel, color: const Color(0xFF0F766E))),
-                const SizedBox(width: 8),
-                Expanded(child: _TelCell(icon: Icons.timer_outlined, label: 'Horômetro', value: _hoursLabel, color: const Color(0xFF7C3AED))),
-              ]),
-              Row(children: [
-                Expanded(child: _TelCell(icon: Icons.explore_rounded, label: 'Rumo', value: _courseLabel, color: const Color(0xFFF59E0B))),
-                const SizedBox(width: 8),
-                Expanded(child: _TelCell(icon: Icons.directions_car_outlined, label: 'Movimento', value: _motionLabel, color: const Color(0xFF16A34A))),
-              ]),
-              _TelCell(icon: Icons.my_location_rounded, label: 'Coordenadas', value: _coordLabel, color: const Color(0xFF52627C)),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(children: [
+                  Expanded(child: _TelCell(icon: Icons.satellite_alt_rounded, label: 'Satélites', value: _satLabel, color: const Color(0xFF176EEB))),
+                  const SizedBox(width: 8),
+                  Expanded(child: _TelCell(icon: Icons.terrain_rounded, label: 'Altitude', value: _altLabel, color: const Color(0xFF334155))),
+                ]),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(child: _TelCell(icon: Icons.route_rounded, label: 'Odômetro', value: _odomLabel, color: const Color(0xFF0F766E))),
+                  const SizedBox(width: 8),
+                  Expanded(child: _TelCell(icon: Icons.timer_outlined, label: 'Horômetro', value: _hoursLabel, color: const Color(0xFF7C3AED))),
+                ]),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(child: _TelCell(icon: Icons.explore_rounded, label: 'Rumo', value: _courseLabel, color: const Color(0xFFF59E0B))),
+                  const SizedBox(width: 8),
+                  Expanded(child: _TelCell(icon: Icons.directions_car_outlined, label: 'Movimento', value: _motionLabel, color: const Color(0xFF16A34A))),
+                ]),
+                const SizedBox(height: 6),
+                _TelCell(icon: Icons.my_location_rounded, label: 'Coordenadas', value: _coordLabel, color: const Color(0xFF52627C)),
+              ],
+            ),
           ),
         ),
       ],
