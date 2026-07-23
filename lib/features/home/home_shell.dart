@@ -1656,13 +1656,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   aiPanelOpen: _copilotPanelOpen,
                   isCompactScreen: isCompactScreen,
                 ),
-              if (!pixelTelemetryMode &&
-                  reportRouteSelection == null &&
-                  !showLiveGauges)
-                _MapRightControls(
-                  onZoomIn: () => _zoomBy(1),
-                  onZoomOut: () => _zoomBy(-1),
-                ),
               if (!pixelTelemetryMode && sidebarVisible && !isCompactScreen)
                 _SideMenu(
                   open: _menuOpen,
