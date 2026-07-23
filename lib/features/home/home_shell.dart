@@ -8663,7 +8663,7 @@ class _VehicleBottomContent extends StatelessWidget {
             children: [
               // Photo flush-left
               SizedBox(
-                width: isCollapsed ? 68 : 100,
+                width: isCollapsed || compact ? 68 : 100,
                 child: hasPhoto
                     ? Image.network(
                         photoUrl,
