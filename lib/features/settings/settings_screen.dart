@@ -241,6 +241,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             controller: _taglineController,
             decoration: const InputDecoration(labelText: 'Tagline'),
           ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton(
+              // Cor/logo ficam na aba Aparência, mas salvam junto — sem
+              // isso, editar só nome/tagline aqui nunca persistia.
+              onPressed: () => _saveWhiteLabel(config),
+              child: const Text('Salvar informações'),
+            ),
+          ),
         ]),
       ),
       const _SettingsCard(
@@ -266,13 +276,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Widget _buildPerfilTab() {
-    return const _SettingsTabView(children: [
+    final session = ref.watch(sessionProvider);
+    final users = ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
+    final email = (session.email ?? '').trim();
+    var name = email;
+    final normalizedEmail = email.toLowerCase();
+    for (final user in users) {
+      if (user.email.trim().toLowerCase() == normalizedEmail) {
+        final userName = user.name.trim();
+        if (userName.isNotEmpty) name = userName;
+        break;
+      }
+    }
+    final roleLabel = labelFromRole(roleFromProfileCode(session.profileCode));
+
+    return _SettingsTabView(children: [
       _SettingsCard(
         title: 'Perfil',
         child: Column(children: [
-          _SettingLine(label: 'Nome', value: 'Usuário logado'),
-          _SettingLine(label: 'Perfil', value: 'Operacional'),
-          _SettingLine(label: 'Email', value: 'conta@dominio.com'),
+          _SettingLine(label: 'Nome', value: name.isEmpty ? '—' : name),
+          _SettingLine(label: 'Perfil', value: roleLabel),
+          _SettingLine(label: 'Email', value: email.isEmpty ? '—' : email),
         ]),
       ),
     ]);
