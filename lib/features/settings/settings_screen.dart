@@ -8,6 +8,7 @@ import '../../core/white_label.dart';
 import '../../data/asaas_config.dart';
 import '../../data/bridge_config.dart';
 import '../../data/models.dart';
+import '../../data/notification_prefs.dart';
 import '../../state/session_state.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -40,8 +41,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _showPusherKey       = false;
   bool _bridgeSaving        = false;
   String? _bridgeTestResult;
-  bool _emailAlerts = true;
-  bool _pushAlerts = true;
   bool _mapTraffic = false;
   bool _mapSatellite = false;
   bool _compactMode = true;
@@ -867,26 +866,78 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Widget _buildNotificacoesTab() {
+    final prefs = ref.watch(notificationPrefsProvider);
+    final groups = <String, List<NotificationItem>>{};
+    for (final item in notificationCatalog) {
+      groups.putIfAbsent(item.menuGroup, () => []).add(item);
+    }
+
     return _SettingsTabView(children: [
       _SettingsCard(
-        title: 'Alertas e notificações',
+        title: 'Canais de envio',
         child: Column(children: [
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
             title: const Text('Notificações por e-mail',
                 style: _switchLabelStyle),
-            value: _emailAlerts,
-            onChanged: (v) => setState(() => _emailAlerts = v),
+            value: prefs.emailEnabled,
+            onChanged: (v) => ref
+                .read(notificationPrefsProvider.notifier)
+                .setEmailEnabled(v),
           ),
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
             title: const Text('Notificações push', style: _switchLabelStyle),
-            value: _pushAlerts,
-            onChanged: (v) => setState(() => _pushAlerts = v),
+            value: prefs.pushEnabled,
+            onChanged: (v) => ref
+                .read(notificationPrefsProvider.notifier)
+                .setPushEnabled(v),
           ),
         ]),
+      ),
+      for (final group in groups.entries)
+        _SettingsCard(
+          title: group.key,
+          child: Column(
+            children: [
+              for (final item in group.value)
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(item.label, style: _switchLabelStyle),
+                  subtitle: Text(
+                    item.description,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF60718D),
+                    ),
+                  ),
+                  value: prefs.isEnabled(item.id),
+                  onChanged: (v) => ref
+                      .read(notificationPrefsProvider.notifier)
+                      .setItemEnabled(item.id, v),
+                ),
+            ],
+          ),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton(
+          onPressed: () async {
+            await ref
+                .read(notificationPrefsProvider.notifier)
+                .save(prefs);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Preferências de notificação salvas.'),
+              ),
+            );
+          },
+          child: const Text('Salvar notificações'),
+        ),
       ),
     ]);
   }
