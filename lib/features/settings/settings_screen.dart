@@ -9,6 +9,7 @@ import '../../data/asaas_config.dart';
 import '../../data/bridge_config.dart';
 import '../../data/models.dart';
 import '../../data/notification_prefs.dart';
+import '../../data/permission_overrides.dart';
 import '../../state/session_state.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -55,8 +56,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   // ── Permissões tab state ───────────────────────────────────────────────────
   AppUserRole _selectedPermRole = AppUserRole.operator;
-  final Map<AppUserRole, Map<AppFeature, bool>> _menuOverrides = {};
-  final Map<AppUserRole, Map<String, bool>> _actionOverrides = {};
 
   late final TabController _tabController;
 
@@ -123,17 +122,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   // ── Permission helpers ─────────────────────────────────────────────────────
+  // Overrides persistidos de verdade (SharedPreferences) em vez de estado
+  // local que se perdia ao sair da tela — mesmo bug que existia em
+  // Notificações antes de virar notification_prefs.dart.
 
   bool _menuEnabled(AppUserRole role, AppFeature feature) =>
-      _menuOverrides[role]?[feature] ?? AppPermissions.canView(role, feature);
+      ref.watch(permissionOverridesProvider).menuEnabled(role, feature);
 
   void _setMenuEnabled(AppUserRole role, AppFeature feature, bool value) {
-    setState(() => _menuOverrides.putIfAbsent(role, () => {})[feature] = value);
+    ref
+        .read(permissionOverridesProvider.notifier)
+        .setMenuEnabled(role, feature, value);
   }
 
   bool _actionEnabled(AppUserRole role, String key) {
-    if (_actionOverrides[role]?.containsKey(key) == true) {
-      return _actionOverrides[role]![key]!;
+    final overrides = ref.watch(permissionOverridesProvider);
+    if (overrides.action[role]?.containsKey(key) == true) {
+      return overrides.action[role]![key]!;
     }
     return switch (key) {
       'users_add' =>
@@ -151,10 +156,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   void _setActionEnabled(AppUserRole role, String key, bool value) {
-    setState(() => _actionOverrides.putIfAbsent(role, () => {})[key] = value);
+    ref
+        .read(permissionOverridesProvider.notifier)
+        .setActionEnabled(role, key, value);
   }
 
   void _savePermissions() {
+    ref.read(permissionOverridesProvider.notifier).save();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Permissões salvas com sucesso.')),
     );
@@ -372,10 +380,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             children: [
               const Spacer(),
               OutlinedButton(
-                onPressed: () => setState(() {
-                  _menuOverrides.remove(_selectedPermRole);
-                  _actionOverrides.remove(_selectedPermRole);
-                }),
+                onPressed: () => ref
+                    .read(permissionOverridesProvider.notifier)
+                    .clearRole(_selectedPermRole),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF60718D),
                   side: const BorderSide(color: Color(0xFFDDE6F2)),
@@ -1089,9 +1096,21 @@ const _permMenuItems = <_PermMenuEntry>[
   _PermMenuEntry(AppFeature.commands, Icons.terminal_outlined, 'Comandos'),
   _PermMenuEntry(
       AppFeature.communication, Icons.forum_outlined, 'Comunicação'),
+  _PermMenuEntry(AppFeature.tickets, Icons.headset_mic_outlined, 'Chamados'),
+  _PermMenuEntry(
+      AppFeature.telemetry, Icons.sensors_outlined, 'Telemetria'),
+  _PermMenuEntry(AppFeature.tpms, Icons.tire_repair_outlined, 'TPMS'),
+  _PermMenuEntry(AppFeature.logs, Icons.article_outlined, 'Data Log'),
+  _PermMenuEntry(
+      AppFeature.automations, Icons.auto_fix_high_outlined, 'Automações'),
   _PermMenuEntry(AppFeature.users, Icons.people_outlined, 'Usuários'),
   _PermMenuEntry(
       AppFeature.finance, Icons.account_balance_outlined, 'Financeiro'),
+  _PermMenuEntry(
+      AppFeature.inventory, Icons.inventory_2_outlined, 'Estoque'),
+  _PermMenuEntry(AppFeature.mdvr, Icons.videocam_outlined, 'MDVR / Câmeras'),
+  _PermMenuEntry(
+      AppFeature.aiOps, Icons.auto_awesome_outlined, 'IA Operacional'),
   _PermMenuEntry(
       AppFeature.settings, Icons.settings_outlined, 'Configurações'),
 ];

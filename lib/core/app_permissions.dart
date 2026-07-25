@@ -24,6 +24,7 @@ enum AppFeature {
   inventory,
   logs,
   settings,
+  tpms,
 }
 
 enum AppAction { view, add, edit, delete, command, export }
@@ -64,6 +65,7 @@ const _matrix = <AppUserRole, Map<AppFeature, int>>{
     AppFeature.inventory: _vaex,
     AppFeature.logs: _v | _exp,
     AppFeature.settings: _vaex,
+    AppFeature.tpms: _v,
   },
   AppUserRole.master: {
     AppFeature.dashboard: _v,
@@ -86,6 +88,7 @@ const _matrix = <AppUserRole, Map<AppFeature, int>>{
     AppFeature.inventory: _none,
     AppFeature.logs: _v,
     AppFeature.settings: _ve,
+    AppFeature.tpms: _v,
   },
   AppUserRole.operator: {
     AppFeature.dashboard: _v,
@@ -108,6 +111,7 @@ const _matrix = <AppUserRole, Map<AppFeature, int>>{
     AppFeature.inventory: _none,
     AppFeature.logs: _none,
     AppFeature.settings: _none,
+    AppFeature.tpms: _v,
   },
   AppUserRole.client: {
     AppFeature.dashboard: _v,
@@ -130,6 +134,7 @@ const _matrix = <AppUserRole, Map<AppFeature, int>>{
     AppFeature.inventory: _none,
     AppFeature.logs: _none,
     AppFeature.settings: _none,
+    AppFeature.tpms: _none, // habilitado por plano
   },
   AppUserRole.viewer: {
     AppFeature.dashboard: _v,
@@ -152,6 +157,7 @@ const _matrix = <AppUserRole, Map<AppFeature, int>>{
     AppFeature.inventory: _none,
     AppFeature.logs: _none,
     AppFeature.settings: _none,
+    AppFeature.tpms: _none,
   },
 };
 
