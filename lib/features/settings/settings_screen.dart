@@ -62,7 +62,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -205,7 +205,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   Tab(text: 'Permissões'),
                   Tab(text: 'Integrações'),
                   Tab(text: 'Notificações'),
-                  Tab(text: 'Aparência'),
                   Tab(text: 'Segurança'),
                 ],
               ),
@@ -219,7 +218,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   _buildPermissoesTab(users),
                   _buildIntegracoesTab(),
                   _buildNotificacoesTab(),
-                  _buildAparenciaTab(config),
                   _buildSegurancaTab(config),
                 ],
               ),
@@ -235,9 +233,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   // ── Tab builders ───────────────────────────────────────────────────────────
 
   Widget _buildGeralTab(WhiteLabelConfig config) {
+    // Geral e Aparência editavam o mesmo WhiteLabelConfig em abas
+    // separadas (nome/tagline numa, cor/logo na outra) — fundidas aqui
+    // num único fluxo de edição/salvar. Isso é a base do white-label:
+    // ainda salva local (por dispositivo), não por tenant no servidor.
     return _SettingsTabView(children: [
       _SettingsCard(
-        title: 'Informações da empresa',
+        title: 'Marca (white-label)',
         child: Column(children: [
           TextField(
             controller: _nameController,
@@ -249,13 +251,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             decoration: const InputDecoration(labelText: 'Tagline'),
           ),
           const SizedBox(height: 8),
+          TextField(
+            controller: _primaryController,
+            decoration: const InputDecoration(
+                labelText: 'Cor primária (#RRGGBB ou #AARRGGBB)'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _secondaryController,
+            decoration: const InputDecoration(
+                labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _logoController,
+            decoration:
+                const InputDecoration(labelText: 'Logo (asset opcional)'),
+          ),
+          const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
             child: FilledButton(
-              // Cor/logo ficam na aba Aparência, mas salvam junto — sem
-              // isso, editar só nome/tagline aqui nunca persistia.
               onPressed: () => _saveWhiteLabel(config),
-              child: const Text('Salvar informações'),
+              child: const Text('Salvar marca'),
             ),
           ),
         ]),
@@ -266,6 +284,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           _SettingLine(label: 'Fuso horário', value: 'America/Sao_Paulo'),
           _SettingLine(label: 'Formato de data', value: 'dd/MM/yyyy HH:mm'),
           _SettingLine(label: 'Idioma', value: 'Português (Brasil)'),
+        ]),
+      ),
+      _SettingsCard(
+        title: 'Preferências de mapa',
+        child: Column(children: [
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Exibir tráfego', style: _switchLabelStyle),
+            value: _mapTraffic,
+            onChanged: (v) => setState(() => _mapTraffic = v),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Mapa satélite', style: _switchLabelStyle),
+            value: _mapSatellite,
+            onChanged: (v) => setState(() => _mapSatellite = v),
+          ),
         ]),
       ),
       _SettingsCard(
@@ -949,63 +986,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     ]);
   }
 
-  Widget _buildAparenciaTab(WhiteLabelConfig config) {
-    return _SettingsTabView(children: [
-      _SettingsCard(
-        title: 'Aparência',
-        child: Column(children: [
-          TextField(
-            controller: _primaryController,
-            decoration: const InputDecoration(
-                labelText: 'Cor primária (#RRGGBB ou #AARRGGBB)'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _secondaryController,
-            decoration: const InputDecoration(
-                labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _logoController,
-            decoration:
-                const InputDecoration(labelText: 'Logo (asset opcional)'),
-          ),
-          const SizedBox(height: 8),
-          _SettingsCard(
-            title: 'Preferências de mapa',
-            compact: true,
-            child: Column(children: [
-              SwitchListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Exibir tráfego',
-                    style: _switchLabelStyle),
-                value: _mapTraffic,
-                onChanged: (v) => setState(() => _mapTraffic = v),
-              ),
-              SwitchListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title:
-                    const Text('Mapa satélite', style: _switchLabelStyle),
-                value: _mapSatellite,
-                onChanged: (v) => setState(() => _mapSatellite = v),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton(
-              onPressed: () => _saveWhiteLabel(config),
-              child: const Text('Salvar configurações'),
-            ),
-          ),
-        ]),
-      ),
-    ]);
-  }
 
   Widget _buildSegurancaTab(WhiteLabelConfig config) {
     return _SettingsTabView(children: [
