@@ -324,27 +324,200 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final users = ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
     final email = (session.email ?? '').trim();
     var name = email;
+    int? userId;
+    var disabled = false;
+    var readonly = false;
     final normalizedEmail = email.toLowerCase();
     for (final user in users) {
       if (user.email.trim().toLowerCase() == normalizedEmail) {
         final userName = user.name.trim();
         if (userName.isNotEmpty) name = userName;
+        userId = user.id;
+        disabled = user.disabled;
+        readonly = user.readonly;
         break;
       }
     }
-    final roleLabel = labelFromRole(roleFromProfileCode(session.profileCode));
+    final role = roleFromProfileCode(session.profileCode);
+    final roleLabel = labelFromRole(role);
+    final enabledMenus = _permMenuItems
+        .where((item) => _menuEnabled(role, item.feature))
+        .length;
+    final initial = name.trim().isNotEmpty
+        ? name.trim().substring(0, 1).toUpperCase()
+        : '?';
 
-    return _SettingsTabView(children: [
-      _SettingsCard(
-        title: 'Perfil',
-        child: Column(children: [
-          _SettingLine(label: 'Nome', value: name.isEmpty ? '—' : name),
-          _SettingLine(label: 'Perfil', value: roleLabel),
-          _SettingLine(label: 'Email', value: email.isEmpty ? '—' : email),
-        ]),
-      ),
-    ]);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left: cartão de identidade
+        SizedBox(
+          width: 220,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 32,
+                    backgroundColor:
+                        _accessLevelColorFor(role).withValues(alpha: 0.16),
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: _accessLevelColorFor(role),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    name.isEmpty ? '—' : name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1F2A44),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _accessLevelColorFor(role).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      roleLabel,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: _accessLevelColorFor(role),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(width: 1, color: const Color(0xFFE2E8F0)),
+        // Center: dados da conta
+        Expanded(
+          child: _SettingsTabView(children: [
+            _SettingsCard(
+              title: 'Dados da conta',
+              child: Column(children: [
+                _SettingLine(label: 'Nome', value: name.isEmpty ? '—' : name),
+                _SettingLine(label: 'Email', value: email.isEmpty ? '—' : email),
+                _SettingLine(label: 'Perfil de acesso', value: roleLabel),
+                _SettingLine(
+                  label: 'ID do usuário (Traccar)',
+                  value: userId?.toString() ?? '—',
+                ),
+                _SettingLine(
+                  label: 'Status da conta',
+                  value: disabled
+                      ? 'Desabilitada'
+                      : (readonly ? 'Somente leitura' : 'Ativa'),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+        Container(width: 1, color: const Color(0xFFE2E8F0)),
+        // Right: resumo + ações
+        SizedBox(
+          width: 230,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Resumo da conta',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F2A44),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _SummaryLine(
+                        icon: Icons.check_circle_outline,
+                        iconColor: const Color(0xFF16A34A),
+                        label: 'Menus liberados',
+                        value: '$enabledMenus',
+                        valueColor: const Color(0xFF16A34A),
+                      ),
+                      const SizedBox(height: 6),
+                      _SummaryLine(
+                        icon: Icons.shield_outlined,
+                        iconColor: _accessLevelColorFor(role),
+                        label: 'Nível de acesso',
+                        value: _accessLevelLabelFor(role),
+                        valueColor: _accessLevelColorFor(role),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedPermRole = role);
+                    _tabController.animateTo(2);
+                  },
+                  icon: const Icon(Icons.lock_outline, size: 15),
+                  label: const Text('Ver minhas permissões'),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: widget.onLogout,
+                  icon: const Icon(Icons.logout, size: 15),
+                  label: const Text('Encerrar sessão'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
+
+  static Color _accessLevelColorFor(AppUserRole role) => switch (role) {
+        AppUserRole.superAdmin => const Color(0xFF7C3AED),
+        AppUserRole.master => const Color(0xFF0F69E8),
+        AppUserRole.operator => const Color(0xFFD97706),
+        AppUserRole.client => const Color(0xFF059669),
+        AppUserRole.viewer => const Color(0xFF6B7280),
+      };
+
+  static String _accessLevelLabelFor(AppUserRole role) => switch (role) {
+        AppUserRole.superAdmin => 'Total',
+        AppUserRole.master => 'Avançado',
+        AppUserRole.operator => 'Intermediário',
+        AppUserRole.client => 'Básico',
+        AppUserRole.viewer => 'Restrito',
+      };
 
   Widget _buildPermissoesTab(List<TraccarUser> users) {
     int countForRole(AppUserRole target) => users.where((u) {
