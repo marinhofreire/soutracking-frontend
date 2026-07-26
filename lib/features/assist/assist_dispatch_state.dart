@@ -1066,7 +1066,7 @@ String assistChannelLabel(AssistChannel channel) {
     case AssistChannel.app:
       return 'App';
     case AssistChannel.zpro:
-      return 'Z-Pro/WhatsApp';
+      return 'WhatsApp';
     case AssistChannel.manual:
       return 'Atendente';
   }

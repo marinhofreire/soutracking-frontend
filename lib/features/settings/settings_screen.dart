@@ -421,7 +421,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 _SettingLine(label: 'Email', value: email.isEmpty ? '—' : email),
                 _SettingLine(label: 'Perfil de acesso', value: roleLabel),
                 _SettingLine(
-                  label: 'ID do usuário (Traccar)',
+                  label: 'ID do usuário',
                   value: userId?.toString() ?? '—',
                 ),
                 _SettingLine(
@@ -773,9 +773,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ),
       ),
 
-      // ── Z-Pro (ZPro) ──────────────────────────────────────────────────────
+      // ── Plataforma de mensagens (canal WhatsApp) ─────────────────────────
       const _SettingsCard(
-        title: 'Plataforma de Mensagens (ZPro)',
+        title: 'Plataforma de Mensagens',
         child: Column(
           children: [
             _SettingLine(label: 'Conexão', value: 'Via Camada de Comunicação'),

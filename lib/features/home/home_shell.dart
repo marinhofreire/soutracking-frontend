@@ -10780,7 +10780,7 @@ class _VehicleCommandsPanelState
           Row(children: [
             const Icon(Icons.terminal_rounded, size: 13, color: Color(0xFF5A6D89)),
             const SizedBox(width: 5),
-            const Text('Comandos Traccar',
+            const Text('Comandos',
                 style: TextStyle(
                     color: Color(0xFF1F2A44),
                     fontWeight: FontWeight.w900,

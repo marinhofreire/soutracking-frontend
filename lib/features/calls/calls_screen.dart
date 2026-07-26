@@ -333,7 +333,7 @@ class _CallsScreenState extends ConsumerState<CallsScreen> {
 
   void _newTicketDialog(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Novo chamado — integração com ZPro pendente.')),
+      const SnackBar(content: Text('Novo chamado — integração com o canal de comunicação pendente.')),
     );
   }
 

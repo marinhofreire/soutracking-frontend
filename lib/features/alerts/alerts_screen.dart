@@ -284,7 +284,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                             ),
                             SizedBox(height: 2),
                             Text(
-                              'Configure uma regra de notificação no Traccar.',
+                              'Configure uma regra de notificação no servidor.',
                               style: TextStyle(
                                   color: Color(0xFF5A6B84), fontSize: 13),
                             ),
