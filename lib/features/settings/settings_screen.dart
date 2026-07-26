@@ -57,6 +57,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   // ── Permissões tab state ───────────────────────────────────────────────────
   AppUserRole _selectedPermRole = AppUserRole.operator;
 
+  // ── Notificações tab state ────────────────────────────────────────────────
+  String? _selectedNotifGroup;
+
+  // ── Integrações tab state ─────────────────────────────────────────────────
+  String _selectedIntegration = 'bridge';
+
   late final TabController _tabController;
 
   @override
@@ -237,86 +243,180 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     // separadas (nome/tagline numa, cor/logo na outra) — fundidas aqui
     // num único fluxo de edição/salvar. Isso é a base do white-label:
     // ainda salva local (por dispositivo), não por tenant no servidor.
-    return _SettingsTabView(children: [
-      _SettingsCard(
-        title: 'Marca (white-label)',
-        child: Column(children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Nome da empresa'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _taglineController,
-            decoration: const InputDecoration(labelText: 'Tagline'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _primaryController,
-            decoration: const InputDecoration(
-                labelText: 'Cor primária (#RRGGBB ou #AARRGGBB)'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _secondaryController,
-            decoration: const InputDecoration(
-                labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _logoController,
-            decoration:
-                const InputDecoration(labelText: 'Logo (asset opcional)'),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton(
-              onPressed: () => _saveWhiteLabel(config),
-              child: const Text('Salvar marca'),
+    final primary = _parseColor(_primaryController.text) ?? config.primaryColor;
+    final secondary =
+        _parseColor(_secondaryController.text) ?? config.secondaryColor;
+
+    return _ThreeColumnSettingsLayout(
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _ColumnSectionLabel('MARCA'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      ),
+                      Transform.translate(
+                        offset: const Offset(-8, 0),
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: secondary,
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: Colors.white, width: 2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    config.appName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1F2A44),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    config.tagline,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: Color(0xFF60718D),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ]),
+        ],
       ),
-      const _SettingsCard(
-        title: 'Preferências regionais',
-        child: Column(children: [
-          _SettingLine(label: 'Fuso horário', value: 'America/Sao_Paulo'),
-          _SettingLine(label: 'Formato de data', value: 'dd/MM/yyyy HH:mm'),
-          _SettingLine(label: 'Idioma', value: 'Português (Brasil)'),
-        ]),
-      ),
-      _SettingsCard(
-        title: 'Preferências de mapa',
-        child: Column(children: [
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Exibir tráfego', style: _switchLabelStyle),
-            value: _mapTraffic,
-            onChanged: (v) => setState(() => _mapTraffic = v),
-          ),
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Mapa satélite', style: _switchLabelStyle),
-            value: _mapSatellite,
-            onChanged: (v) => setState(() => _mapSatellite = v),
-          ),
-        ]),
-      ),
-      _SettingsCard(
-        title: 'Outras preferências',
-        child: SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Modo compacto em tabelas',
-              style: _switchLabelStyle),
-          value: _compactMode,
-          onChanged: (v) => setState(() => _compactMode = v),
+      center: _SettingsTabView(children: [
+        _SettingsCard(
+          title: 'Marca (white-label)',
+          child: Column(children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Nome da empresa'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _taglineController,
+              decoration: const InputDecoration(labelText: 'Tagline'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _primaryController,
+              decoration: const InputDecoration(
+                  labelText: 'Cor primária (#RRGGBB ou #AARRGGBB)'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _secondaryController,
+              decoration: const InputDecoration(
+                  labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _logoController,
+              decoration:
+                  const InputDecoration(labelText: 'Logo (asset opcional)'),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton(
+                onPressed: () => _saveWhiteLabel(config),
+                child: const Text('Salvar marca'),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+      right: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SummaryBox(
+              title: 'Preferências regionais',
+              children: [
+                _SettingLine(label: 'Fuso horário', value: 'America/Sao_Paulo'),
+                _SettingLine(
+                    label: 'Formato de data', value: 'dd/MM/yyyy HH:mm'),
+                _SettingLine(label: 'Idioma', value: 'Português (Brasil)'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _SummaryBox(
+              title: 'Preferências de mapa',
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title:
+                      const Text('Exibir tráfego', style: _switchLabelStyle),
+                  value: _mapTraffic,
+                  onChanged: (v) => setState(() => _mapTraffic = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Mapa satélite', style: _switchLabelStyle),
+                  value: _mapSatellite,
+                  onChanged: (v) => setState(() => _mapSatellite = v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _SummaryBox(
+              title: 'Outras preferências',
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Modo compacto em tabelas',
+                      style: _switchLabelStyle),
+                  value: _compactMode,
+                  onChanged: (v) => setState(() => _compactMode = v),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
-    ]);
+    );
   }
 
   Widget _buildPerfilTab() {
@@ -640,346 +740,366 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _asaasInitialized = true;
     }
 
-    return _SettingsTabView(children: [
-      // ── Status card ───────────────────────────────────────────────────────
-      _SettingsCard(
-        title: 'Camada de Comunicação',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 8, height: 8,
-                  decoration: BoxDecoration(
-                    color: config.isConfigured ? const Color(0xFF10B981) : const Color(0xFF9DB1CC),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  config.isConfigured
-                      ? 'Configurado — ${config.aiMode == AiMode.bridge ? "Modo Bridge" : "Modo Mock"}'
-                      : 'Não configurado — usando dados de demonstração',
-                  style: TextStyle(
-                    color: config.isConfigured ? const Color(0xFF10B981) : const Color(0xFF9DB1CC),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            // Mode selector
-            Row(
-              children: [
-                const Text('Modo de operação:', style: TextStyle(color: Color(0xFF60718D), fontSize: 12, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 12),
-                _ModeChip(
-                  label: 'Demonstração',
-                  selected: config.aiMode == AiMode.mock,
-                  onTap: () => ref.read(bridgeConfigProvider.notifier).save(config.copyWith(aiMode: AiMode.mock)),
-                ),
-                const SizedBox(width: 6),
-                _ModeChip(
-                  label: 'Bridge',
-                  selected: config.aiMode == AiMode.bridge,
-                  color: const Color(0xFF176EEB),
-                  onTap: () => ref.read(bridgeConfigProvider.notifier).save(config.copyWith(aiMode: AiMode.bridge)),
-                ),
-              ],
-            ),
-          ],
+    Widget testResultBox(String? result) {
+      if (result == null) return const SizedBox.shrink();
+      final ok = result.startsWith('✓');
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: (ok ? const Color(0xFF10B981) : const Color(0xFFEF4444))
+              .withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: (ok ? const Color(0xFF10B981) : const Color(0xFFEF4444))
+                .withValues(alpha: 0.30),
+          ),
         ),
-      ),
-
-      // ── Bridge endpoint ───────────────────────────────────────────────────
-      _SettingsCard(
-        title: 'Endpoint do Bridge',
-        child: Column(
-          children: [
-            TextField(
-              controller: _bridgeUrlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'URL do Bridge',
-                hintText: 'https://bridge.seudominio.com',
-                prefixIcon: Icon(Icons.link_rounded, size: 18),
-              ),
-            ),
-            const SizedBox(height: 10),
-            StatefulBuilder(builder: (context, setLocal) {
-              return TextField(
-                controller: _bridgeApiKeyCtrl,
-                obscureText: !_showBridgeKey,
-                decoration: InputDecoration(
-                  labelText: 'Chave de API do Bridge',
-                  prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
-                  suffixIcon: IconButton(
-                    icon: Icon(_showBridgeKey ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
-                    onPressed: () => setState(() => _showBridgeKey = !_showBridgeKey),
-                  ),
-                ),
-              );
-            }),
-          ],
+        child: Text(
+          result,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: ok ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+          ),
         ),
-      ),
+      );
+    }
 
-      // ── Pusher / real-time ────────────────────────────────────────────────
-      _SettingsCard(
-        title: 'Configurações em tempo real (Pusher)',
-        child: Column(
-          children: [
-            TextField(
-              controller: _pusherAppKeyCtrl,
-              obscureText: !_showPusherKey,
-              decoration: InputDecoration(
-                labelText: 'Pusher App Key',
-                prefixIcon: const Icon(Icons.wifi_tethering_rounded, size: 18),
-                suffixIcon: IconButton(
-                  icon: Icon(_showPusherKey ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
-                  onPressed: () => setState(() => _showPusherKey = !_showPusherKey),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
+    return _ThreeColumnSettingsLayout(
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _ColumnSectionLabel('INTEGRAÇÕES'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _pusherClusterCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Cluster',
-                      hintText: 'mt1',
-                      prefixIcon: Icon(Icons.public_rounded, size: 18),
-                    ),
-                  ),
+                _SidebarListCard(
+                  label: 'Bridge / IA',
+                  subtitle: config.isConfigured ? 'Configurado' : 'Não configurado',
+                  dotColor: config.isConfigured
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF9DB1CC),
+                  isSelected: _selectedIntegration == 'bridge',
+                  onTap: () => setState(() => _selectedIntegration = 'bridge'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: _pusherChannelCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Canal de eventos',
-                      hintText: 'soucall-events',
-                      prefixIcon: Icon(Icons.hub_rounded, size: 18),
-                    ),
-                  ),
+                _SidebarListCard(
+                  label: 'Mensagens (WhatsApp)',
+                  subtitle: 'Via Bridge',
+                  dotColor: const Color(0xFF9DB1CC),
+                  isSelected: _selectedIntegration == 'messaging',
+                  onTap: () =>
+                      setState(() => _selectedIntegration = 'messaging'),
+                ),
+                _SidebarListCard(
+                  label: 'Asaas (Financeiro)',
+                  subtitle:
+                      asaasConfig.isConfigured ? 'Configurado' : 'Não configurado',
+                  dotColor: asaasConfig.isConfigured
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF9DB1CC),
+                  isSelected: _selectedIntegration == 'asaas',
+                  onTap: () => setState(() => _selectedIntegration = 'asaas'),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-
-      // ── Plataforma de mensagens (canal WhatsApp) ─────────────────────────
-      const _SettingsCard(
-        title: 'Plataforma de Mensagens',
-        child: Column(
-          children: [
-            _SettingLine(label: 'Conexão', value: 'Via Camada de Comunicação'),
-            _SettingLine(label: 'SMS / WhatsApp', value: 'Configurado no Bridge'),
-            _SettingLine(label: 'Chaves de API', value: 'Gerenciadas internamente'),
-          ],
-        ),
-      ),
-
-      // ── Asaas ─────────────────────────────────────────────────────────────
-      _SettingsCard(
-        title: 'Asaas — Financeiro e Cobranças',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      center: _SettingsTabView(children: [
+        if (_selectedIntegration == 'bridge') ...[
+          _SettingsCard(
+            title: 'Camada de Comunicação',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 8, height: 8,
-                  decoration: BoxDecoration(
-                    color: asaasConfig.isConfigured
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFF9DB1CC),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  asaasConfig.isConfigured
-                      ? 'Configurado — ${asaasConfig.sandbox ? "Sandbox" : "Produção"}'
-                      : 'Não configurado — Financeiro usa dados de demonstração',
-                  style: TextStyle(
-                    color: asaasConfig.isConfigured
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFF9DB1CC),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Text('Ambiente:', style: TextStyle(color: Color(0xFF60718D), fontSize: 12, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 12),
-                _ModeChip(
-                  label: 'Sandbox',
-                  selected: asaasConfig.sandbox,
-                  color: const Color(0xFFF59E0B),
-                  onTap: () => ref.read(asaasConfigProvider.notifier)
-                      .save(asaasConfig.copyWith(sandbox: true)),
-                ),
-                const SizedBox(width: 6),
-                _ModeChip(
-                  label: 'Produção',
-                  selected: !asaasConfig.sandbox,
-                  color: const Color(0xFF10B981),
-                  onTap: () => ref.read(asaasConfigProvider.notifier)
-                      .save(asaasConfig.copyWith(sandbox: false)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            StatefulBuilder(builder: (context, setLocal) {
-              return TextField(
-                controller: _asaasApiKeyCtrl,
-                obscureText: !_showAsaasKey,
-                decoration: InputDecoration(
-                  labelText: 'Chave de API Asaas',
-                  hintText: r'$aact_...',
-                  prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _showAsaasKey
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
-                      size: 18,
-                    ),
-                    onPressed: () => setState(() => _showAsaasKey = !_showAsaasKey),
-                  ),
-                ),
-              );
-            }),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (_asaasTestResult != null)
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _asaasTestResult!.startsWith('✓')
-                            ? const Color(0xFF10B981).withValues(alpha: 0.08)
-                            : const Color(0xFFEF4444).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _asaasTestResult!.startsWith('✓')
-                              ? const Color(0xFF10B981).withValues(alpha: 0.30)
-                              : const Color(0xFFEF4444).withValues(alpha: 0.30),
-                        ),
-                      ),
-                      child: Text(
-                        _asaasTestResult!,
+                Row(
+                  children: [
+                    const Text('Modo de operação:',
                         style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _asaasTestResult!.startsWith('✓')
-                              ? const Color(0xFF10B981)
-                              : const Color(0xFFEF4444),
-                        ),
-                      ),
+                            color: Color(0xFF60718D),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 12),
+                    _ModeChip(
+                      label: 'Demonstração',
+                      selected: config.aiMode == AiMode.mock,
+                      onTap: () => ref
+                          .read(bridgeConfigProvider.notifier)
+                          .save(config.copyWith(aiMode: AiMode.mock)),
                     ),
-                  ),
-                const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: _asaasSaving ? null : _testAsaasConnection,
-                  icon: const Icon(Icons.wifi_tethering_rounded, size: 15),
-                  label: const Text('Testar conexão'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF60718D),
-                    side: const BorderSide(color: Color(0xFFDDE6F2)),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    const SizedBox(width: 6),
+                    _ModeChip(
+                      label: 'Bridge',
+                      selected: config.aiMode == AiMode.bridge,
+                      color: const Color(0xFF176EEB),
+                      onTap: () => ref
+                          .read(bridgeConfigProvider.notifier)
+                          .save(config.copyWith(aiMode: AiMode.bridge)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          _SettingsCard(
+            title: 'Endpoint do Bridge',
+            child: Column(
+              children: [
+                TextField(
+                  controller: _bridgeUrlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'URL do Bridge',
+                    hintText: 'https://bridge.seudominio.com',
+                    prefixIcon: Icon(Icons.link_rounded, size: 18),
                   ),
                 ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: _asaasSaving ? null : _saveAsaasConfig,
-                  icon: _asaasSaving
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.save_rounded, size: 15),
-                  label: const Text('Salvar Asaas'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF176EEB),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _bridgeApiKeyCtrl,
+                  obscureText: !_showBridgeKey,
+                  decoration: InputDecoration(
+                    labelText: 'Chave de API do Bridge',
+                    prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                          _showBridgeKey
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18),
+                      onPressed: () =>
+                          setState(() => _showBridgeKey = !_showBridgeKey),
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-
-      // ── Save / test row ───────────────────────────────────────────────────
-      Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          children: [
-            if (_bridgeTestResult != null)
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _bridgeTestResult!.startsWith('✓')
-                        ? const Color(0xFF10B981).withValues(alpha: 0.08)
-                        : const Color(0xFFEF4444).withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _bridgeTestResult!.startsWith('✓')
-                          ? const Color(0xFF10B981).withValues(alpha: 0.30)
-                          : const Color(0xFFEF4444).withValues(alpha: 0.30),
+          ),
+          _SettingsCard(
+            title: 'Configurações em tempo real (Pusher)',
+            child: Column(
+              children: [
+                TextField(
+                  controller: _pusherAppKeyCtrl,
+                  obscureText: !_showPusherKey,
+                  decoration: InputDecoration(
+                    labelText: 'Pusher App Key',
+                    prefixIcon:
+                        const Icon(Icons.wifi_tethering_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                          _showPusherKey
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18),
+                      onPressed: () =>
+                          setState(() => _showPusherKey = !_showPusherKey),
                     ),
                   ),
-                  child: Text(_bridgeTestResult!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _bridgeTestResult!.startsWith('✓')
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFFEF4444),
-                      )),
                 ),
-              ),
-            const Spacer(),
-            OutlinedButton.icon(
-              onPressed: _bridgeSaving ? null : _testBridgeConnection,
-              icon: const Icon(Icons.wifi_tethering_rounded, size: 15),
-              label: const Text('Testar conexão'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF60718D),
-                side: const BorderSide(color: Color(0xFFDDE6F2)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _pusherClusterCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Cluster',
+                          hintText: 'mt1',
+                          prefixIcon: Icon(Icons.public_rounded, size: 18),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _pusherChannelCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Canal de eventos',
+                          hintText: 'soucall-events',
+                          prefixIcon: Icon(Icons.hub_rounded, size: 18),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            FilledButton.icon(
-              onPressed: _bridgeSaving ? null : _saveBridgeConfig,
-              icon: _bridgeSaving
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.save_rounded, size: 15),
-              label: const Text('Salvar integrações'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF176EEB),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
+          ),
+        ],
+        if (_selectedIntegration == 'messaging')
+          const _SettingsCard(
+            title: 'Plataforma de Mensagens',
+            child: Column(
+              children: [
+                _SettingLine(
+                    label: 'Conexão', value: 'Via Camada de Comunicação'),
+                _SettingLine(
+                    label: 'SMS / WhatsApp', value: 'Configurado no Bridge'),
+                _SettingLine(
+                    label: 'Chaves de API', value: 'Gerenciadas internamente'),
+              ],
             ),
+          ),
+        if (_selectedIntegration == 'asaas')
+          _SettingsCard(
+            title: 'Asaas — Financeiro e Cobranças',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('Ambiente:',
+                        style: TextStyle(
+                            color: Color(0xFF60718D),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 12),
+                    _ModeChip(
+                      label: 'Sandbox',
+                      selected: asaasConfig.sandbox,
+                      color: const Color(0xFFF59E0B),
+                      onTap: () => ref
+                          .read(asaasConfigProvider.notifier)
+                          .save(asaasConfig.copyWith(sandbox: true)),
+                    ),
+                    const SizedBox(width: 6),
+                    _ModeChip(
+                      label: 'Produção',
+                      selected: !asaasConfig.sandbox,
+                      color: const Color(0xFF10B981),
+                      onTap: () => ref
+                          .read(asaasConfigProvider.notifier)
+                          .save(asaasConfig.copyWith(sandbox: false)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _asaasApiKeyCtrl,
+                  obscureText: !_showAsaasKey,
+                  decoration: InputDecoration(
+                    labelText: 'Chave de API Asaas',
+                    hintText: r'$aact_...',
+                    prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showAsaasKey
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        size: 18,
+                      ),
+                      onPressed: () =>
+                          setState(() => _showAsaasKey = !_showAsaasKey),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ]),
+      right: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_selectedIntegration == 'bridge') ...[
+              _SummaryBox(
+                title: 'Status',
+                children: [
+                  _SummaryLine(
+                    icon: config.isConfigured
+                        ? Icons.check_circle_outline
+                        : Icons.radio_button_unchecked,
+                    iconColor: config.isConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
+                    label: 'Modo',
+                    value: config.aiMode == AiMode.bridge ? 'Bridge' : 'Mock',
+                    valueColor: config.isConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              testResultBox(_bridgeTestResult),
+              OutlinedButton.icon(
+                onPressed: _bridgeSaving ? null : _testBridgeConnection,
+                icon: const Icon(Icons.wifi_tethering_rounded, size: 15),
+                label: const Text('Testar conexão'),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _bridgeSaving ? null : _saveBridgeConfig,
+                icon: _bridgeSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_rounded, size: 15),
+                label: const Text('Salvar integrações'),
+              ),
+            ],
+            if (_selectedIntegration == 'messaging')
+              const _SummaryBox(
+                title: 'Status',
+                children: [
+                  _SummaryLine(
+                    icon: Icons.info_outline,
+                    iconColor: Color(0xFF9DB1CC),
+                    label: 'Gerenciado por',
+                    value: 'Bridge',
+                    valueColor: Color(0xFF60718D),
+                  ),
+                ],
+              ),
+            if (_selectedIntegration == 'asaas') ...[
+              _SummaryBox(
+                title: 'Status',
+                children: [
+                  _SummaryLine(
+                    icon: asaasConfig.isConfigured
+                        ? Icons.check_circle_outline
+                        : Icons.radio_button_unchecked,
+                    iconColor: asaasConfig.isConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
+                    label: 'Ambiente',
+                    value: asaasConfig.sandbox ? 'Sandbox' : 'Produção',
+                    valueColor: asaasConfig.isConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              testResultBox(_asaasTestResult),
+              OutlinedButton.icon(
+                onPressed: _asaasSaving ? null : _testAsaasConnection,
+                icon: const Icon(Icons.wifi_tethering_rounded, size: 15),
+                label: const Text('Testar conexão'),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _asaasSaving ? null : _saveAsaasConfig,
+                icon: _asaasSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_rounded, size: 15),
+                label: const Text('Salvar Asaas'),
+              ),
+            ],
           ],
         ),
       ),
-    ]);
+    );
   }
 
   Future<void> _saveBridgeConfig() async {
@@ -1088,113 +1208,255 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     for (final item in notificationCatalog) {
       groups.putIfAbsent(item.menuGroup, () => []).add(item);
     }
+    final groupNames = groups.keys.toList();
+    final selectedGroup =
+        (_selectedNotifGroup != null && groups.containsKey(_selectedNotifGroup))
+            ? _selectedNotifGroup!
+            : groupNames.first;
+    final itemsInGroup = groups[selectedGroup] ?? const <NotificationItem>[];
 
-    return _SettingsTabView(children: [
-      _SettingsCard(
-        title: 'Canais de envio',
-        child: Column(children: [
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Notificações por e-mail',
-                style: _switchLabelStyle),
-            value: prefs.emailEnabled,
-            onChanged: (v) => ref
-                .read(notificationPrefsProvider.notifier)
-                .setEmailEnabled(v),
+    int enabledCountFor(String groupName) =>
+        (groups[groupName] ?? const <NotificationItem>[])
+            .where((item) => prefs.isEnabled(item.id))
+            .length;
+
+    final totalEnabled =
+        notificationCatalog.where((item) => prefs.isEnabled(item.id)).length;
+
+    return _ThreeColumnSettingsLayout(
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _ColumnSectionLabel('GRUPOS DE MENU'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              children: [
+                for (final groupName in groupNames)
+                  _SidebarListCard(
+                    label: groupName,
+                    subtitle:
+                        '${enabledCountFor(groupName)}/${groups[groupName]!.length} ativas',
+                    dotColor: const Color(0xFF0F69E8),
+                    isSelected: selectedGroup == groupName,
+                    onTap: () =>
+                        setState(() => _selectedNotifGroup = groupName),
+                  ),
+              ],
+            ),
           ),
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Notificações push', style: _switchLabelStyle),
-            value: prefs.pushEnabled,
-            onChanged: (v) => ref
-                .read(notificationPrefsProvider.notifier)
-                .setPushEnabled(v),
-          ),
-        ]),
+        ],
       ),
-      for (final group in groups.entries)
-        _SettingsCard(
-          title: group.key,
-          child: Column(
-            children: [
-              for (final item in group.value)
+      center: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              selectedGroup,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1F2A44),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final item in itemsInGroup)
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item.label, style: _switchLabelStyle),
+                      subtitle: Text(
+                        item.description,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF60718D),
+                        ),
+                      ),
+                      value: prefs.isEnabled(item.id),
+                      onChanged: (v) => ref
+                          .read(notificationPrefsProvider.notifier)
+                          .setItemEnabled(item.id, v),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      right: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SummaryBox(
+              title: 'Canais de envio',
+              children: [
                 SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  title: Text(item.label, style: _switchLabelStyle),
-                  subtitle: Text(
-                    item.description,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF60718D),
-                    ),
-                  ),
-                  value: prefs.isEnabled(item.id),
+                  title: const Text('E-mail', style: _switchLabelStyle),
+                  value: prefs.emailEnabled,
                   onChanged: (v) => ref
                       .read(notificationPrefsProvider.notifier)
-                      .setItemEnabled(item.id, v),
+                      .setEmailEnabled(v),
                 ),
-            ],
-          ),
-        ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: FilledButton(
-          onPressed: () async {
-            await ref
-                .read(notificationPrefsProvider.notifier)
-                .save(prefs);
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Preferências de notificação salvas.'),
-              ),
-            );
-          },
-          child: const Text('Salvar notificações'),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Push', style: _switchLabelStyle),
+                  value: prefs.pushEnabled,
+                  onChanged: (v) => ref
+                      .read(notificationPrefsProvider.notifier)
+                      .setPushEnabled(v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _SummaryBox(
+              title: 'Resumo',
+              children: [
+                _SummaryLine(
+                  icon: Icons.check_circle_outline,
+                  iconColor: const Color(0xFF16A34A),
+                  label: 'Ativas no total',
+                  value: '$totalEnabled/${notificationCatalog.length}',
+                  valueColor: const Color(0xFF16A34A),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: () async {
+                await ref.read(notificationPrefsProvider.notifier).save(prefs);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Preferências de notificação salvas.'),
+                  ),
+                );
+              },
+              child: const Text('Salvar notificações'),
+            ),
+          ],
         ),
       ),
-    ]);
+    );
   }
 
 
   Widget _buildSegurancaTab(WhiteLabelConfig config) {
-    return _SettingsTabView(children: [
-      _SettingsCard(
-        title: 'Sessão e segurança',
-        child: Column(children: [
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Autenticação em dois fatores',
-                style: _switchLabelStyle),
-            value: _twoFactor,
-            onChanged: (v) => setState(() => _twoFactor = v),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: () async {
-                  await ref.read(whiteLabelProvider.notifier).reset();
-                  _syncControllers(WhiteLabelConfig.fallback);
-                  if (mounted) setState(() {});
-                },
-                child: const Text('Restaurar padrão'),
+    final session = ref.watch(sessionProvider);
+    final email = (session.email ?? '').trim();
+
+    return _ThreeColumnSettingsLayout(
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _ColumnSectionLabel('SESSÃO ATUAL'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              FilledButton.tonal(
-                onPressed: widget.onLogout,
-                child: const Text('Encerrar sessão'),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Online',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    email.isEmpty ? '—' : email,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1F2A44),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ]),
+        ],
       ),
-    ]);
+      center: _SettingsTabView(children: [
+        _SettingsCard(
+          title: 'Segurança',
+          child: Column(children: [
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Autenticação em dois fatores',
+                  style: _switchLabelStyle),
+              subtitle: const Text(
+                'Ainda não conectado a um provedor real — apenas preferência local.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF60718D)),
+              ),
+              value: _twoFactor,
+              onChanged: (v) => setState(() => _twoFactor = v),
+            ),
+          ]),
+        ),
+      ]),
+      right: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SummaryBox(
+              title: 'Ações',
+              children: [
+                Text(
+                  'Restaurar apaga nome/tagline/cores/logo customizados. '
+                  'Encerrar sessão faz logout imediato.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF60718D)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async {
+                await ref.read(whiteLabelProvider.notifier).reset();
+                _syncControllers(WhiteLabelConfig.fallback);
+                if (mounted) setState(() {});
+              },
+              child: const Text('Restaurar padrão'),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonal(
+              onPressed: widget.onLogout,
+              child: const Text('Encerrar sessão'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1912,6 +2174,175 @@ const TextStyle _switchLabelStyle = TextStyle(
   fontWeight: FontWeight.w700,
   fontSize: 12,
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layout de 3 colunas compartilhado — mesmo padrão visual de Permissões e
+// Perfil, reaproveitado nas outras abas de Configurações.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ThreeColumnSettingsLayout extends StatelessWidget {
+  const _ThreeColumnSettingsLayout({
+    required this.left,
+    required this.center,
+    required this.right,
+    this.leftWidth = 230,
+    this.rightWidth = 230,
+  });
+
+  final Widget left;
+  final Widget center;
+  final Widget right;
+  final double leftWidth;
+  final double rightWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: leftWidth, child: left),
+        Container(width: 1, color: const Color(0xFFE2E8F0)),
+        Expanded(child: center),
+        Container(width: 1, color: const Color(0xFFE2E8F0)),
+        SizedBox(width: rightWidth, child: right),
+      ],
+    );
+  }
+}
+
+class _ColumnSectionLabel extends StatelessWidget {
+  const _ColumnSectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF60718D),
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+/// Card selecionável de lista lateral — mesmo visual do `_RoleCard` da aba
+/// Permissões, generalizado pra outras listas (integrações, grupos de
+/// notificação).
+class _SidebarListCard extends StatelessWidget {
+  const _SidebarListCard({
+    required this.label,
+    required this.subtitle,
+    required this.dotColor,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final Color dotColor;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFEBF3FF)
+              : Colors.white.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF0F69E8)
+                : const Color(0xFFE2E8F0),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? const Color(0xFF0F69E8)
+                          : const Color(0xFF1F2A44),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: Color(0xFF8B99AE),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.chevron_right_rounded,
+                  size: 16, color: Color(0xFF0F69E8)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryBox extends StatelessWidget {
+  const _SummaryBox({required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1F2A44),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
 
 // ── Bridge helpers ─────────────────────────────────────────────────────────────
 
