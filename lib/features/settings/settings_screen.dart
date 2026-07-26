@@ -42,6 +42,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _showPusherKey       = false;
   bool _bridgeSaving        = false;
   String? _bridgeTestResult;
+
+  // ── SouCall (canal WhatsApp) ─────────────────────────────────────────────
+  final _soucallUrlCtrl   = TextEditingController();
+  final _soucallTokenCtrl = TextEditingController();
+  bool _soucallInitialized = false;
+  bool _showSoucallToken   = false;
+  bool _soucallSaving      = false;
+
   bool _mapTraffic = false;
   bool _mapSatellite = false;
   bool _compactMode = true;
@@ -83,6 +91,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _pusherAppKeyCtrl.dispose();
     _pusherClusterCtrl.dispose();
     _pusherChannelCtrl.dispose();
+    _soucallUrlCtrl.dispose();
+    _soucallTokenCtrl.dispose();
     _asaasApiKeyCtrl.dispose();
     _tabController.dispose();
     super.dispose();
@@ -739,6 +749,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _asaasApiKeyCtrl.text = asaasConfig.apiKey;
       _asaasInitialized = true;
     }
+    if (!_soucallInitialized && config.soucallApiUrl.isNotEmpty) {
+      _soucallUrlCtrl.text   = config.soucallApiUrl;
+      _soucallTokenCtrl.text = config.soucallToken;
+      _soucallInitialized = true;
+    }
 
     Widget testResultBox(String? result) {
       if (result == null) return const SizedBox.shrink();
@@ -785,12 +800,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   onTap: () => setState(() => _selectedIntegration = 'bridge'),
                 ),
                 _SidebarListCard(
-                  label: 'Mensagens (WhatsApp)',
-                  subtitle: 'Via Bridge',
-                  dotColor: const Color(0xFF9DB1CC),
-                  isSelected: _selectedIntegration == 'messaging',
+                  label: 'SouCall (WhatsApp)',
+                  subtitle: config.isSoucallConfigured
+                      ? 'Configurado'
+                      : 'Não configurado',
+                  dotColor: config.isSoucallConfigured
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF9DB1CC),
+                  isSelected: _selectedIntegration == 'soucall',
                   onTap: () =>
-                      setState(() => _selectedIntegration = 'messaging'),
+                      setState(() => _selectedIntegration = 'soucall'),
                 ),
                 _SidebarListCard(
                   label: 'Asaas (Financeiro)',
@@ -929,17 +948,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
           ),
         ],
-        if (_selectedIntegration == 'messaging')
-          const _SettingsCard(
-            title: 'Plataforma de Mensagens',
+        if (_selectedIntegration == 'soucall')
+          _SettingsCard(
+            title: 'Canal SouCall',
             child: Column(
               children: [
-                _SettingLine(
-                    label: 'Conexão', value: 'Via Camada de Comunicação'),
-                _SettingLine(
-                    label: 'SMS / WhatsApp', value: 'Configurado no Bridge'),
-                _SettingLine(
-                    label: 'Chaves de API', value: 'Gerenciadas internamente'),
+                TextField(
+                  controller: _soucallUrlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'URL do canal (external API)',
+                    hintText:
+                        'https://api.soucall.com.br/v2/api/external/<id-do-canal>',
+                    prefixIcon: Icon(Icons.link_rounded, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _soucallTokenCtrl,
+                  obscureText: !_showSoucallToken,
+                  decoration: InputDecoration(
+                    labelText: 'Token do canal',
+                    prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showSoucallToken
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        size: 18,
+                      ),
+                      onPressed: () =>
+                          setState(() => _showSoucallToken = !_showSoucallToken),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1044,19 +1085,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 label: const Text('Salvar integrações'),
               ),
             ],
-            if (_selectedIntegration == 'messaging')
-              const _SummaryBox(
+            if (_selectedIntegration == 'soucall') ...[
+              _SummaryBox(
                 title: 'Status',
                 children: [
                   _SummaryLine(
-                    icon: Icons.info_outline,
-                    iconColor: Color(0xFF9DB1CC),
-                    label: 'Gerenciado por',
-                    value: 'Bridge',
-                    valueColor: Color(0xFF60718D),
+                    icon: config.isSoucallConfigured
+                        ? Icons.check_circle_outline
+                        : Icons.radio_button_unchecked,
+                    iconColor: config.isSoucallConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
+                    label: 'Canal',
+                    value: config.isSoucallConfigured ? 'Ativo' : 'Vazio',
+                    valueColor: config.isSoucallConfigured
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF9DB1CC),
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: _soucallSaving ? null : _saveSoucallConfig,
+                icon: _soucallSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_rounded, size: 15),
+                label: const Text('Salvar SouCall'),
+              ),
+            ],
             if (_selectedIntegration == 'asaas') ...[
               _SummaryBox(
                 title: 'Status',
@@ -1118,6 +1178,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Integrações salvas com sucesso.'), backgroundColor: Color(0xFF10B981)),
+    );
+  }
+
+  Future<void> _saveSoucallConfig() async {
+    setState(() => _soucallSaving = true);
+    final current = ref.read(bridgeConfigProvider);
+    await ref.read(bridgeConfigProvider.notifier).save(
+      current.copyWith(
+        soucallApiUrl: _soucallUrlCtrl.text.trim(),
+        soucallToken:  _soucallTokenCtrl.text.trim(),
+      ),
+    );
+    setState(() => _soucallSaving = false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Canal SouCall salvo com sucesso.'),
+        backgroundColor: Color(0xFF10B981),
+      ),
     );
   }
 

@@ -9,6 +9,8 @@ const _kPusherCluster = 'pusher_cluster';
 const _kPusherChannel = 'pusher_channel';
 const _kAiMode        = 'ai_mode';
 const _kAutonomyJson  = 'ai_autonomy';
+const _kSoucallApiUrl = 'soucall_api_url';
+const _kSoucallToken  = 'soucall_token';
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,8 @@ class BridgeConfig {
     this.pusherCluster = 'mt1',
     this.pusherChannel = '',
     this.aiMode = AiMode.mock,
+    this.soucallApiUrl = '',
+    this.soucallToken = '',
     this.autonomy = const {
       'alertas':    true,
       'cercas':     false,
@@ -39,10 +43,15 @@ class BridgeConfig {
   final String pusherCluster;
   final String pusherChannel;
   final AiMode aiMode;
+  final String soucallApiUrl;
+  final String soucallToken;
   final Map<String, bool> autonomy;
 
   bool get isConfigured =>
       bridgeUrl.isNotEmpty && bridgeApiKey.isNotEmpty && pusherChannel.isNotEmpty;
+
+  bool get isSoucallConfigured =>
+      soucallApiUrl.isNotEmpty && soucallToken.isNotEmpty;
 
   BridgeConfig copyWith({
     String? bridgeUrl,
@@ -51,16 +60,20 @@ class BridgeConfig {
     String? pusherCluster,
     String? pusherChannel,
     AiMode? aiMode,
+    String? soucallApiUrl,
+    String? soucallToken,
     Map<String, bool>? autonomy,
   }) =>
       BridgeConfig(
-        bridgeUrl:     bridgeUrl     ?? this.bridgeUrl,
-        bridgeApiKey:  bridgeApiKey  ?? this.bridgeApiKey,
-        pusherAppKey:  pusherAppKey  ?? this.pusherAppKey,
-        pusherCluster: pusherCluster ?? this.pusherCluster,
-        pusherChannel: pusherChannel ?? this.pusherChannel,
-        aiMode:        aiMode        ?? this.aiMode,
-        autonomy:      autonomy      ?? this.autonomy,
+        bridgeUrl:      bridgeUrl      ?? this.bridgeUrl,
+        bridgeApiKey:   bridgeApiKey   ?? this.bridgeApiKey,
+        pusherAppKey:   pusherAppKey   ?? this.pusherAppKey,
+        pusherCluster:  pusherCluster  ?? this.pusherCluster,
+        pusherChannel:  pusherChannel  ?? this.pusherChannel,
+        aiMode:         aiMode         ?? this.aiMode,
+        soucallApiUrl:  soucallApiUrl  ?? this.soucallApiUrl,
+        soucallToken:   soucallToken   ?? this.soucallToken,
+        autonomy:       autonomy       ?? this.autonomy,
       );
 
   Future<void> save() async {
@@ -71,6 +84,8 @@ class BridgeConfig {
     await p.setString(_kPusherCluster, pusherCluster);
     await p.setString(_kPusherChannel, pusherChannel);
     await p.setString(_kAiMode,        aiMode.name);
+    await p.setString(_kSoucallApiUrl, soucallApiUrl);
+    await p.setString(_kSoucallToken,  soucallToken);
     final rows = autonomy.entries.map((e) => '${e.key}=${e.value ? '1' : '0'}').join(',');
     await p.setString(_kAutonomyJson, rows);
   }
@@ -94,13 +109,15 @@ class BridgeConfig {
       }
     }
     return BridgeConfig(
-      bridgeUrl:     p.getString(_kBridgeUrl)     ?? '',
-      bridgeApiKey:  p.getString(_kBridgeApiKey)  ?? '',
-      pusherAppKey:  p.getString(_kPusherAppKey)  ?? '',
-      pusherCluster: p.getString(_kPusherCluster) ?? 'mt1',
-      pusherChannel: p.getString(_kPusherChannel) ?? '',
-      aiMode:        mode,
-      autonomy:      autonomy,
+      bridgeUrl:      p.getString(_kBridgeUrl)     ?? '',
+      bridgeApiKey:   p.getString(_kBridgeApiKey)  ?? '',
+      pusherAppKey:   p.getString(_kPusherAppKey)  ?? '',
+      pusherCluster:  p.getString(_kPusherCluster) ?? 'mt1',
+      pusherChannel:  p.getString(_kPusherChannel) ?? '',
+      aiMode:         mode,
+      soucallApiUrl:  p.getString(_kSoucallApiUrl) ?? '',
+      soucallToken:   p.getString(_kSoucallToken)  ?? '',
+      autonomy:       autonomy,
     );
   }
 }
