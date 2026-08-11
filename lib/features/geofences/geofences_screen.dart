@@ -32,6 +32,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
   String _groupFilter = 'Todos os grupos';
   bool _saving = false;
   int? _deletingId;
+  int? _editingFenceId;
 
   @override
   void dispose() {
@@ -241,7 +242,74 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     );
   }
 
-  Future<void> _createGeofence() async {
+  // Preenche o editor com os dados de uma cerca existente (modo edicao).
+  // Faz o caminho inverso do que _saveGeofence monta ao criar: le a string
+  // "area" (CIRCLE (...) ou POLYGON ((...))) de volta pros campos do form.
+  void _prefillForEdit(Map<String, dynamic> fence) {
+    final id = fence['id'];
+    if (id is! int) return;
+
+    final area = '${fence['area'] ?? ''}'.trim();
+    final circleMatch = RegExp(
+      r'CIRCLE\s*\(\s*([\-0-9.]+)\s+([\-0-9.]+)\s*,\s*([0-9.]+)\s*\)',
+      caseSensitive: false,
+    ).firstMatch(area);
+    final polygonMatch = RegExp(
+      r'POLYGON\s*\(\(\s*(.+?)\s*\)\)',
+      caseSensitive: false,
+    ).firstMatch(area);
+
+    setState(() {
+      _editingFenceId = id;
+      _nameController.text = '${fence['name'] ?? ''}';
+      _polygonPoints.clear();
+      _latController.clear();
+      _lonController.clear();
+      _radiusController.clear();
+
+      if (polygonMatch != null) {
+        _shapeMode = 'polygon';
+        final rawPoints = polygonMatch.group(1)!.split(',');
+        final parsed = rawPoints
+            .map((pair) => pair.trim().split(RegExp(r'\s+')))
+            .where((parts) => parts.length == 2)
+            .map((parts) => _GeoPoint(
+                  lat: double.tryParse(parts[0]) ?? 0,
+                  lon: double.tryParse(parts[1]) ?? 0,
+                ))
+            .toList();
+        // O ultimo ponto fecha o poligono repetindo o primeiro — tira pra
+        // nao duplicar quando _saveGeofence remontar a string.
+        if (parsed.length > 1 &&
+            parsed.first.lat == parsed.last.lat &&
+            parsed.first.lon == parsed.last.lon) {
+          parsed.removeLast();
+        }
+        _polygonPoints.addAll(parsed);
+      } else if (circleMatch != null) {
+        _shapeMode = 'circle';
+        _latController.text = circleMatch.group(1) ?? '';
+        _lonController.text = circleMatch.group(2) ?? '';
+        _radiusController.text = circleMatch.group(3) ?? '';
+      } else {
+        _shapeMode = 'circle';
+      }
+    });
+  }
+
+  void _resetEditorForm() {
+    _editingFenceId = null;
+    _nameController.clear();
+    _latController.clear();
+    _lonController.clear();
+    _radiusController.clear();
+    _pointLatController.clear();
+    _pointLonController.clear();
+    _polygonPoints.clear();
+    _shapeMode = 'circle';
+  }
+
+  Future<void> _saveGeofence() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -282,30 +350,48 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     setState(() => _saving = true);
     final session = ref.read(sessionProvider);
     final client = ref.read(traccarClientProvider);
+    final editingId = _editingFenceId;
 
     try {
-      await client.createEntity(
-        path: '/geofences',
-        cookie: session.cookie,
-        authHeader: session.authHeader,
-        body: {'name': name, 'area': area},
-      );
+      if (editingId != null) {
+        await client.updateEntityById(
+          path: '/geofences',
+          id: editingId,
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          body: {'id': editingId, 'name': name, 'area': area},
+        );
+      } else {
+        await client.createEntity(
+          path: '/geofences',
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          body: {'name': name, 'area': area},
+        );
+      }
       ref.invalidate(geofencesProvider);
-      _nameController.clear();
-      _latController.clear();
-      _lonController.clear();
-      _radiusController.clear();
-      _pointLatController.clear();
-      _pointLonController.clear();
-      _polygonPoints.clear();
+      _resetEditorForm();
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).maybePop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cerca criada com sucesso.')),
+        SnackBar(
+          content: Text(
+            editingId != null
+                ? 'Cerca atualizada com sucesso.'
+                : 'Cerca criada com sucesso.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao criar cerca: $error')),
+        SnackBar(
+          content: Text(
+            editingId != null
+                ? 'Falha ao atualizar cerca: $error'
+                : 'Falha ao criar cerca: $error',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -427,7 +513,12 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     }).toList(growable: false);
   }
 
-  Future<void> _openCreateEditorDialog() async {
+  Future<void> _openCreateEditorDialog({Map<String, dynamic>? existing}) async {
+    if (existing != null) {
+      _prefillForEdit(existing);
+    } else {
+      setState(_resetEditorForm);
+    }
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -480,6 +571,11 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
         );
       },
     );
+    // Fechou sem salvar (tocou fora, voltou) — nao deixa dado de edicao
+    // vazando pro proximo "Adicionar cerca".
+    if (mounted && _editingFenceId != null) {
+      setState(_resetEditorForm);
+    }
   }
 
   Widget _buildEditorForm() {
@@ -488,10 +584,10 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'Editor de cerca',
-                style: TextStyle(
+                _editingFenceId != null ? 'Editar cerca' : 'Editor de cerca',
+                style: const TextStyle(
                   color: Color(0xFF25344A),
                   fontWeight: FontWeight.w800,
                   fontSize: 16,
@@ -499,7 +595,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
               ),
             ),
             FilledButton.icon(
-              onPressed: _saving ? null : _createGeofence,
+              onPressed: _saving ? null : _saveGeofence,
               icon: _saving
                   ? const SizedBox(
                       height: 14,
@@ -507,7 +603,11 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.save_outlined, size: 18),
-              label: Text(_saving ? 'Salvando...' : 'Salvar cerca'),
+              label: Text(_saving
+                  ? 'Salvando...'
+                  : (_editingFenceId != null
+                      ? 'Atualizar cerca'
+                      : 'Salvar cerca')),
             ),
           ],
         ),
@@ -756,6 +856,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                 geofenceStatus: _geofenceStatus,
                 deletingId: _deletingId,
                 onDelete: _deleteGeofence,
+                onEdit: (fence) => _openCreateEditorDialog(existing: fence),
               ),
               if (geofencesAsync.isLoading)
                 const Positioned(
@@ -969,6 +1070,7 @@ class _GeofenceTable extends StatelessWidget {
     required this.geofenceStatus,
     required this.deletingId,
     required this.onDelete,
+    required this.onEdit,
   });
 
   final List<Map<String, dynamic>> geofences;
@@ -977,6 +1079,7 @@ class _GeofenceTable extends StatelessWidget {
   final String Function(Map<String, dynamic>) geofenceStatus;
   final int? deletingId;
   final ValueChanged<Map<String, dynamic>> onDelete;
+  final ValueChanged<Map<String, dynamic>> onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1095,15 +1198,7 @@ class _GeofenceTable extends StatelessWidget {
                           children: [
                             IconButton(
                               tooltip: 'Editar',
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Edicao avancada de cerca segue em implantacao tecnica.',
-                                    ),
-                                  ),
-                                );
-                              },
+                              onPressed: () => onEdit(fence),
                               icon: const Icon(
                                 Icons.edit_outlined,
                                 color: Color(0xFF176EEB),
