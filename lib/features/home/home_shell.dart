@@ -151,9 +151,11 @@ class _ReplayPoint {
 
 // Intervalo maximo entre duas posicoes consecutivas pra ainda considerar
 // "mesmo deslocamento". Acima disso, o aparelho ficou tempo demais sem
-// reportar (sinal caido, app fechado, sem energia) e o ponto seguinte pode
-// estar do outro lado da cidade sem ter percorrido o caminho real.
-const Duration _replayGapThreshold = Duration(minutes: 30);
+// reportar (sinal caido, sem energia, equipamento em transito antes da
+// instalacao) e o ponto seguinte pode estar do outro lado da cidade (ou do
+// pais) sem ter percorrido o caminho real. 48h da folga pra gaps normais
+// (fim de semana parado, por exemplo) sem quebrar rota a toa.
+const Duration _replayGapThreshold = Duration(hours: 48);
 
 // Quebra o replay em trechos sempre que o buraco de tempo entre duas
 // posicoes for grande demais pra ser deslocamento real. Cada trecho vira
