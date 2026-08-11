@@ -149,6 +149,43 @@ class _ReplayPoint {
   }
 }
 
+// Intervalo maximo entre duas posicoes consecutivas pra ainda considerar
+// "mesmo deslocamento". Acima disso, o aparelho ficou tempo demais sem
+// reportar (sinal caido, app fechado, sem energia) e o ponto seguinte pode
+// estar do outro lado da cidade sem ter percorrido o caminho real.
+const Duration _replayGapThreshold = Duration(minutes: 30);
+
+// Quebra o replay em trechos sempre que o buraco de tempo entre duas
+// posicoes for grande demais pra ser deslocamento real. Cada trecho vira
+// sua propria polyline — o buraco fica em branco no mapa, sem a reta falsa
+// conectando o ponto de antes do sumico com o de depois.
+List<List<gmaps.LatLng>> _splitReplaySegments(List<_ReplayPoint> points) {
+  if (points.length < 2) {
+    return const <List<gmaps.LatLng>>[];
+  }
+  final segments = <List<gmaps.LatLng>>[];
+  var current = <gmaps.LatLng>[points.first.latLng];
+  for (var i = 1; i < points.length; i++) {
+    final previousTime = points[i - 1].effectiveTime;
+    final time = points[i].effectiveTime;
+    final gap = (previousTime != null && time != null)
+        ? time.difference(previousTime)
+        : Duration.zero;
+    if (gap > _replayGapThreshold) {
+      if (current.length > 1) {
+        segments.add(current);
+      }
+      current = <gmaps.LatLng>[points[i].latLng];
+    } else {
+      current.add(points[i].latLng);
+    }
+  }
+  if (current.length > 1) {
+    segments.add(current);
+  }
+  return segments;
+}
+
 class _ReportRouteReplayFrame {
   const _ReportRouteReplayFrame({
     required this.point,
@@ -1471,6 +1508,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final selectedReplayPath = replayModeActive
         ? replayPoints.map((point) => point.latLng).toList(growable: false)
         : const <gmaps.LatLng>[];
+    final selectedReplaySegments = replayModeActive
+        ? _splitReplaySegments(replayPoints)
+        : const <List<gmaps.LatLng>>[];
     _followReplayPointIfNeeded(selectedReplayPoint, effectiveSelectedDeviceId);
     _followReportRoutePointIfNeeded(
       reportRouteActivePoint,
@@ -3502,6 +3542,23 @@ class _OperationalMap extends StatelessWidget {
               gmaps.Polyline(
                 polylineId: gmaps.PolylineId('trail-$selectedDeviceId-seg$i'),
                 points: reportRouteMatchedSegments[i],
+                color: const Color(0xFF2F80FF).withValues(alpha: 0.62),
+                width: 4,
+              ),
+            );
+          }
+        } else if (selectedDeviceId != null &&
+            reportRoutePath.length <= 1 &&
+            selectedReplaySegments.isNotEmpty) {
+          // Replay ao vivo sem correcao OSRM: mesma ideia do bloco acima,
+          // so que os trechos vem do corte por buraco de tempo em vez do
+          // map-matching do relatorio.
+          for (var i = 0; i < selectedReplaySegments.length; i++) {
+            polylines.add(
+              gmaps.Polyline(
+                polylineId:
+                    gmaps.PolylineId('trail-$selectedDeviceId-replay-seg$i'),
+                points: selectedReplaySegments[i],
                 color: const Color(0xFF2F80FF).withValues(alpha: 0.62),
                 width: 4,
               ),
