@@ -1697,7 +1697,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   selectedDeviceId: effectiveSelectedDeviceId,
                   selectedTrail: _selectedTrail(),
                   selectedReplayPath: selectedReplayPath,
+                  selectedReplaySegments: selectedReplaySegments,
                   selectedReplayPoint: selectedReplayPoint,
+                  geofenceList: geofenceList,
                   reportRoutePath: reportRoutePath,
                   reportRouteMatchedSegments: reportRouteMatchedSegments,
                   reportRouteStart: reportRouteStart,
@@ -2971,7 +2973,9 @@ class _OperationalMap extends StatelessWidget {
     required this.selectedDeviceId,
     required this.selectedTrail,
     required this.selectedReplayPath,
+    this.selectedReplaySegments = const [],
     required this.selectedReplayPoint,
+    this.geofenceList = const [],
     required this.reportRoutePath,
     this.reportRouteMatchedSegments = const [],
     required this.reportRouteStart,
@@ -2992,7 +2996,9 @@ class _OperationalMap extends StatelessWidget {
   final int? selectedDeviceId;
   final List<gmaps.LatLng> selectedTrail;
   final List<gmaps.LatLng> selectedReplayPath;
+  final List<List<gmaps.LatLng>> selectedReplaySegments;
   final _ReplayPoint? selectedReplayPoint;
+  final List<Map<String, dynamic>> geofenceList;
   final List<gmaps.LatLng> reportRoutePath;
   final List<List<gmaps.LatLng>> reportRouteMatchedSegments;
   final ReportRouteMapPoint? reportRouteStart;
