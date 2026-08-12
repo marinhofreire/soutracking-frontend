@@ -33,6 +33,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
   bool _saving = false;
   int? _deletingId;
   int? _editingFenceId;
+  int? _togglingId;
 
   @override
   void dispose() {
@@ -471,17 +472,66 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     return '-';
   }
 
+  // O Traccar nao tem um campo nativo "enabled"/"active" pra geofence (isso
+  // existe pra device, nao pra geofence) — por isso o status usava campos
+  // que nunca vinham preenchidos e sempre caia no default "Ativa". Guardamos
+  // esse estado em attributes.disabled, que e um mapa livre em toda entidade
+  // do Traccar.
+  bool _geofenceDisabled(Map<String, dynamic> fence) {
+    final attributes = fence['attributes'];
+    if (attributes is Map) {
+      return attributes['disabled'] == true;
+    }
+    return false;
+  }
+
   String _geofenceStatus(Map<String, dynamic> fence) {
-    final enabledRaw =
-        fence['enabled'] ?? fence['active'] ?? fence['status'] ?? true;
-    if (enabledRaw is bool) {
-      return enabledRaw ? 'Ativa' : 'Inativa';
+    return _geofenceDisabled(fence) ? 'Inativa' : 'Ativa';
+  }
+
+  Future<void> _toggleGeofenceEnabled(Map<String, dynamic> fence) async {
+    final id = fence['id'];
+    if (id is! int) return;
+    final currentlyDisabled = _geofenceDisabled(fence);
+    final attributes = Map<String, dynamic>.from(
+      (fence['attributes'] as Map?)?.cast<String, dynamic>() ?? {},
+    );
+    attributes['disabled'] = !currentlyDisabled;
+
+    setState(() => _togglingId = id);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+
+    try {
+      await client.updateEntityById(
+        path: '/geofences',
+        id: id,
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+        body: {
+          'id': id,
+          'name': fence['name'],
+          'area': fence['area'],
+          'attributes': attributes,
+        },
+      );
+      ref.invalidate(geofencesProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            currentlyDisabled ? 'Cerca ativada.' : 'Cerca desativada.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao atualizar status: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _togglingId = null);
     }
-    final text = enabledRaw.toString().trim().toLowerCase();
-    if (text == 'false' || text == '0' || text == 'inactive') {
-      return 'Inativa';
-    }
-    return 'Ativa';
   }
 
   List<Map<String, dynamic>> _applyFilters(
@@ -854,9 +904,12 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                 geofenceType: _geofenceType,
                 geofenceAreaLabel: _geofenceAreaLabel,
                 geofenceStatus: _geofenceStatus,
+                geofenceDisabled: _geofenceDisabled,
                 deletingId: _deletingId,
+                togglingId: _togglingId,
                 onDelete: _deleteGeofence,
                 onEdit: (fence) => _openCreateEditorDialog(existing: fence),
+                onToggle: _toggleGeofenceEnabled,
               ),
               if (geofencesAsync.isLoading)
                 const Positioned(
@@ -1068,18 +1121,24 @@ class _GeofenceTable extends StatelessWidget {
     required this.geofenceType,
     required this.geofenceAreaLabel,
     required this.geofenceStatus,
+    required this.geofenceDisabled,
     required this.deletingId,
+    required this.togglingId,
     required this.onDelete,
     required this.onEdit,
+    required this.onToggle,
   });
 
   final List<Map<String, dynamic>> geofences;
   final String Function(Map<String, dynamic>) geofenceType;
   final String Function(Map<String, dynamic>) geofenceAreaLabel;
   final String Function(Map<String, dynamic>) geofenceStatus;
+  final bool Function(Map<String, dynamic>) geofenceDisabled;
   final int? deletingId;
+  final int? togglingId;
   final ValueChanged<Map<String, dynamic>> onDelete;
   final ValueChanged<Map<String, dynamic>> onEdit;
+  final ValueChanged<Map<String, dynamic>> onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1163,6 +1222,7 @@ class _GeofenceTable extends StatelessWidget {
             ),
             itemBuilder: (context, index) {
               final fence = geofences[index];
+              final disabled = geofenceDisabled(fence);
               final status = geofenceStatus(fence);
               final statusColor = status == 'Ativa'
                   ? const Color(0xFF10B981)
@@ -1193,9 +1253,32 @@ class _GeofenceTable extends StatelessWidget {
                         ),
                       ),
                       SizedBox(
-                        width: 72,
+                        width: 108,
                         child: Row(
                           children: [
+                            IconButton(
+                              tooltip: disabled ? 'Ativar' : 'Desativar',
+                              onPressed: togglingId == fence['id']
+                                  ? null
+                                  : () => onToggle(fence),
+                              icon: togglingId == fence['id']
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Icon(
+                                      disabled
+                                          ? Icons.toggle_off_outlined
+                                          : Icons.toggle_on,
+                                      color: disabled
+                                          ? const Color(0xFF9AA7B8)
+                                          : const Color(0xFF2FA35A),
+                                      size: 20,
+                                    ),
+                            ),
                             IconButton(
                               tooltip: 'Editar',
                               onPressed: () => onEdit(fence),

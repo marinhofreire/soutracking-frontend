@@ -188,6 +188,100 @@ List<List<gmaps.LatLng>> _splitReplaySegments(List<_ReplayPoint> points) {
   return segments;
 }
 
+// Mesma leitura de attributes.disabled usada em geofences_screen.dart —
+// Traccar nao tem campo nativo enabled/active pra geofence.
+bool _geofenceIsDisabled(Map<String, dynamic> fence) {
+  final attributes = fence['attributes'];
+  if (attributes is Map) {
+    return attributes['disabled'] == true;
+  }
+  return false;
+}
+
+// Cor por cerca, ciclando numa paleta fixa pra distinguir cercas diferentes
+// no mapa sem precisar de configuracao manual de cor por cerca.
+const List<Color> _geofencePalette = [
+  Color(0xFF2F80FF),
+  Color(0xFFE74B4B),
+  Color(0xFF2FA35A),
+  Color(0xFFF2A93B),
+  Color(0xFF9B51E0),
+  Color(0xFF17B8C4),
+];
+
+Color _geofenceColorFor(Object id) {
+  final index = id.hashCode.abs() % _geofencePalette.length;
+  return _geofencePalette[index];
+}
+
+final RegExp _geofenceCircleRegex = RegExp(
+  r'CIRCLE\s*\(\s*([\-0-9.]+)\s+([\-0-9.]+)\s*,\s*([0-9.]+)\s*\)',
+  caseSensitive: false,
+);
+final RegExp _geofencePolygonRegex = RegExp(
+  r'POLYGON\s*\(\(\s*(.+?)\s*\)\)',
+  caseSensitive: false,
+);
+
+void _addGeofenceShapes(
+  List<Map<String, dynamic>> geofences,
+  Set<gmaps.Circle> circles,
+  Set<gmaps.Polygon> polygons,
+) {
+  for (final fence in geofences) {
+    if (_geofenceIsDisabled(fence)) continue;
+    final id = fence['id'];
+    if (id == null) continue;
+    final area = '${fence['area'] ?? ''}'.trim();
+    final color = _geofenceColorFor(id);
+
+    final circleMatch = _geofenceCircleRegex.firstMatch(area);
+    if (circleMatch != null) {
+      final lat = double.tryParse(circleMatch.group(1) ?? '');
+      final lon = double.tryParse(circleMatch.group(2) ?? '');
+      final radius = double.tryParse(circleMatch.group(3) ?? '');
+      if (lat != null && lon != null && radius != null) {
+        circles.add(
+          gmaps.Circle(
+            circleId: gmaps.CircleId('geofence-$id'),
+            center: gmaps.LatLng(lat, lon),
+            radius: radius,
+            strokeColor: color,
+            strokeWidth: 2,
+            fillColor: color.withValues(alpha: 0.18),
+          ),
+        );
+      }
+      continue;
+    }
+
+    final polygonMatch = _geofencePolygonRegex.firstMatch(area);
+    if (polygonMatch != null) {
+      final points = polygonMatch
+          .group(1)!
+          .split(',')
+          .map((pair) => pair.trim().split(RegExp(r'\s+')))
+          .where((parts) => parts.length == 2)
+          .map((parts) => gmaps.LatLng(
+                double.tryParse(parts[0]) ?? 0,
+                double.tryParse(parts[1]) ?? 0,
+              ))
+          .toList(growable: false);
+      if (points.length >= 3) {
+        polygons.add(
+          gmaps.Polygon(
+            polygonId: gmaps.PolygonId('geofence-$id'),
+            points: points,
+            strokeColor: color,
+            strokeWidth: 2,
+            fillColor: color.withValues(alpha: 0.18),
+          ),
+        );
+      }
+    }
+  }
+}
+
 class _ReportRouteReplayFrame {
   const _ReportRouteReplayFrame({
     required this.point,
@@ -1419,6 +1513,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           .firstOrNull,
     );
     final reportRouteSelection = ref.watch(reportRouteMapSelectionProvider);
+    final geofencesAsync = ref.watch(geofencesProvider);
+    final geofenceList =
+        geofencesAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final liveGaugesSnapshot = _liveGaugesDeviceId == null
         ? null
         : snapshots
@@ -3417,7 +3514,9 @@ class _OperationalMap extends StatelessWidget {
         final reportRouteMode = reportRoutePath.length > 1;
         final markers = <gmaps.Marker>{};
         final circles = <gmaps.Circle>{};
+        final polygons = <gmaps.Polygon>{};
         final polylines = <gmaps.Polyline>{};
+        _addGeofenceShapes(geofenceList, circles, polygons);
         final reportRouteActiveLatLng = reportRouteActivePoint == null
             ? null
             : gmaps.LatLng(
@@ -3647,6 +3746,7 @@ class _OperationalMap extends StatelessWidget {
           onTap: (_) => onMapTap(),
           markers: markers,
           circles: circles,
+          polygons: polygons,
           polylines: polylines,
         );
       },
