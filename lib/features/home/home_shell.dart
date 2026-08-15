@@ -41,6 +41,7 @@ import '../routes/routes_screen.dart';
 import '../settings/settings_screen.dart';
 import '../automations/automations_screen.dart';
 import '../ia/ia_screen.dart';
+import '../ia/ai_chat_widget.dart';
 import '../telemetry/sensor_presentation.dart';
 import '../telemetry/telemetry_sensors_screen.dart';
 import '../telemetry/tpms_screen.dart';
@@ -2107,7 +2108,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     _vehiclePanelMode = _VehiclePanelMode.summary;
                   }),
                 ),
-              // Copiloto removido do mapa — virou item de menu "IA Operacional"
+              if (!isCompactScreen) const AiChatFloatingWidget(),
               // Overlay de tela cheia (mobile) — precisa ser o último filho
               // da Stack pra ficar por cima do cartão do veículo e do mapa.
               if (!pixelTelemetryMode && isCompactScreen && _mobileMenuOpen)
