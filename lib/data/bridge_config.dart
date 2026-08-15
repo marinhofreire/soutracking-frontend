@@ -47,8 +47,10 @@ class BridgeConfig {
   final String soucallToken;
   final Map<String, bool> autonomy;
 
+  // pusherChannel e independente -- e so a config legada de tempo real
+  // (nunca usada de verdade), nao deve travar o Bridge de ficar "configurado".
   bool get isConfigured =>
-      bridgeUrl.isNotEmpty && bridgeApiKey.isNotEmpty && pusherChannel.isNotEmpty;
+      bridgeUrl.isNotEmpty && bridgeApiKey.isNotEmpty;
 
   bool get isSoucallConfigured =>
       soucallApiUrl.isNotEmpty && soucallToken.isNotEmpty;
