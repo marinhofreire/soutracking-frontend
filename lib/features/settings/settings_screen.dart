@@ -896,14 +896,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
           ),
           _SettingsCard(
-            title: 'Configurações em tempo real (Pusher)',
+            title: 'Configurações em tempo real',
             child: Column(
               children: [
                 TextField(
                   controller: _pusherAppKeyCtrl,
                   obscureText: !_showPusherKey,
                   decoration: InputDecoration(
-                    labelText: 'Pusher App Key',
+                    labelText: 'Chave de eventos',
                     prefixIcon:
                         const Icon(Icons.wifi_tethering_rounded, size: 18),
                     suffixIcon: IconButton(

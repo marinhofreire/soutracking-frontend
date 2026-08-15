@@ -92,8 +92,8 @@ class BridgeConfig {
 
   static Future<BridgeConfig> load() async {
     final p = await SharedPreferences.getInstance();
-    final modeStr = p.getString(_kAiMode) ?? 'mock';
-    final mode = AiMode.values.firstWhere((e) => e.name == modeStr, orElse: () => AiMode.mock);
+    final modeStr = p.getString(_kAiMode) ?? 'bridge';
+    final mode = AiMode.values.firstWhere((e) => e.name == modeStr, orElse: () => AiMode.bridge);
     final autonomyStr = p.getString(_kAutonomyJson) ?? '';
     final autonomy = <String, bool>{
       'alertas':    true,
@@ -109,11 +109,11 @@ class BridgeConfig {
       }
     }
     return BridgeConfig(
-      bridgeUrl:      p.getString(_kBridgeUrl)     ?? '',
+      bridgeUrl:      p.getString(_kBridgeUrl)     ?? 'https://bridge.soutracking.com.br',
       bridgeApiKey:   p.getString(_kBridgeApiKey)  ?? '',
       pusherAppKey:   p.getString(_kPusherAppKey)  ?? '',
       pusherCluster:  p.getString(_kPusherCluster) ?? 'mt1',
-      pusherChannel:  p.getString(_kPusherChannel) ?? '',
+      pusherChannel:  p.getString(_kPusherChannel) ?? 'soutracking-ia',
       aiMode:         mode,
       soucallApiUrl:  p.getString(_kSoucallApiUrl) ?? '',
       soucallToken:   p.getString(_kSoucallToken)  ?? '',
