@@ -19801,7 +19801,12 @@ class _VehicleSnapshot {
   }
 
   DateTime? get lastCommunicationAt {
-    final source = device.lastUpdate ?? position?.fixTime;
+    // device.lastUpdate e so o heartbeat de rede/protocolo -- ele avanca
+    // mesmo quando o GPS nao consegue fix novo ha dias, fazendo o veiculo
+    // parecer "atualizado" com uma posicao velha na tela. position.fixTime
+    // e quando a posicao mostrada foi capturada de verdade, entao e ele que
+    // decide se o dado na tela esta desatualizado.
+    final source = position?.fixTime ?? device.lastUpdate;
     if (source == null || source.trim().isEmpty) return null;
     final parsed = DateTime.tryParse(source);
     if (parsed == null) return null;
