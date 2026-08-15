@@ -370,6 +370,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String? _lastFollowedReplayKey;
   String? _lastFollowedReportRouteReplayKey;
   double? _lastResolvedReportRouteBearing;
+  double? _lastResolvedReplayBearing;
   bool _reportRouteReplay3dEnabled = true;
   String? _lastFocusedReportRouteKey;
   String? _lastReportRouteMapTypeNonce;
@@ -978,6 +979,79 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
 
     return _lastResolvedReportRouteBearing;
+  }
+
+  // Bearing pelo deslocamento real entre dois pontos (nao pelo `course` bruto
+  // do rastreador, que oscila/"dança" a baixa velocidade ou com ruido de GPS).
+  double? _bearingBetweenCoords(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const metersPerDegreeLat = 111320.0;
+    final avgLatRad = (lat1 + lat2) / 2 * math.pi / 180.0;
+    final dLatMeters = (lat2 - lat1) * metersPerDegreeLat;
+    final dLonMeters = (lon2 - lon1) * metersPerDegreeLat * math.cos(avgLatRad);
+    final distanceMeters =
+        math.sqrt(dLatMeters * dLatMeters + dLonMeters * dLonMeters);
+    // Abaixo disso o deslocamento e ruido de GPS, nao movimento real -- nao
+    // da pra confiar numa direcao vinda de um salto tao pequeno.
+    if (distanceMeters < 5.0) return null;
+
+    final lat1Rad = lat1 * math.pi / 180.0;
+    final lat2Rad = lat2 * math.pi / 180.0;
+    final deltaLngRad = (lon2 - lon1) * math.pi / 180.0;
+    final y = math.sin(deltaLngRad) * math.cos(lat2Rad);
+    final x = math.cos(lat1Rad) * math.sin(lat2Rad) -
+        math.sin(lat1Rad) * math.cos(lat2Rad) * math.cos(deltaLngRad);
+    final bearingRad = math.atan2(y, x);
+    return _normalizeBearing((bearingRad * 180.0 / math.pi + 360.0) % 360.0);
+  }
+
+  // Direcao do carrinho no replay simples: prioriza o rumo do deslocamento
+  // real entre pontos (estavel, aponta pra onde o carro esta de fato indo na
+  // via) em vez do `course` bruto do rastreador. Parado ou com ponto muito
+  // proximo do vizinho, mantem a ultima direcao resolvida em vez de girar.
+  double? _resolveReplayBearing(List<_ReplayPoint> points, int? index) {
+    if (index == null || points.isEmpty || index < 0 || index >= points.length) {
+      return _lastResolvedReplayBearing;
+    }
+    final current = points[index];
+
+    if (index + 1 < points.length) {
+      final forward = _bearingBetweenCoords(
+        current.latitude,
+        current.longitude,
+        points[index + 1].latitude,
+        points[index + 1].longitude,
+      );
+      if (forward != null) {
+        _lastResolvedReplayBearing = forward;
+        return forward;
+      }
+    }
+
+    if (index > 0) {
+      final backward = _bearingBetweenCoords(
+        points[index - 1].latitude,
+        points[index - 1].longitude,
+        current.latitude,
+        current.longitude,
+      );
+      if (backward != null) {
+        _lastResolvedReplayBearing = backward;
+        return backward;
+      }
+    }
+
+    final rawCourse = _normalizeBearing(current.course);
+    if (rawCourse != null) {
+      _lastResolvedReplayBearing = rawCourse;
+      return rawCourse;
+    }
+
+    return _lastResolvedReplayBearing;
   }
 
   DateTime? _interpolateDateTime(
@@ -1610,6 +1684,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final selectedReplaySegments = replayModeActive
         ? _splitReplaySegments(replayPoints)
         : const <List<gmaps.LatLng>>[];
+    final resolvedReplayBearing = replayModeActive
+        ? _resolveReplayBearing(replayPoints, replayIndex)
+        : null;
     _followReplayPointIfNeeded(selectedReplayPoint, effectiveSelectedDeviceId);
     _followReportRoutePointIfNeeded(
       reportRouteActivePoint,
@@ -1699,6 +1776,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   selectedReplayPath: selectedReplayPath,
                   selectedReplaySegments: selectedReplaySegments,
                   selectedReplayPoint: selectedReplayPoint,
+                  resolvedReplayBearing: resolvedReplayBearing,
                   geofenceList: geofenceList,
                   reportRoutePath: reportRoutePath,
                   reportRouteMatchedSegments: reportRouteMatchedSegments,
@@ -2975,6 +3053,7 @@ class _OperationalMap extends StatelessWidget {
     required this.selectedReplayPath,
     this.selectedReplaySegments = const [],
     required this.selectedReplayPoint,
+    this.resolvedReplayBearing,
     this.geofenceList = const [],
     required this.reportRoutePath,
     this.reportRouteMatchedSegments = const [],
@@ -2998,6 +3077,7 @@ class _OperationalMap extends StatelessWidget {
   final List<gmaps.LatLng> selectedReplayPath;
   final List<List<gmaps.LatLng>> selectedReplaySegments;
   final _ReplayPoint? selectedReplayPoint;
+  final double? resolvedReplayBearing;
   final List<Map<String, dynamic>> geofenceList;
   final List<gmaps.LatLng> reportRoutePath;
   final List<List<gmaps.LatLng>> reportRouteMatchedSegments;
@@ -3540,7 +3620,8 @@ class _OperationalMap extends StatelessWidget {
           final statusSummary = snapshot.speed != null
               ? '${snapshot.statusLabel} - ${snapshot.speedLabel}'
               : snapshot.statusLabel;
-          final course = selectedReplayPoint?.course ??
+          final course = (isSelectedRouteVehicle ? resolvedReplayBearing : null) ??
+              selectedReplayPoint?.course ??
               reportRouteActiveBearing ??
               snapshot.markerRotation;
           final bearing8 = _courseToBucket8(course);
