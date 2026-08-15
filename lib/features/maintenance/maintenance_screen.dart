@@ -153,7 +153,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     final client = ref.read(traccarClientProvider);
 
     try {
-      await client.createEntity(
+      final created = await client.createEntity(
         path: '/maintenance',
         cookie: session.cookie,
         authHeader: session.authHeader,
@@ -162,9 +162,21 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
           'type': _type,
           'start': start,
           'period': period,
-          'deviceId': _deviceId,
         },
       );
+      // O Traccar nao aceita deviceId dentro do objeto de manutencao -- o
+      // vinculo com o veiculo e uma entidade de permissao separada, igual
+      // acontece com usuario/dispositivo. Sem isso o plano fica criado mas
+      // nunca aparece vinculado a nenhum veiculo.
+      final createdId = created['id'];
+      if (createdId != null) {
+        await client.createEntity(
+          path: '/permissions',
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          body: {'deviceId': _deviceId, 'maintenanceId': createdId},
+        );
+      }
       ref.invalidate(maintenanceProvider);
       _nameController.clear();
       _startController.clear();
