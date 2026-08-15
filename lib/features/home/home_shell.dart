@@ -22,7 +22,7 @@ import '../../widgets/dial_gauge.dart';
 import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
 import '../calls/calls_screen.dart';
-import '../communication/zpro_communication_screen.dart';
+import '../communication/communication_screen.dart';
 import '../common/placeholder_screen.dart';
 import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
@@ -2782,7 +2782,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildCommunicationPanel() {
-    return ZproCommunicationScreen(onClose: _closePanel);
+    return CommunicationScreen(onClose: _closePanel);
   }
 
   Widget _buildAiOperationsPanel() {

@@ -8,17 +8,17 @@ import '../../state/session_state.dart';
 
 enum _CommunicationTab { conversations, notifications }
 
-class ZproCommunicationScreen extends ConsumerStatefulWidget {
-  const ZproCommunicationScreen({super.key, this.onClose});
+class CommunicationScreen extends ConsumerStatefulWidget {
+  const CommunicationScreen({super.key, this.onClose});
   final VoidCallback? onClose;
 
   @override
-  ConsumerState<ZproCommunicationScreen> createState() =>
-      _ZproCommunicationScreenState();
+  ConsumerState<CommunicationScreen> createState() =>
+      _CommunicationScreenState();
 }
 
-class _ZproCommunicationScreenState
-    extends ConsumerState<ZproCommunicationScreen> {
+class _CommunicationScreenState
+    extends ConsumerState<CommunicationScreen> {
   final _messageController = TextEditingController();
   final _searchController = TextEditingController();
 

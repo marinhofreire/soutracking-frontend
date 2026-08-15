@@ -71,8 +71,8 @@ const bool kEnableRoadSpeedLimits = bool.fromEnvironment(
   'ENABLE_ROAD_SPEED_LIMITS',
   defaultValue: true,
 );
-const String kZproPanelUrl = String.fromEnvironment(
-  'ZPRO_PANEL_URL',
+const String kExternalPanelUrl = String.fromEnvironment(
+  'EXTERNAL_PANEL_URL',
   defaultValue: '',
 );
 const String kPlatformWhatsAppNumber = String.fromEnvironment(
