@@ -49,6 +49,18 @@ String _resolveSouAssistBaseUrl() {
     return traccarEnv;
   }
 
+  // Mesma logica do Traccar: em producao web via HTTPS/Cloudflare Pages, usa
+  // o proprio origin (proxy /api cuida da ponte HTTPS -> HTTP legado) para
+  // evitar bloqueio de Mixed Content ao chamar http:// a partir de https://.
+  if (kIsWeb) {
+    final uri = Uri.base;
+    final isHttps = uri.scheme == 'https';
+    final isCloudflarePages = uri.host.toLowerCase().endsWith('.pages.dev');
+    if (isHttps || isCloudflarePages) {
+      return uri.origin;
+    }
+  }
+
   return _kDefaultSouAssistHttpOrigin;
 }
 
