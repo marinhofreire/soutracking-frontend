@@ -5225,6 +5225,7 @@ class _TopSearchBar extends StatelessWidget {
                   profileDetail: profileDetail,
                   compactMenu: compactProfileMenu,
                   avatarOnly: true,
+                  onOpenQuickSettings: onOpenSettingsPanel,
                 ),
               ],
             ),
