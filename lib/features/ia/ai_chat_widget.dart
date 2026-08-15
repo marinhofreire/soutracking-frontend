@@ -118,7 +118,7 @@ class _AiChatFloatingWidgetState extends ConsumerState<AiChatFloatingWidget> {
   Widget build(BuildContext context) {
     return Positioned(
       right: 20,
-      bottom: 20,
+      bottom: 100,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
