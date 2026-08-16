@@ -319,6 +319,62 @@ class IaNotifier extends StateNotifier<IaState> {
   }
 }
 
+// ── SouCall: tickets/conversas reais ────────────────────────────────────────────
+
+class SoucallTicket {
+  const SoucallTicket({
+    required this.id,
+    required this.contactName,
+    required this.lastMessage,
+    required this.status,
+    required this.unreadMessages,
+    required this.updatedAt,
+    required this.channel,
+  });
+
+  final int id;
+  final String contactName;
+  final String lastMessage;
+  final String status;
+  final int unreadMessages;
+  final DateTime updatedAt;
+  final String channel;
+
+  factory SoucallTicket.fromJson(Map<String, dynamic> j) => SoucallTicket(
+        id: (j['id'] as num?)?.toInt() ?? 0,
+        contactName: (j['name'] as String?)?.trim().isNotEmpty == true
+            ? j['name'] as String
+            : 'Contato',
+        lastMessage: (j['lastMessage'] as String?) ?? '',
+        status: (j['status'] as String?) ?? 'pending',
+        unreadMessages: (j['unreadMessages'] as num?)?.toInt() ?? 0,
+        updatedAt: DateTime.tryParse(j['updatedAt']?.toString() ?? '') ??
+            DateTime.now(),
+        channel: (j['channel'] as String?) ?? 'whatsapp',
+      );
+}
+
+final soucallTicketsProvider =
+    FutureProvider.autoDispose<List<SoucallTicket>>((ref) async {
+  final config = ref.watch(bridgeConfigProvider);
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) return const [];
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/soucall/tickets');
+    final resp = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${config.bridgeApiKey}',
+    }).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return const [];
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final list = (body['data']?['data'] as List? ?? [])
+        .map((e) => SoucallTicket.fromJson(e as Map<String, dynamic>))
+        .toList();
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
+  } catch (_) {
+    return const [];
+  }
+});
+
 // ── Legacy methods (kept for compatibility) ────────────────────────────────────
 
 class BridgeClient {

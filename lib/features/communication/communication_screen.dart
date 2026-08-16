@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/display_text_formatter.dart';
+import '../../data/bridge_client.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 
@@ -188,8 +189,8 @@ class _CommunicationScreenState
         ref.watch(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
     final positions =
         ref.watch(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
-    final commands = ref.watch(commandsProvider).valueOrNull ??
-        const <Map<String, dynamic>>[];
+    final tickets = ref.watch(soucallTicketsProvider).valueOrNull ??
+        const <SoucallTicket>[];
     final notifications = ref.watch(notificationsProvider).valueOrNull ??
         const <Map<String, dynamic>>[];
 
@@ -198,11 +199,7 @@ class _CommunicationScreenState
     };
     final devicesById = <int, TraccarDevice>{for (final d in devices) d.id: d};
 
-    final conversationRows = _buildConversationRows(
-      commands: commands,
-      devicesById: devicesById,
-      latestByDevice: latestByDevice,
-    );
+    final conversationRows = _buildConversationRows(tickets: tickets);
     final notificationRows = _buildNotificationRows(
       notifications: notifications,
       devicesById: devicesById,
@@ -277,7 +274,7 @@ class _CommunicationScreenState
             ),
             IconButton(
               onPressed: () {
-                ref.invalidate(commandsProvider);
+                ref.invalidate(soucallTicketsProvider);
                 ref.invalidate(notificationsProvider);
               },
               icon: const Icon(Icons.refresh_rounded),
@@ -836,54 +833,30 @@ class _CommunicationScreenState
   // ── Builders ───────────────────────────────────────────────────────────────
 
   List<_CommunicationRow> _buildConversationRows({
-    required List<Map<String, dynamic>> commands,
-    required Map<int, TraccarDevice> devicesById,
-    required Map<int, TraccarPosition> latestByDevice,
+    required List<SoucallTicket> tickets,
   }) {
-    final rows = <_CommunicationRow>[];
-    for (final item in commands) {
-      final deviceId = _toInt(item['deviceId']) ?? -1;
-      final device = devicesById[deviceId];
-      final position = latestByDevice[deviceId];
-
-      final rawType =
-          formatDisplayText(item['type'], fallback: 'custom').toLowerCase();
-      final channel = switch (rawType) {
-        'engineStop' || 'engineResume' || 'positionSingle' => 'Comando',
-        'alarm' => 'Notificação',
-        _ => 'Mensagem',
+    final rows = tickets.map((ticket) {
+      final statusLabel = switch (ticket.status) {
+        'pending' => 'Aguardando',
+        'open' => 'Em atendimento',
+        'closed' => 'Encerrado',
+        _ => formatDisplayText(ticket.status),
       };
-
-      final attrs = item['attributes'];
-      final attrMap =
-          attrs is Map ? attrs.cast<String, dynamic>() : const <String, dynamic>{};
-      final message = formatDisplayText(
-        item['description'] ??
-            attrMap['message'] ??
-            attrMap['data'] ??
-            item['text'] ??
-            'Não informado',
+      return _CommunicationRow(
+        id: 'ticket-${ticket.id}',
+        deviceId: ticket.id,
+        deviceName: ticket.contactName,
+        channel: 'WhatsApp',
+        message: ticket.lastMessage.isEmpty
+            ? 'Sem mensagem'
+            : ticket.lastMessage,
+        status: statusLabel,
+        dateTime: ticket.updatedAt,
+        onlineStatus: ticket.unreadMessages > 0
+            ? '${ticket.unreadMessages} não lida(s)'
+            : 'Lido',
       );
-      final status = formatDisplayText(item['status'] ?? 'Enviado');
-      final dateTime = _parseDateTime(
-            item['sentAt'] ??
-                item['serverTime'] ??
-                item['deviceTime'] ??
-                item['fixTime'],
-          ) ??
-          DateTime.now();
-
-      rows.add(_CommunicationRow(
-        id: 'cmd-${item['id'] ?? rows.length}-$deviceId',
-        deviceId: deviceId,
-        deviceName: formatDisplayText(device?.name),
-        channel: channel,
-        message: message,
-        status: status,
-        dateTime: dateTime,
-        onlineStatus: _deviceStatusLabel(device, position),
-      ));
-    }
+    }).toList();
     rows.sort((a, b) => b.dateTime.compareTo(a.dateTime));
     return rows;
   }
