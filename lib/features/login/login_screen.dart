@@ -26,7 +26,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   static const _emailFieldRefRect = Rect.fromLTWH(569, 450, 532, 96);
   static const _passwordFieldRefRect = Rect.fromLTWH(569, 560, 532, 96);
   static const _forgotButtonRefRect = Rect.fromLTWH(928, 684, 188, 42);
-  static const _submitButtonRefRect = Rect.fromLTWH(569, 713, 540, 77);
+  static const _submitButtonRefRect = Rect.fromLTWH(569, 681, 539, 70);
   static const _errorRefRect = Rect.fromLTWH(569, 798, 540, 36);
 
   @override
@@ -472,6 +472,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     required bool isLoading,
   }) {
     return Scaffold(
+      // A imagem de fundo (pixel-perfect) fica com zoom de 95% de propósito
+      // (_pixelRefZoom), sobrando uma margem fina nas bordas em telas com
+      // proporção diferente da imagem (celular, por exemplo). Sem essa cor
+      // de fundo, essa margem aparecia branca -- destoando do resto da tela
+      // escura e parecendo erro visual.
+      backgroundColor: const Color(0xFF0A0E17),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final viewport = Size(constraints.maxWidth, constraints.maxHeight);
