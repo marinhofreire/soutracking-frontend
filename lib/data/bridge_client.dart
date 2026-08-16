@@ -422,6 +422,112 @@ final soucallTicketsProvider =
   }
 });
 
+// ── SouFind: chamados reais (OS de assistência veicular) ────────────────────
+
+class ChamadoOs {
+  const ChamadoOs({
+    required this.id,
+    required this.bookingNumber,
+    required this.status,
+    required this.tipo,
+    required this.origem,
+    required this.destino,
+    required this.latitude,
+    required this.longitude,
+    required this.parceiro,
+    required this.valor,
+    required this.criadoEm,
+    required this.brandNome,
+  });
+
+  final int id;
+  final String bookingNumber;
+  final String status; // aguardando | em_andamento | finalizada | cancelada
+  final String tipo;
+  final String origem;
+  final String destino;
+  final double latitude;
+  final double longitude;
+  final String? parceiro;
+  final double valor;
+  final DateTime criadoEm;
+  final String? brandNome;
+
+  factory ChamadoOs.fromJson(Map<String, dynamic> j) => ChamadoOs(
+        id: (j['id'] as num?)?.toInt() ?? 0,
+        bookingNumber: (j['booking_number'] as String?) ?? '#${j['id']}',
+        status: (j['status'] as String?) ?? 'aguardando',
+        tipo: (j['tipo'] as String?) ?? 'socorro',
+        origem: (j['origem'] as String?) ?? '',
+        destino: (j['destino'] as String?) ?? '',
+        latitude: (j['lat'] as num?)?.toDouble() ?? 0,
+        longitude: (j['lng'] as num?)?.toDouble() ?? 0,
+        parceiro: (j['parceiro'] as String?)?.trim().isNotEmpty == true
+            ? (j['parceiro'] as String).trim()
+            : null,
+        valor: (j['valor'] as num?)?.toDouble() ?? 0,
+        criadoEm: DateTime.tryParse(j['criado_em']?.toString() ?? '') ??
+            DateTime.now(),
+        brandNome: j['brand_nome'] as String?,
+      );
+}
+
+class ChamadosStats {
+  const ChamadosStats({
+    required this.total,
+    required this.aguardando,
+    required this.emAndamento,
+    required this.finalizadas,
+  });
+  final int total;
+  final int aguardando;
+  final int emAndamento;
+  final int finalizadas;
+
+  factory ChamadosStats.fromJson(Map<String, dynamic> j) => ChamadosStats(
+        total: (j['total'] as num?)?.toInt() ?? 0,
+        aguardando: (j['aguardando'] as num?)?.toInt() ?? 0,
+        emAndamento: (j['emAndamento'] as num?)?.toInt() ?? 0,
+        finalizadas: (j['finalizadas'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class ChamadosResult {
+  const ChamadosResult({required this.os, required this.stats});
+  final List<ChamadoOs> os;
+  final ChamadosStats stats;
+  static const empty = ChamadosResult(
+    os: [],
+    stats: ChamadosStats(total: 0, aguardando: 0, emAndamento: 0, finalizadas: 0),
+  );
+}
+
+final chamadosProvider = FutureProvider.autoDispose<ChamadosResult>((ref) async {
+  final config = ref.watch(bridgeConfigProvider);
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) {
+    return ChamadosResult.empty;
+  }
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/soufind/chamados');
+    final resp = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${config.bridgeApiKey}',
+    }).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return ChamadosResult.empty;
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>?;
+    if (data == null || data['success'] != true) return ChamadosResult.empty;
+    final osList = (data['os'] as List? ?? [])
+        .map((e) => ChamadoOs.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final stats = ChamadosStats.fromJson(
+      (data['stats'] as Map<String, dynamic>?) ?? const {},
+    );
+    return ChamadosResult(os: osList, stats: stats);
+  } catch (_) {
+    return ChamadosResult.empty;
+  }
+});
+
 // ── Legacy methods (kept for compatibility) ────────────────────────────────────
 
 class BridgeClient {
