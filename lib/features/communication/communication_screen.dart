@@ -189,8 +189,13 @@ class _CommunicationScreenState
         ref.watch(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
     final positions =
         ref.watch(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
-    final tickets = ref.watch(soucallTicketsProvider).valueOrNull ??
-        const <SoucallTicket>[];
+    final ticketsAsync = ref.watch(soucallTicketsProvider);
+    final tickets = ticketsAsync.valueOrNull ?? const <SoucallTicket>[];
+    final ticketsDebug = ticketsAsync.isLoading
+        ? 'carregando...'
+        : ticketsAsync.hasError
+            ? 'erro: ${ticketsAsync.error}'
+            : 'ok (${tickets.length})';
     final notifications = ref.watch(notificationsProvider).valueOrNull ??
         const <Map<String, dynamic>>[];
 
@@ -425,6 +430,9 @@ class _CommunicationScreenState
                 flex: 5,
                 child: _leftListPanel(
                   rows: filteredRows,
+                  emptySubtitle: _activeTab == _CommunicationTab.conversations
+                      ? 'SouCall: $ticketsDebug'
+                      : 'Atualize os filtros ou aguarde novos dados',
                   onSelect: (row) => setState(() {
                     _selectedRow = row;
                     _selectedDeviceId = row.deviceId;
@@ -454,6 +462,7 @@ class _CommunicationScreenState
   Widget _leftListPanel({
     required List<_CommunicationRow> rows,
     required ValueChanged<_CommunicationRow> onSelect,
+    String emptySubtitle = 'Atualize os filtros ou aguarde novos dados',
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -481,10 +490,10 @@ class _CommunicationScreenState
           ),
           Expanded(
             child: rows.isEmpty
-                ? const _EmptyMessage(
+                ? _EmptyMessage(
                     icon: Icons.chat_bubble_outline_rounded,
                     title: 'Nenhum registro encontrado',
-                    subtitle: 'Atualize os filtros ou aguarde novos dados',
+                    subtitle: emptySubtitle,
                   )
                 : ListView.separated(
                     itemCount: rows.length,
