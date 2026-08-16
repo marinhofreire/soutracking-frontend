@@ -330,6 +330,7 @@ class SoucallTicket {
     required this.unreadMessages,
     required this.updatedAt,
     required this.channel,
+    required this.isGroup,
   });
 
   final int id;
@@ -339,6 +340,11 @@ class SoucallTicket {
   final int unreadMessages;
   final DateTime updatedAt;
   final String channel;
+  final bool isGroup;
+
+  /// Número de telefone bruto (só existe pra contatos individuais — em
+  /// grupos o campo `name` é o nome do grupo, não dá pra mandar mensagem).
+  String? get phone => isGroup ? null : contactName;
 
   factory SoucallTicket.fromJson(Map<String, dynamic> j) => SoucallTicket(
         id: (j['id'] as num?)?.toInt() ?? 0,
@@ -351,7 +357,48 @@ class SoucallTicket {
         updatedAt: DateTime.tryParse(j['updatedAt']?.toString() ?? '') ??
             DateTime.now(),
         channel: (j['channel'] as String?) ?? 'whatsapp',
+        isGroup: j['isGroup'] == true,
       );
+}
+
+/// Envia uma mensagem de texto real via WhatsApp (SouCall) pra um ticket.
+Future<({bool success, String? error})> sendSoucallMessage(
+  BridgeConfig config, {
+  required String phone,
+  required String message,
+  int? ticketId,
+}) async {
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) {
+    return (success: false, error: 'Bridge não configurado');
+  }
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/soucall/send-message');
+    final resp = await http
+        .post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer ${config.bridgeApiKey}',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'phone': phone,
+            'message': message,
+            'ticketId': ticketId,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (resp.statusCode != 200) {
+      return (success: false, error: 'HTTP ${resp.statusCode}: ${resp.body}');
+    }
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final ok = body['ok'] == true && body['result']?['success'] == true;
+    return (
+      success: ok,
+      error: ok ? null : (body['result']?['error']?.toString() ?? 'Falha ao enviar'),
+    );
+  } catch (err) {
+    return (success: false, error: '$err');
+  }
 }
 
 final soucallTicketsProvider =

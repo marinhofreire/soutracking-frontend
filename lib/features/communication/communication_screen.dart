@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/display_text_formatter.dart';
 import '../../data/bridge_client.dart';
+import '../../data/bridge_config.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 
@@ -28,6 +29,7 @@ class _CommunicationScreenState
   String _selectedStatus = 'Todos';
   String _selectedPeriod = 'Hoje';
   int? _selectedDeviceId;
+  SoucallTicket? _selectedTicket;
   _CommunicationRow? _selectedRow;
   bool _sending = false;
   String _pendingCommandType = 'custom';
@@ -47,6 +49,11 @@ class _CommunicationScreenState
   }
 
   Future<void> _sendMessage() async {
+    if (_activeTab == _CommunicationTab.conversations) {
+      await _sendWhatsappMessage();
+      return;
+    }
+
     if (_selectedDeviceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecione um equipamento.')),
@@ -93,6 +100,55 @@ class _CommunicationScreenState
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _sendWhatsappMessage() async {
+    final ticket = _selectedTicket;
+    if (ticket == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecione uma conversa.')),
+      );
+      return;
+    }
+    final phone = ticket.phone;
+    if (phone == null || phone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não é possível enviar mensagem direta para um grupo.'),
+        ),
+      );
+      return;
+    }
+
+    final text = _messageController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Digite uma mensagem.')),
+      );
+      return;
+    }
+
+    setState(() => _sending = true);
+    final config = ref.read(bridgeConfigProvider);
+    final result = await sendSoucallMessage(
+      config,
+      phone: phone,
+      message: text,
+      ticketId: ticket.id,
+    );
+    if (!mounted) return;
+    if (result.success) {
+      ref.invalidate(soucallTicketsProvider);
+      _messageController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mensagem enviada via WhatsApp.')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao enviar: ${result.error}')),
+      );
+    }
+    setState(() => _sending = false);
   }
 
   void _setQuickCommand({required String type, required String message}) {
@@ -189,13 +245,8 @@ class _CommunicationScreenState
         ref.watch(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
     final positions =
         ref.watch(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
-    final ticketsAsync = ref.watch(soucallTicketsProvider);
-    final tickets = ticketsAsync.valueOrNull ?? const <SoucallTicket>[];
-    final ticketsDebug = ticketsAsync.isLoading
-        ? 'carregando...'
-        : ticketsAsync.hasError
-            ? 'erro: ${ticketsAsync.error}'
-            : 'ok (${tickets.length})';
+    final tickets =
+        ref.watch(soucallTicketsProvider).valueOrNull ?? const <SoucallTicket>[];
     final notifications = ref.watch(notificationsProvider).valueOrNull ??
         const <Map<String, dynamic>>[];
 
@@ -229,9 +280,13 @@ class _CommunicationScreenState
         selectedDevice == null ? null : latestByDevice[selectedDevice.id];
     final selectedStatus = _deviceStatusLabel(selectedDevice, selectedPosition);
     final selectedStatusColor = _statusColor(selectedStatus);
-    final conversationHistory = activeRows
-        .where((row) => row.deviceId == _selectedDeviceId)
-        .toList(growable: false);
+    final conversationHistory = _activeTab == _CommunicationTab.conversations
+        ? activeRows
+            .where((row) => row.ticket?.id == _selectedTicket?.id)
+            .toList(growable: false)
+        : activeRows
+            .where((row) => row.deviceId == _selectedDeviceId)
+            .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -430,25 +485,32 @@ class _CommunicationScreenState
                 flex: 5,
                 child: _leftListPanel(
                   rows: filteredRows,
-                  emptySubtitle: _activeTab == _CommunicationTab.conversations
-                      ? 'SouCall: $ticketsDebug'
-                      : 'Atualize os filtros ou aguarde novos dados',
+                  emptySubtitle: 'Atualize os filtros ou aguarde novos dados',
                   onSelect: (row) => setState(() {
                     _selectedRow = row;
-                    _selectedDeviceId = row.deviceId;
+                    if (_activeTab == _CommunicationTab.conversations) {
+                      _selectedTicket = row.ticket;
+                    } else {
+                      _selectedDeviceId = row.deviceId;
+                    }
                   }),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 4,
-                child: _rightConversationPanel(
-                  selectedDevice: selectedDevice,
-                  selectedPosition: selectedPosition,
-                  selectedStatus: selectedStatus,
-                  selectedStatusColor: selectedStatusColor,
-                  history: conversationHistory,
-                ),
+                child: _activeTab == _CommunicationTab.conversations
+                    ? _rightWhatsappPanel(
+                        ticket: _selectedTicket,
+                        history: conversationHistory,
+                      )
+                    : _rightConversationPanel(
+                        selectedDevice: selectedDevice,
+                        selectedPosition: selectedPosition,
+                        selectedStatus: selectedStatus,
+                        selectedStatusColor: selectedStatusColor,
+                        history: conversationHistory,
+                      ),
               ),
             ],
           ),
@@ -576,7 +638,193 @@ class _CommunicationScreenState
     );
   }
 
-  // ── Right panel ────────────────────────────────────────────────────────────
+  // ── Right panel (WhatsApp / SouCall) ────────────────────────────────────────
+
+  Widget _rightWhatsappPanel({
+    required SoucallTicket? ticket,
+    required List<_CommunicationRow> history,
+  }) {
+    final canSend = ticket?.phone != null;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.chat_rounded,
+                    color: Color(0xFF25D366),
+                    size: 17,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ticket == null ? 'Selecione um contato' : formatDisplayText(ticket.contactName),
+                        style: const TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (ticket != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          canSend ? 'WhatsApp • ${ticket.phone}' : 'Grupo do WhatsApp (só leitura)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF60718D),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ticket == null
+                ? const _EmptyMessage(
+                    icon: Icons.forum_rounded,
+                    title: 'Nenhuma conversa selecionada',
+                    subtitle: 'Selecione um registro na lista ao lado',
+                  )
+                : history.isEmpty
+                    ? const _EmptyMessage(
+                        icon: Icons.sms_outlined,
+                        title: 'Sem histórico desta conversa',
+                        subtitle: 'A última mensagem ainda não carregou',
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        itemCount: history.length,
+                        itemBuilder: (context, index) {
+                          final row = history[index];
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                              constraints: const BoxConstraints(maxWidth: 340),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0FDF4),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFD3F5DE)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    row.message,
+                                    style: const TextStyle(
+                                      color: Color(0xFF1F2A44),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_formatDateTime(row.dateTime)} • ${row.status}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF60718D),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    minLines: 1,
+                    maxLines: 3,
+                    enabled: canSend,
+                    style: const TextStyle(fontSize: 12.5),
+                    decoration: InputDecoration(
+                      hintText: canSend
+                          ? 'Digite uma mensagem...'
+                          : 'Selecione uma conversa individual pra responder',
+                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9DB1CC)),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      filled: true,
+                      fillColor: const Color(0xFFF7F9FD),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF25D366)),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: (!canSend || _sending) ? null : _sendMessage,
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded, size: 16),
+                  label: Text(
+                    _sending ? 'Enviando...' : 'Enviar',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _rightConversationPanel({
     required TraccarDevice? selectedDevice,
@@ -853,7 +1101,7 @@ class _CommunicationScreenState
       };
       return _CommunicationRow(
         id: 'ticket-${ticket.id}',
-        deviceId: ticket.id,
+        deviceId: -1,
         deviceName: ticket.contactName,
         channel: 'WhatsApp',
         message: ticket.lastMessage.isEmpty
@@ -864,6 +1112,7 @@ class _CommunicationScreenState
         onlineStatus: ticket.unreadMessages > 0
             ? '${ticket.unreadMessages} não lida(s)'
             : 'Lido',
+        ticket: ticket,
       );
     }).toList();
     rows.sort((a, b) => b.dateTime.compareTo(a.dateTime));
@@ -1161,6 +1410,16 @@ class _CommunicationScreenState
 // ── Data model ─────────────────────────────────────────────────────────────────
 
 class _CommunicationRow {
+  final String id;
+  final int deviceId;
+  final String deviceName;
+  final String channel;
+  final String message;
+  final String status;
+  final DateTime dateTime;
+  final String onlineStatus;
+  final SoucallTicket? ticket;
+
   const _CommunicationRow({
     required this.id,
     required this.deviceId,
@@ -1170,16 +1429,8 @@ class _CommunicationRow {
     required this.status,
     required this.dateTime,
     required this.onlineStatus,
+    this.ticket,
   });
-
-  final String id;
-  final int deviceId;
-  final String deviceName;
-  final String channel;
-  final String message;
-  final String status;
-  final DateTime dateTime;
-  final String onlineStatus;
 }
 
 // ── Shared widgets ──────────────────────────────────────────────────────────────
