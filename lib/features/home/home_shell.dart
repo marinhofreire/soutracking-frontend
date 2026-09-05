@@ -735,6 +735,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _kpiListOpen = false;
       _selectedVehicle = null;
       _vehiclePanelMode = _VehiclePanelMode.summary;
+      // Telemetria ao vivo ficava aberta atrás de qualquer painel de menu
+      // (ex: Financeiro) -- faltava zerar aqui, só tinha sido corrigido pra
+      // barra inferior antes (2026-09-06).
+      _liveGaugesDeviceId = null;
     });
   }
 
