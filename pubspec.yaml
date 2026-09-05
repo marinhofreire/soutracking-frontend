@@ -43,6 +43,7 @@ dependencies:
   url_launcher: ^6.3.1
   file_picker: ^8.1.7
   pointer_interceptor: ^0.10.1+2
+  crypto: ^3.0.5
 
 dev_dependencies:
   flutter_test:
@@ -73,6 +74,18 @@ flutter:
     - assets/branding/pixel_screens/
     - assets/config/menu_master.json
     - assets/icons/map/
+    - assets/icons/map_sprites/car/
+    - assets/icons/map_sprites/motorcycle/
+    - assets/icons/map_sprites/truck/
+    - assets/icons/map_sprites/van/
+    - assets/icons/map_sprites/pickup/
+    - assets/icons/map_sprites/crane/
+    - assets/icons/map_sprites/scooter/
+    - assets/icons/map_sprites/offroad/
+    - assets/icons/map_sprites/tractor/
+    - assets/icons/map_sprites/boat/
+    - assets/icons/map_sprites/excavator/
+    - assets/icons/map_sprites/backhoe/
     - assets/markers/
 
   # An image asset can refer to one or more resolution-specific "variants", see

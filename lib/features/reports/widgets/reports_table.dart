@@ -26,7 +26,7 @@ class ReportsTable extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD6E0EE)),
       ),

@@ -111,11 +111,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         : const EdgeInsets.symmetric(horizontal: 28, vertical: 26);
     const brandAccent = Color(0xFFF9C61B);
 
+    final customBackground = config.loginBackgroundImage?.trim() ?? '';
+
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const _LoginBackdrop(),
+          // White-label: se o cliente definiu uma imagem própria de fundo
+          // do login, ela substitui o backdrop desenhado por código
+          // (gradiente + skyline). Sem imagem definida, comportamento
+          // original preservado.
+          if (customBackground.isNotEmpty)
+            Image(
+              image: customBackground.startsWith('data:')
+                  ? NetworkImage(customBackground) as ImageProvider
+                  : AssetImage(customBackground),
+              fit: BoxFit.cover,
+            )
+          else
+            const _LoginBackdrop(),
+          if (customBackground.isNotEmpty)
+            const DecoratedBox(
+              decoration: BoxDecoration(color: Color(0x99010914)),
+            ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(

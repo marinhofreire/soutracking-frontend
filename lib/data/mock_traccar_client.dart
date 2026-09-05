@@ -60,7 +60,11 @@ class MockTraccarClient extends TraccarClient {
   Future<List<TraccarDevice>> getDevices({
     String? cookie,
     String? authHeader,
+    int? id,
   }) async {
+    if (id != null) {
+      return _devices.where((d) => d.id == id).toList();
+    }
     return _devices;
   }
 

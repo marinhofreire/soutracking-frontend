@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../admin/admin_reference_ui.dart';
-
 class DriversFiltersBar extends StatelessWidget {
   const DriversFiltersBar({
     super.key,
@@ -17,6 +15,7 @@ class DriversFiltersBar extends StatelessWidget {
     required this.onVehicleChanged,
     required this.onCnhChanged,
     required this.onMoreFilters,
+    required this.onCreateDriver,
   });
 
   final TextEditingController searchController;
@@ -31,96 +30,64 @@ class DriversFiltersBar extends StatelessWidget {
   final ValueChanged<String> onVehicleChanged;
   final ValueChanged<String> onCnhChanged;
   final VoidCallback onMoreFilters;
+  final VoidCallback onCreateDriver;
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          SizedBox(
-            width: 320,
-            child: TextField(
-              controller: searchController,
-              onChanged: onSearchChanged,
-              decoration: const InputDecoration(
-                labelText: 'Buscar por nome, telefone ou CNH',
-                isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final search = Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.80),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD1DCEB)),
+          ),
+          child: TextField(
+            controller: searchController,
+            onChanged: onSearchChanged,
+            decoration: const InputDecoration(
+              hintText: 'Buscar motorista, telefone ou CNH...',
+              hintStyle: TextStyle(
+                color: Color(0xFF74839B),
+                fontWeight: FontWeight.w600,
               ),
+              prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF60718D)),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(vertical: 12),
             ),
           ),
-          _FilterField(
-            label: 'Status',
-            value: status,
-            options: statusOptions,
-            onChanged: onStatusChanged,
-          ),
-          _FilterField(
-            label: 'Veiculo',
-            value: vehicle,
-            options: vehicleOptions,
-            onChanged: onVehicleChanged,
-          ),
-          _FilterField(
-            label: 'CNH',
-            value: cnh,
-            options: cnhOptions,
-            onChanged: onCnhChanged,
-          ),
-          OutlinedButton.icon(
-            onPressed: onMoreFilters,
-            icon: const Icon(Icons.tune_outlined, size: 18),
-            label: const Text('Mais filtros'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterField extends StatelessWidget {
-  const _FilterField({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 190,
-      child: DropdownButtonFormField<String>(
-        value: value,
-        items: [
-          for (final option in options)
-            DropdownMenuItem<String>(
-              value: option,
-              child: Text(option),
-            ),
-        ],
-        onChanged: (next) {
-          if (next != null) onChanged(next);
-        },
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: const OutlineInputBorder(),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        ),
-      ),
+        );
+        final filters = OutlinedButton.icon(
+          onPressed: onMoreFilters,
+          icon: const Icon(Icons.filter_alt_outlined, size: 18),
+          label: const Text('Filtros'),
+        );
+        final create = FilledButton.icon(
+          onPressed: onCreateDriver,
+          icon: const Icon(Icons.add_rounded, size: 17),
+          label: const Text('Novo motorista'),
+        );
+        if (constraints.maxWidth < 760) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              search,
+              const SizedBox(height: 10),
+              Wrap(spacing: 10, runSpacing: 10, children: [filters, create]),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: search),
+            const SizedBox(width: 10),
+            filters,
+            const SizedBox(width: 10),
+            create,
+          ],
+        );
+      },
     );
   }
 }

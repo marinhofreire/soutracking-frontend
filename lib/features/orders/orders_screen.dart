@@ -133,9 +133,15 @@ class _ServiceOrdersScreenState extends ConsumerState<ServiceOrdersScreen> {
                     onVehicleChanged: (value) =>
                         setState(() => _vehicle = value),
                     onPeriodChanged: (value) => setState(() => _period = value),
+                    // Status/Prioridade/Técnico/Cliente/Veículo/Período já
+                    // cobrem os campos filtráveis do mock. Padronizado com o
+                    // resto da tela (_showMockAction) -- ver mesma decisão em
+                    // inventory_screen.dart, mesmo estado de mock declarado.
                     onMoreFilters: () {
                       _showMockAction(
-                        'Mais filtros sera habilitado na proxima etapa.',
+                        'Ordens de serviço ainda usa dado simulado -- '
+                        'filtros adicionais entram quando o módulo tiver '
+                        'integração real.',
                       );
                     },
                   ),

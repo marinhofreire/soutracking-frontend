@@ -1,5 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+
+import '../../data/bridge_client.dart';
+import '../../data/bridge_config.dart';
+import '../../data/models.dart';
+import '../../state/session_state.dart';
 
 // ── Data model ─────────────────────────────────────────────────────────────────
 
@@ -40,68 +48,60 @@ class _ExecLog {
   final String detail;
 }
 
-List<_AutoRule> _buildDemoRules() {
-  final now = DateTime.now();
-  return [
-    _AutoRule(id: 'r1', name: 'Velocidade excessiva', triggerType: _TriggerType.speed,
-      triggerLabel: 'Velocidade', condition: '> 120 km/h',
-      actions: [_ActionType.whatsapp, _ActionType.alert],
-      executions: 47, lastRun: now.subtract(const Duration(hours: 2, minutes: 14))),
-    _AutoRule(id: 'r2', name: 'Saída de cerca — Base SP', triggerType: _TriggerType.geofence,
-      triggerLabel: 'Cerca "Base SP"', condition: 'Saída detectada',
-      actions: [_ActionType.whatsapp, _ActionType.createTicket],
-      executions: 12, lastRun: now.subtract(const Duration(hours: 5))),
-    _AutoRule(id: 'r3', name: 'Ignição fora do horário', triggerType: _TriggerType.ignition,
-      triggerLabel: 'Ignição', condition: 'Entre 23h e 06h',
-      actions: [_ActionType.alert, _ActionType.notify],
-      executions: 8, lastRun: now.subtract(const Duration(days: 1, hours: 3))),
-    _AutoRule(id: 'r4', name: 'Veículo sem comunicação', triggerType: _TriggerType.noComm,
-      triggerLabel: 'Sem GPS', condition: '> 30 minutos',
-      actions: [_ActionType.alert],
-      executions: 23, lastRun: now.subtract(const Duration(hours: 8))),
-    _AutoRule(id: 'r5', name: 'Revisão por hodômetro', triggerType: _TriggerType.odometer,
-      triggerLabel: 'Hodômetro', condition: 'A cada 10.000 km',
-      actions: [_ActionType.createTicket, _ActionType.notify],
-      executions: 3, lastRun: now.subtract(const Duration(days: 12))),
-    _AutoRule(id: 'r6', name: 'Temperatura alta — Baú frio', triggerType: _TriggerType.temperature,
-      triggerLabel: 'Temperatura', condition: '> 8 °C (baú)',
-      actions: [_ActionType.alert, _ActionType.whatsapp],
-      executions: 5, lastRun: now.subtract(const Duration(days: 2)),
-      active: false),
-    _AutoRule(id: 'r7', name: 'Bateria baixa', triggerType: _TriggerType.battery,
-      triggerLabel: 'Tensão', condition: '< 11.8 V',
-      actions: [_ActionType.alert, _ActionType.createTicket],
-      executions: 9, lastRun: now.subtract(const Duration(hours: 18))),
-    _AutoRule(id: 'r8', name: 'Freio brusco detectado', triggerType: _TriggerType.harshBrake,
-      triggerLabel: 'Telemetria', condition: 'Desaceleração > 0.5g',
-      actions: [_ActionType.notify],
-      executions: 31, lastRun: now.subtract(const Duration(hours: 1))),
-    _AutoRule(id: 'r9', name: 'Relatório semanal de frota', triggerType: _TriggerType.scheduled,
-      triggerLabel: 'Agendamento', condition: 'Toda segunda-feira 08h',
-      actions: [_ActionType.report, _ActionType.whatsapp],
-      executions: 6, lastRun: now.subtract(const Duration(days: 6)),
-      hasError: true),
-  ];
+// ── Mapeamento do modelo real do bridge (BridgeRule) pro modelo de UI ──────
+// O bridge nao guarda contagem de execucoes nem ultima execucao por regra
+// ainda (so o log de disparo passa pelo terminal do pm2) -- por isso esses
+// campos ficam honestamente zerados/nulos, em vez de inventar numero.
+_TriggerType _triggerTypeFromEvento(String tipoEvento) {
+  return switch (tipoEvento) {
+    'deviceOverspeed' => _TriggerType.speed,
+    'geofenceExit' || 'geofenceEnter' => _TriggerType.geofence,
+    'ignitionOn' || 'ignitionOff' => _TriggerType.ignition,
+    'deviceOffline' || 'deviceUnknown' => _TriggerType.noComm,
+    _ => _TriggerType.scheduled,
+  };
 }
 
-List<_ExecLog> _buildDemoLog() {
-  final now = DateTime.now();
-  return [
-    _ExecLog(ruleId: 'r8', ruleName: 'Freio brusco detectado', timestamp: now.subtract(const Duration(hours: 1)), result: true, detail: 'HB20 ABC-2345 — km 47 Rod. Bandeirantes'),
-    _ExecLog(ruleId: 'r1', ruleName: 'Velocidade excessiva', timestamp: now.subtract(const Duration(hours: 2, minutes: 14)), result: true, detail: 'Strada XYZ-9981 — 134 km/h — WhatsApp enviado'),
-    _ExecLog(ruleId: 'r4', ruleName: 'Veículo sem comunicação', timestamp: now.subtract(const Duration(hours: 8)), result: true, detail: 'Caminhão Frio 01 — 35min offline — Alerta criado'),
-    _ExecLog(ruleId: 'r9', ruleName: 'Relatório semanal de frota', timestamp: now.subtract(const Duration(days: 6)), result: false, detail: 'Falha ao gerar PDF — servidor de relatórios indisponível'),
-    _ExecLog(ruleId: 'r3', ruleName: 'Ignição fora do horário', timestamp: now.subtract(const Duration(days: 1, hours: 3)), result: true, detail: 'Fiat Uno LMN-5544 — ignição 02:47 — Alerta enviado'),
-    _ExecLog(ruleId: 'r2', ruleName: 'Saída de cerca — Base SP', timestamp: now.subtract(const Duration(hours: 5)), result: true, detail: 'VW Gol PRQ-1122 — saiu de "Base SP" — Chamado aberto'),
-    _ExecLog(ruleId: 'r7', ruleName: 'Bateria baixa', timestamp: now.subtract(const Duration(hours: 18)), result: true, detail: 'Tracker ID 142 — 11.4V — Chamado criado'),
-    _ExecLog(ruleId: 'r1', ruleName: 'Velocidade excessiva', timestamp: now.subtract(const Duration(hours: 26)), result: true, detail: 'Camionete QRS-7788 — 128 km/h — WhatsApp enviado'),
-  ];
+String _triggerLabelFromEvento(String tipoEvento) {
+  return switch (tipoEvento) {
+    'deviceOverspeed' => 'Velocidade',
+    'geofenceExit' => 'Cerca (saída)',
+    'geofenceEnter' => 'Cerca (entrada)',
+    'ignitionOn' => 'Ignição ligada',
+    'ignitionOff' => 'Ignição desligada',
+    'deviceOffline' => 'Sem comunicação',
+    'any' => 'Qualquer evento',
+    _ => tipoEvento,
+  };
+}
+
+_ActionType _actionTypeFromTipo(String acaoTipo) {
+  return switch (acaoTipo) {
+    'bloquear_motor' => _ActionType.block,
+    'notificar' => _ActionType.whatsapp,
+    _ => _ActionType.notify,
+  };
+}
+
+_AutoRule _autoRuleFromBridgeRule(BridgeRule r) {
+  return _AutoRule(
+    id: r.id,
+    name: r.descricao.isNotEmpty
+        ? r.descricao
+        : '${_triggerLabelFromEvento(r.tipoEvento)} — ${r.deviceName}',
+    triggerType: _triggerTypeFromEvento(r.tipoEvento),
+    triggerLabel: _triggerLabelFromEvento(r.tipoEvento),
+    condition: r.deviceName,
+    actions: [_actionTypeFromTipo(r.acaoTipo)],
+    executions: 0, // bridge nao conta disparos por regra ainda
+    lastRun: null, // idem
+    active: r.ativo,
+  );
 }
 
 // ── Providers ──────────────────────────────────────────────────────────────────
 
-final _rulesProvider  = StateProvider<List<_AutoRule>>((ref) => _buildDemoRules());
-final _logProvider    = StateProvider<List<_ExecLog>>((ref) => _buildDemoLog());
+final _logProvider    = StateProvider<List<_ExecLog>>((ref) => const []);
 final _tabProvider    = StateProvider<int>((ref) => 0);
 final _builderOpen    = StateProvider<bool>((ref) => false);
 
@@ -113,7 +113,8 @@ class AutomationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rules   = ref.watch(_rulesProvider);
+    final rulesAsync = ref.watch(bridgeRulesProvider);
+    final rules = rulesAsync.valueOrNull?.map(_autoRuleFromBridgeRule).toList() ?? const <_AutoRule>[];
     final log     = ref.watch(_logProvider);
     final tab     = ref.watch(_tabProvider);
     final builder = ref.watch(_builderOpen);
@@ -164,7 +165,7 @@ class AutomationsScreen extends ConsumerWidget {
           ),
           const SizedBox(width: 6),
           IconButton(
-            onPressed: () => ref.invalidate(_rulesProvider),
+            onPressed: () => ref.invalidate(bridgeRulesProvider),
             icon: const Icon(Icons.refresh_rounded),
             style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
           ),
@@ -201,9 +202,9 @@ class AutomationsScreen extends ConsumerWidget {
               if (builder)
                 _RuleBuilder(
                   onClose: () => ref.read(_builderOpen.notifier).state = false,
-                  onSave: (r) {
-                    ref.read(_rulesProvider.notifier).update((list) => [...list, r]);
+                  onSaved: () {
                     ref.read(_builderOpen.notifier).state = false;
+                    ref.invalidate(bridgeRulesProvider);
                   },
                 ),
             ],
@@ -291,11 +292,11 @@ class _RulesList extends ConsumerWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _RuleCard(
         rule: rules[i],
-        onToggle: (v) => ref.read(_rulesProvider.notifier).update((list) {
-          final updated = List<_AutoRule>.from(list);
-          updated[i].active = v;
-          return updated;
-        }),
+        onToggle: (v) async {
+          final config = ref.read(bridgeConfigProvider);
+          final ok = await setBridgeRuleActive(config: config, ruleId: rules[i].id, ativo: v);
+          if (ok) ref.invalidate(bridgeRulesProvider);
+        },
       ),
     );
   }
@@ -525,20 +526,32 @@ class _ExecHistory extends StatelessWidget {
 // ── Rule builder (overlay) ─────────────────────────────────────────────────────
 
 class _RuleBuilder extends ConsumerStatefulWidget {
-  const _RuleBuilder({required this.onClose, required this.onSave});
+  const _RuleBuilder({required this.onClose, required this.onSaved});
   final VoidCallback onClose;
-  final ValueChanged<_AutoRule> onSave;
+  final VoidCallback onSaved;
 
   @override
   ConsumerState<_RuleBuilder> createState() => _RuleBuilderState();
 }
 
+// Mapa trigger de UI -> tipoEvento real que o motor de regras entende
+// (ver _relevantEventTypes no bridge). Fora daqui (odometer/temperature/
+// battery/harshBrake/scheduled) o bridge ainda nao tem esse tipo de evento
+// implementado -- por isso esses ficam desabilitados no seletor por ora.
+const _triggerToEventoReal = <_TriggerType, String>{
+  _TriggerType.speed: 'deviceOverspeed',
+  _TriggerType.geofence: 'geofenceExit',
+  _TriggerType.ignition: 'ignitionOn',
+  _TriggerType.noComm: 'deviceOffline',
+};
+
 class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
   final _nameCtrl = TextEditingController();
   _TriggerType _trigger = _TriggerType.speed;
-  final _conditionCtrl = TextEditingController(text: '> 120 km/h');
+  int? _selectedDeviceId;
   final Set<_ActionType> _actions = {_ActionType.alert};
-  int _idCounter = 100;
+  bool _saving = false;
+  String? _error;
 
   static const _triggerLabels = <_TriggerType, String>{
     _TriggerType.speed:       'Velocidade',
@@ -563,12 +576,13 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _conditionCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final devicesAsync = ref.watch(devicesProvider);
+    final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.25),
@@ -620,18 +634,28 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
                       padding: const EdgeInsets.all(12),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         DropdownButtonFormField<_TriggerType>(
-                          initialValue: _trigger,
+                          initialValue: _triggerToEventoReal.containsKey(_trigger) ? _trigger : _TriggerType.speed,
                           decoration: const InputDecoration(labelText: 'Tipo de evento', isDense: true, border: InputBorder.none),
-                          items: _TriggerType.values.map((t) => DropdownMenuItem(value: t, child: Text(_triggerLabels[t]!))).toList(),
+                          items: _triggerToEventoReal.keys
+                              .map((t) => DropdownMenuItem(value: t, child: Text(_triggerLabels[t]!)))
+                              .toList(),
                           onChanged: (v) => setState(() => _trigger = v!),
                         ),
                         const SizedBox(height: 8),
-                        TextField(
-                          controller: _conditionCtrl,
-                          decoration: const InputDecoration(labelText: 'Condição', hintText: 'ex: > 120 km/h', isDense: true, border: InputBorder.none),
+                        DropdownButtonFormField<int>(
+                          initialValue: _selectedDeviceId,
+                          decoration: const InputDecoration(labelText: 'Veículo', isDense: true, border: InputBorder.none),
+                          items: devices
+                              .map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))
+                              .toList(),
+                          onChanged: (v) => setState(() => _selectedDeviceId = v),
                         ),
                       ]),
                     ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+                    ],
                     const SizedBox(height: 16),
                     _sectionLabel('ENTÃO — Ações'),
                     const SizedBox(height: 8),
@@ -676,8 +700,12 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
                     ),
                     const Spacer(),
                     FilledButton.icon(
-                      onPressed: _actions.isEmpty || _nameCtrl.text.trim().isEmpty ? null : _save,
-                      icon: const Icon(Icons.check_rounded, size: 15),
+                      onPressed: (_saving || _actions.isEmpty || _nameCtrl.text.trim().isEmpty || _selectedDeviceId == null)
+                          ? null
+                          : _save,
+                      icon: _saving
+                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.check_rounded, size: 15),
                       label: const Text('Criar regra'),
                       style: FilledButton.styleFrom(backgroundColor: const Color(0xFF176EEB), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
                     ),
@@ -697,23 +725,41 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
     Text(text, style: const TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 12.5)),
   ]);
 
-  void _save() {
-    final rule = _AutoRule(
-      id: 'r${++_idCounter}',
-      name: _nameCtrl.text.trim(),
-      triggerType: _trigger,
-      triggerLabel: const {
-        _TriggerType.speed: 'Velocidade', _TriggerType.geofence: 'Cerca',
-        _TriggerType.ignition: 'Ignição', _TriggerType.noComm: 'Sem GPS',
-        _TriggerType.odometer: 'Hodômetro', _TriggerType.temperature: 'Temperatura',
-        _TriggerType.battery: 'Tensão', _TriggerType.harshBrake: 'Telemetria',
-        _TriggerType.scheduled: 'Agendamento',
-      }[_trigger]!,
-      condition: _conditionCtrl.text.trim(),
-      actions: _actions.toList(),
-      executions: 0,
-      lastRun: null,
-    );
-    widget.onSave(rule);
+  Future<void> _save() async {
+    final deviceId = _selectedDeviceId;
+    if (deviceId == null) return;
+    final devices = ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+    final deviceName = devices.where((d) => d.id == deviceId).map((d) => d.name).firstOrNull
+        ?? 'Dispositivo $deviceId';
+    final config = ref.read(bridgeConfigProvider);
+    if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) {
+      setState(() => _error = 'Bridge não configurado.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      final uri = Uri.parse('${config.bridgeUrl}/rules');
+      final resp = await http.post(
+        uri,
+        headers: {
+          'Authorization': 'Bearer ${config.bridgeApiKey}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'condicao': {'tipoEvento': _triggerToEventoReal[_trigger]},
+          'acao': {'tipo': _actions.contains(_ActionType.block) ? 'bloquear_motor' : 'notificar'},
+          'descricao': _nameCtrl.text.trim(),
+        }),
+      ).timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) {
+        setState(() { _saving = false; _error = 'Falha ao criar regra (HTTP ${resp.statusCode}).'; });
+        return;
+      }
+      widget.onSaved();
+    } catch (err) {
+      setState(() { _saving = false; _error = 'Falha ao criar regra: $err'; });
+    }
   }
 }

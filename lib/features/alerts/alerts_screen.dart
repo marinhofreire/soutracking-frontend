@@ -142,7 +142,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return true;
     }).toList();
 
-    return Column(
+    return SingleChildScrollView(
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -177,25 +178,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
         const SizedBox(height: 20),
         _AlertsKpiRow(summary: summary),
         const SizedBox(height: 20),
-        _SectionCard(
-          icon: Icons.notifications_outlined,
-          iconColor: const Color(0xFF176EEB),
-          title: 'Regras de Notificação',
-          subtitle: 'Alertas configurados no sistema',
-          action: IconButton(
-            tooltip: 'Atualizar',
-            onPressed: () => ref.invalidate(notificationsManagementProvider),
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-          ),
-          child: notifRulesAsync.when(
-            data: (rules) =>
-                _NotifRulesTable(rules: rules, onDelete: _deleteNotification),
-            loading: () => const _InlineLoader(),
-            error: (_, __) => const _InlineError(
-                message: 'Não foi possível carregar regras'),
-          ),
-        ),
-        const SizedBox(height: 16),
         _SectionCard(
           icon: Icons.history_rounded,
           iconColor: const Color(0xFF7B2FC4),
@@ -242,6 +224,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
         ),
         const SizedBox(height: 20),
       ],
+      ),
     );
   }
 

@@ -16,7 +16,18 @@ class _ChatMessage {
 /// soutracking-bridge (rota POST /chat). Autocontido: pode ser plugado em
 /// qualquer tela sem depender de outro estado da tela.
 class AiChatFloatingWidget extends ConsumerStatefulWidget {
-  const AiChatFloatingWidget({super.key});
+  const AiChatFloatingWidget({
+    super.key,
+    this.openOverride,
+    this.onOpenChanged,
+  });
+
+  // Quando informado, o botão redondo próprio do widget some e a
+  // visibilidade do painel passa a ser controlada de fora (ex: o atalho de
+  // IA que ficava no lugar do sino, no topo da tela) -- evita ter dois
+  // controles de "abrir IA" desencontrados na mesma tela (2026-09-05).
+  final bool? openOverride;
+  final ValueChanged<bool>? onOpenChanged;
 
   @override
   ConsumerState<AiChatFloatingWidget> createState() =>
@@ -114,17 +125,31 @@ class _AiChatFloatingWidgetState extends ConsumerState<AiChatFloatingWidget> {
     }
   }
 
+  bool get _effectiveOpen => widget.openOverride ?? _open;
+
+  @override
+  void didUpdateWidget(covariant AiChatFloatingWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sincroniza o estado interno quando controlado de fora, pra manter
+    // _open coerente caso o override seja removido depois.
+    if (widget.openOverride != null && widget.openOverride != _open) {
+      _open = widget.openOverride!;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Positioned(
       right: 20,
-      bottom: 100,
+      bottom: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (_open) _buildPanel(),
-          const SizedBox(height: 10),
-          _buildToggleButton(),
+          if (_effectiveOpen) _buildPanel(),
+          if (widget.openOverride == null) ...[
+            const SizedBox(height: 10),
+            _buildToggleButton(),
+          ],
         ],
       ),
     );
@@ -191,17 +216,35 @@ class _AiChatFloatingWidgetState extends ConsumerState<AiChatFloatingWidget> {
                 border: Border(bottom: BorderSide(color: Color(0xFF2A3F5F))),
               ),
               child: Row(
-                children: const [
-                  Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'IA Operacional',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
+                children: [
+                  const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'IA Operacional',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
+                  if (widget.openOverride != null)
+                    InkWell(
+                      onTap: () {
+                        setState(() => _open = false);
+                        widget.onOpenChanged?.call(false);
+                      },
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                          size: 18,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

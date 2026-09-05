@@ -106,9 +106,10 @@ class TraccarClient {
   Future<List<TraccarDevice>> getDevices({
     String? cookie,
     String? authHeader,
+    int? id,
   }) async {
     final response = await _http.get(
-      _uri('/devices'),
+      _uri('/devices', id == null ? null : {'id': id}),
       headers: _headers(cookie: cookie, authHeader: authHeader),
     );
 
@@ -159,6 +160,108 @@ class TraccarClient {
     return data
         .map((e) => TraccarUser.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<List<TraccarDriver>> getDrivers({
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.get(
+      _uri('/drivers'),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao carregar motoristas: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data
+        .map((e) => TraccarDriver.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<TraccarDriver> createDriver({
+    required String name,
+    required String uniqueId,
+    Map<String, dynamic>? attributes,
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.post(
+      _uri('/drivers'),
+      headers: {
+        ..._headers(cookie: cookie, authHeader: authHeader),
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'name': name,
+        'uniqueId': uniqueId,
+        if (attributes != null) 'attributes': attributes,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao criar motorista: ${response.statusCode}');
+    }
+
+    return TraccarDriver.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteDriver({
+    required int id,
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.delete(
+      _uri('/drivers/$id'),
+      headers: _headers(cookie: cookie, authHeader: authHeader),
+    );
+    if (response.statusCode != 204 && response.statusCode != 200) {
+      throw Exception('Falha ao remover motorista: ${response.statusCode}');
+    }
+  }
+
+  // Vínculo motorista↔veículo (check-in), 2026-09-06. O Traccar modela isso
+  // como N:N em /api/permissions (linkPair) -- não existe "check-out
+  // automático" nativo: se não removermos o vínculo anterior, o veículo
+  // fica com 2+ motoristas simultâneos, o que não faz sentido operacional
+  // (um veículo tem um motorista ativo por vez). GET /api/permissions não
+  // tem filtro confiável por deviceId entre versões do Traccar, então o
+  // vínculo "quem está no veículo agora" é rastreado por nós mesmos, via
+  // attributes.currentDeviceId (no Driver) e attributes.currentDriverId
+  // (no Device) -- dado que controlamos e lemos de volta com certeza, sem
+  // depender de uma query que pode não existir no servidor do cliente.
+  Future<void> linkDriverToDevice({
+    required int driverId,
+    required int deviceId,
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.post(
+      _uri('/permissions'),
+      headers: _headers(cookie: cookie, authHeader: authHeader, json: true),
+      body: jsonEncode({'driverId': driverId, 'deviceId': deviceId}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Falha ao vincular motorista: ${response.statusCode}');
+    }
+  }
+
+  Future<void> unlinkDriverFromDevice({
+    required int driverId,
+    required int deviceId,
+    String? cookie,
+    String? authHeader,
+  }) async {
+    final response = await _http.delete(
+      _uri('/permissions'),
+      headers: _headers(cookie: cookie, authHeader: authHeader, json: true),
+      body: jsonEncode({'driverId': driverId, 'deviceId': deviceId}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Falha ao desvincular motorista: ${response.statusCode}');
+    }
   }
 
   Future<Map<String, dynamic>> getServer({
@@ -289,6 +392,37 @@ class TraccarClient {
         'to': to.toUtc().toIso8601String(),
         if (deviceId != null) 'deviceId': '$deviceId',
         ...?extraQuery,
+      },
+    );
+  }
+
+  /// Resumo consolidado (`/reports/summary`) de vários dispositivos numa só
+  /// chamada -- usado pelo "Resumo executivo" de Relatórios pra agregar
+  /// km/tempo em movimento/velocidade de toda a frota sem 1 request por
+  /// veículo. O Traccar aceita `deviceId` repetido na query string.
+  Future<List<Map<String, dynamic>>> getFleetSummary({
+    required List<int> deviceIds,
+    String? cookie,
+    String? authHeader,
+    required DateTime from,
+    required DateTime to,
+    // Quando true, o Traccar retorna 1 linha por dispositivo POR DIA no
+    // período (em vez de 1 linha totalizando o período inteiro) -- é o que
+    // alimenta o gráfico de tendência/sparkline com dado diário real.
+    bool daily = false,
+  }) {
+    if (deviceIds.isEmpty) {
+      return Future.value(const <Map<String, dynamic>>[]);
+    }
+    return getList(
+      path: '/reports/summary',
+      cookie: cookie,
+      authHeader: authHeader,
+      query: {
+        'from': from.toUtc().toIso8601String(),
+        'to': to.toUtc().toIso8601String(),
+        'deviceId': deviceIds.map((id) => '$id').toList(),
+        if (daily) 'daily': 'true',
       },
     );
   }

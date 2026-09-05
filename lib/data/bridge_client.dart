@@ -422,6 +422,109 @@ final soucallTicketsProvider =
   }
 });
 
+// ── Regras (automacoes) reais do motor no bridge ────────────────────────────
+// Mesmo rules.json que a IA do WhatsApp usa (send_command/enable_alerts/
+// create_geofence com acao). A tela de Automacoes do painel consome isso em
+// vez do _buildDemoRules() que existia antes.
+
+class BridgeRule {
+  const BridgeRule({
+    required this.id,
+    required this.deviceId,
+    required this.deviceName,
+    required this.ativo,
+    required this.tipoEvento,
+    required this.acaoTipo,
+    required this.descricao,
+    required this.criadoEm,
+  });
+
+  final String id;
+  final int deviceId;
+  final String deviceName;
+  final bool ativo;
+  final String tipoEvento;
+  final String acaoTipo;
+  final String descricao;
+  final DateTime? criadoEm;
+
+  factory BridgeRule.fromJson(Map<String, dynamic> json) {
+    DateTime? criado;
+    final rawDate = json['criadoEm'] as String?;
+    if (rawDate != null) {
+      criado = DateTime.tryParse(rawDate);
+    }
+    return BridgeRule(
+      id: json['id']?.toString() ?? '',
+      deviceId: (json['deviceId'] as num?)?.toInt() ?? 0,
+      deviceName: json['deviceName']?.toString() ?? 'Dispositivo',
+      ativo: json['ativo'] == true,
+      tipoEvento: json['condicao']?['tipoEvento']?.toString() ?? 'any',
+      acaoTipo: json['acao']?['tipo']?.toString() ?? 'notificar',
+      descricao: json['descricao']?.toString() ?? '',
+      criadoEm: criado,
+    );
+  }
+}
+
+final bridgeRulesProvider =
+    FutureProvider.autoDispose<List<BridgeRule>>((ref) async {
+  final config = ref.watch(bridgeConfigProvider);
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) return const [];
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/rules');
+    final resp = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${config.bridgeApiKey}',
+    }).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return const [];
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final list = (body['rules'] as List? ?? [])
+        .map((e) => BridgeRule.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return list;
+  } catch (_) {
+    return const [];
+  }
+});
+
+Future<bool> setBridgeRuleActive({
+  required BridgeConfig config,
+  required String ruleId,
+  required bool ativo,
+}) async {
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) return false;
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/rules/$ruleId');
+    final resp = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer ${config.bridgeApiKey}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'ativo': ativo}),
+    ).timeout(const Duration(seconds: 10));
+    return resp.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<bool> deleteBridgeRule({
+  required BridgeConfig config,
+  required String ruleId,
+}) async {
+  if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) return false;
+  try {
+    final uri = Uri.parse('${config.bridgeUrl}/rules/$ruleId');
+    final resp = await http.delete(uri, headers: {
+      'Authorization': 'Bearer ${config.bridgeApiKey}',
+    }).timeout(const Duration(seconds: 10));
+    return resp.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
+}
+
 // ── SouFind: chamados reais (OS de assistência veicular) ────────────────────
 
 class ChamadoOs {

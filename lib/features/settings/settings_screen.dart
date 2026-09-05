@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +14,7 @@ import '../../data/models.dart';
 import '../../data/notification_prefs.dart';
 import '../../data/permission_overrides.dart';
 import '../../state/session_state.dart';
+import '../users/users_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key, required this.onLogout});
@@ -28,7 +32,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   final _taglineController = TextEditingController();
   final _primaryController = TextEditingController();
   final _secondaryController = TextEditingController();
-  final _logoController = TextEditingController();
+  // Logo da marca -- antes era um TextField cru pedindo o caminho do asset
+  // (usuário tinha que digitar "assets/branding/..."); agora upload real,
+  // mesmo padrão da imagem de fundo do login logo abaixo (2026-09-05).
+  String? _logoImage;
+  String? _logoFileName;
+  // Imagem de fundo do login (white-label) -- data URL (base64) guardada
+  // em memória enquanto o usuário não salva; texto vazio = mantém o
+  // backdrop padrão desenhado por código (ver login_screen.dart).
+  String? _loginBackgroundImage;
+  String? _loginBackgroundFileName;
   bool _initialized = false;
 
   // ── Bridge / Integrações ───────────────────────────────────────────────────
@@ -76,7 +89,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
   }
 
   @override
@@ -85,7 +98,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _taglineController.dispose();
     _primaryController.dispose();
     _secondaryController.dispose();
-    _logoController.dispose();
     _bridgeUrlCtrl.dispose();
     _bridgeApiKeyCtrl.dispose();
     _pusherAppKeyCtrl.dispose();
@@ -103,7 +115,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _taglineController.text = config.tagline;
     _primaryController.text = _colorToHex(config.primaryColor);
     _secondaryController.text = _colorToHex(config.secondaryColor);
-    _logoController.text = config.logoAsset ?? '';
+    _logoImage = config.logoAsset;
+    _loginBackgroundImage = config.loginBackgroundImage;
   }
 
   String _colorToHex(Color color) =>
@@ -123,18 +136,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         _parseColor(_primaryController.text) ?? current.primaryColor;
     final secondary =
         _parseColor(_secondaryController.text) ?? current.secondaryColor;
-    final logo = _logoController.text.trim();
     await ref.read(whiteLabelProvider.notifier).save(WhiteLabelConfig(
           appName: name.isEmpty ? current.appName : name,
           tagline: tagline.isEmpty ? current.tagline : tagline,
           primaryColor: primary,
           secondaryColor: secondary,
-          logoAsset: logo.isEmpty ? null : logo,
+          logoAsset: (_logoImage ?? '').trim().isEmpty ? null : _logoImage,
+          loginBackgroundImage: _loginBackgroundImage,
+          homeHubId: current.homeHubId,
         ));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Configurações salvas com sucesso.')),
     );
+  }
+
+  Future<void> _pickLogo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    final base64Data = base64Encode(file.bytes!);
+    final ext = (file.extension ?? 'png').toLowerCase();
+    final mime = ext == 'jpg' || ext == 'jpeg' ? 'image/jpeg' : 'image/png';
+    setState(() {
+      _logoImage = 'data:$mime;base64,$base64Data';
+      _logoFileName = file.name;
+    });
+  }
+
+  void _clearLogo() {
+    setState(() {
+      _logoImage = null;
+      _logoFileName = null;
+    });
+  }
+
+  Future<void> _pickLoginBackground() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    final base64Data = base64Encode(file.bytes!);
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+    setState(() {
+      _loginBackgroundImage = 'data:$mime;base64,$base64Data';
+      _loginBackgroundFileName = file.name;
+    });
+  }
+
+  void _clearLoginBackground() {
+    setState(() {
+      _loginBackgroundImage = null;
+      _loginBackgroundFileName = null;
+    });
   }
 
   // ── Permission helpers ─────────────────────────────────────────────────────
@@ -218,6 +278,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 tabs: const [
                   Tab(text: 'Geral'),
                   Tab(text: 'Perfil'),
+                  Tab(text: 'Usuários'),
                   Tab(text: 'Permissões'),
                   Tab(text: 'Integrações'),
                   Tab(text: 'Notificações'),
@@ -231,6 +292,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 children: [
                   _buildGeralTab(config),
                   _buildPerfilTab(),
+                  const UsersScreen(),
                   _buildPermissoesTab(users),
                   _buildIntegracoesTab(),
                   _buildNotificacoesTab(),
@@ -357,13 +419,126 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _logoController,
-              decoration:
-                  const InputDecoration(labelText: 'Logo (asset opcional)'),
+            const SizedBox(height: 16),
+            const Text(
+              'Logo',
+              style: TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Aparece no topo da barra lateral e no menu (mobile). Sem logo, mostra o nome da empresa em texto.',
+              style: TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
             ),
             const SizedBox(height: 8),
+            if ((_logoImage ?? '').isNotEmpty)
+              Container(
+                height: 72,
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F9FD),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFDDE5F0)),
+                ),
+                child: Image.network(
+                  _logoImage!,
+                  height: 40,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  errorBuilder: (_, __, ___) => const Text(
+                    'Não foi possível abrir esta imagem.',
+                    style: TextStyle(color: Color(0xFFB42318), fontSize: 11),
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickLogo,
+                  icon: const Icon(Icons.image_outlined, size: 16),
+                  label: Text((_logoImage ?? '').isEmpty
+                      ? 'Escolher logo'
+                      : 'Trocar logo'),
+                ),
+                if ((_logoImage ?? '').isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _clearLogo,
+                    icon: const Icon(Icons.close_rounded, size: 16),
+                    label: const Text('Remover'),
+                  ),
+                ],
+              ],
+            ),
+            if ((_logoFileName ?? '').isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _logoFileName!,
+                style: const TextStyle(color: Color(0xFF60718D), fontSize: 11),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text(
+              'Imagem de fundo do login',
+              style: TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Sem imagem, o login usa o fundo padrão desenhado do sistema.',
+              style: TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+            ),
+            const SizedBox(height: 8),
+            if ((_loginBackgroundImage ?? '').isNotEmpty)
+              Container(
+                height: 120,
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFDDE5F0)),
+                  image: DecorationImage(
+                    image: NetworkImage(_loginBackgroundImage!),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickLoginBackground,
+                  icon: const Icon(Icons.image_outlined, size: 16),
+                  label: Text((_loginBackgroundImage ?? '').isEmpty
+                      ? 'Escolher imagem'
+                      : 'Trocar imagem'),
+                ),
+                if ((_loginBackgroundImage ?? '').isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _clearLoginBackground,
+                    icon: const Icon(Icons.close_rounded, size: 16),
+                    label: const Text('Remover'),
+                  ),
+                ],
+              ],
+            ),
+            if ((_loginBackgroundFileName ?? '').isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _loginBackgroundFileName!,
+                style: const TextStyle(color: Color(0xFF60718D), fontSize: 11),
+              ),
+            ],
+            const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerLeft,
               child: FilledButton(
@@ -1660,27 +1835,12 @@ class _PermRoleColumn extends StatelessWidget {
                   isSelected: selectedRole == entry.role,
                   onTap: () => onSelect(entry.role),
                 ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: OutlinedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.add, size: 13),
-                  label: const Text('Novo perfil',
-                      style: TextStyle(fontSize: 11.5)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0F69E8),
-                    side: const BorderSide(
-                        color: Color(0xFFB3D1F9), width: 1),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ),
+              // Botão "Novo perfil" removido (2026-09-06) -- estava morto
+              // (onPressed vazio) e a decisão de auditoria já foi resolvida
+              // por outro caminho: perfis são um enum fixo (AppUserRole),
+              // não algo criável em runtime; "quem pode criar usuários" já
+              // existe de verdade como toggle por perfil logo abaixo
+              // ("Criar usuários", ver _permActionItems / users_add).
             ],
           ),
         ),

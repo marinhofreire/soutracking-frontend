@@ -9,86 +9,140 @@ class DriversKpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        _KpiCard(
-          label: 'Motoristas ativos',
-          value: summary.active.toString(),
-          color: const Color(0xFF10B981),
-          icon: Icons.badge_outlined,
-        ),
-        _KpiCard(
-          label: 'Em rota',
-          value: summary.onRoute.toString(),
-          color: const Color(0xFF3F8CFF),
-          icon: Icons.alt_route_outlined,
-        ),
-        _KpiCard(
-          label: 'Sem veiculo',
-          value: summary.withoutVehicle.toString(),
-          color: const Color(0xFFF59E0B),
-          icon: Icons.no_transfer_outlined,
-        ),
-        _KpiCard(
-          label: 'CNH a vencer',
-          value: summary.cnhExpiring.toString(),
-          color: const Color(0xFFE74B4B),
-          icon: Icons.warning_amber_outlined,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        final cardWidth = (constraints.maxWidth - (spacing * 5)) / 6;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'Total de motoristas',
+              value: summary.active.toString(),
+              caption: 'cadastrados',
+              color: const Color(0xFF176EEB),
+              icon: Icons.badge_outlined,
+            ),
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'Ativos',
+              value: '--',
+              caption: 'sem status real',
+              color: const Color(0xFF18A558),
+              icon: Icons.verified_user_outlined,
+            ),
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'Em rota',
+              value: '--',
+              caption: 'sem vinculo real',
+              color: const Color(0xFF176EEB),
+              icon: Icons.alt_route_outlined,
+            ),
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'Sem veiculo',
+              value: '--',
+              caption: 'sem vinculo real',
+              color: const Color(0xFFF59E0B),
+              icon: Icons.no_transfer_outlined,
+            ),
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'CNH a vencer',
+              value: summary.cnhExpiring.toString(),
+              caption: 'validade cadastrada',
+              color: const Color(0xFFE74B4B),
+              icon: Icons.warning_amber_outlined,
+            ),
+            _DriverKpiCard(
+              width: cardWidth,
+              label: 'Inativos',
+              value: '--',
+              caption: 'sem status real',
+              color: const Color(0xFF8291A8),
+              icon: Icons.person_off_outlined,
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({
+class _DriverKpiCard extends StatelessWidget {
+  const _DriverKpiCard({
+    required this.width,
     required this.label,
     required this.value,
+    required this.caption,
     required this.color,
     required this.icon,
   });
 
+  final double width;
   final String label;
   final String value;
+  final String caption;
   final Color color;
   final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      width: width.clamp(138, 220).toDouble(),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color,
+        color: Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD6E1EF)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 15),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 22,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF50647E),
+                    fontSize: 10.2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontSize: 19,
+                    height: 0.98,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],

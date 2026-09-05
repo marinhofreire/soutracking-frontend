@@ -28,6 +28,7 @@ import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../devices/devices_screen.dart';
+import '../drivers/drivers_screen.dart';
 import '../finance/finance_screen.dart';
 import '../geofences/geofences_screen.dart';
 import '../history/history_screen.dart';
@@ -210,6 +211,34 @@ const List<Color> _geofencePalette = [
   Color(0xFF17B8C4),
 ];
 
+// Logo do white-label pode ser um asset embutido no bundle
+// (assets/branding/...) OU uma data URL base64 (upload feito em
+// Configurações → Marca, salvo em SharedPreferences). Sem essa checagem,
+// `Image.asset` tentava carregar a data URL como se fosse um caminho de
+// arquivo e falhava silenciosamente -- por isso o logo customizado nunca
+// aparecia na sidebar/menu mobile (2026-09-05).
+Widget _brandLogoImage(
+  String logoAsset, {
+  required double height,
+}) {
+  if (logoAsset.startsWith('data:')) {
+    return Image.network(
+      logoAsset,
+      height: height,
+      fit: BoxFit.contain,
+      alignment: Alignment.centerLeft,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+  return Image.asset(
+    logoAsset,
+    height: height,
+    fit: BoxFit.contain,
+    alignment: Alignment.centerLeft,
+    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+  );
+}
+
 Color _geofenceColorFor(Object id) {
   final index = id.hashCode.abs() % _geofencePalette.length;
   return _geofencePalette[index];
@@ -372,6 +401,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   String? _lastFollowedReportRouteReplayKey;
   double? _lastResolvedReportRouteBearing;
   double? _lastResolvedReplayBearing;
+  // Bearing do mapa ao vivo, por device -- igual ao replay (bearing pelo
+  // deslocamento real entre posicoes, nao o `course` bruto que "dança" com
+  // ruido de GPS), so que aqui precisa ser por veiculo porque varios
+  // aparecem juntos no mapa ao mesmo tempo.
+  final Map<int, double> _lastResolvedLiveBearingByDevice = {};
+  final Map<int, TraccarPosition> _previousLivePositionByDevice = {};
   bool _reportRouteReplay3dEnabled = true;
   String? _lastFocusedReportRouteKey;
   String? _lastReportRouteMapTypeNonce;
@@ -408,6 +443,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   bool _mapTrafficEnabled = true;
   DateTime _blockSurfaceClearUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // Efeito "sonar" (ondas saindo do centro) no pin do veículo selecionado no
+  // mapa ao vivo -- só roda enquanto há seleção, pra não gastar ciclo à toa.
+  Timer? _sonarTimer;
+  double _sonarPhase = 0;
+  static const Duration _sonarTick = Duration(milliseconds: 60);
+  static const Duration _sonarCycle = Duration(milliseconds: 2400);
+
+  void _ensureSonarTimerRunning() {
+    _sonarTimer ??= Timer.periodic(_sonarTick, (_) {
+      if (!mounted) return;
+      setState(() {
+        _sonarPhase =
+            (_sonarPhase + _sonarTick.inMilliseconds / _sonarCycle.inMilliseconds) %
+                1.0;
+      });
+    });
+  }
+
+  void _stopSonarTimer() {
+    _sonarTimer?.cancel();
+    _sonarTimer = null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -419,6 +477,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _replayTimer?.cancel();
     _operationalRefreshTimer?.cancel();
     _positionRefreshTimer?.cancel();
+    _sonarTimer?.cancel();
     super.dispose();
   }
 
@@ -440,54 +499,75 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
+  // Aliases antigos (deep-link ?panel=X, mensagens de voz/busca) mapeados
+  // pros ids de hub novos (reagrupamento 2026-09-03) -- um link salvo como
+  // "?panel=devices" continua funcionando, so que agora abre o hub Frota
+  // em vez de um item de menu que nao existe mais.
   String _normalizePanelId(String raw) {
     final key = raw.trim().toLowerCase();
     switch (key) {
       case 'equipamentos':
       case 'dispositivos':
       case 'devices':
-        return 'devices';
       case 'veículos':
-      case 've\u00EDculos':
+      case 'veiculos':
       case 'vehicles':
-        return 'vehicles';
+      case 'motoristas':
+      case 'drivers':
+      case 'manutenção':
+      case 'manutencao':
+      case 'maintenance':
+      case 'tpms':
+      case 'frota':
+      case 'fleet':
+        return 'fleet';
       case 'alertas':
       case 'alerts':
-        return 'alerts';
-      case 'relatórios':
-      case 'relat\u00F3rios':
-      case 'reports':
-        return 'reports';
-      case 'telemetria':
-      case 'telemetry':
-        return 'telemetry';
-      case 'comandos':
-      case 'commands':
-        return 'commands';
-      case 'datlog':
-      case 'data-log':
-      case 'logs':
-        return 'logs';
       case 'cercas':
       case 'fences':
       case 'geofences':
-        return 'geofences';
-      case 'manutenção':
-      case 'manutencao':
-      case 'Manutenção':
-      case 'manutenção':
-      case 'maintenance':
-        return 'maintenance';
+      case 'datlog':
+      case 'data-log':
+      case 'logs':
+      case 'telemetria':
+      case 'telemetry':
+      case 'monitoramento':
+      case 'monitoring':
+        return 'monitoring';
+      case 'relatórios':
+      case 'relatorios':
+      case 'reports':
+        return 'reports';
+      case 'comandos':
+      case 'commands':
+      case 'automações':
+      case 'automacoes':
+      case 'automations':
+      case 'automation-hub':
+        return 'automation-hub';
       case 'comunicação':
-      case 'comunica\u00E7\u00E3o':
+      case 'comunicacao':
       case 'communication':
-        return 'communication';
       case 'chamados':
       case 'tickets':
       case 'calls':
-        return 'tickets';
+      case 'ia-operations':
+      case 'ai-operations':
+      case 'atendimento':
+      case 'support':
+        return 'support';
+      case 'financeiro':
+      case 'finance':
+      case 'estoque':
+      case 'inventory':
+      case 'finance-hub':
+        return 'finance-hub';
+      case 'mdvr':
+      case 'câmeras':
+      case 'cameras':
+        return 'mdvr';
       case 'configurações':
-      case 'configura\u00E7\u00F5es':
+      case 'configuracoes':
       case 'settings':
         return 'settings';
       case 'dashboard':
@@ -632,6 +712,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         _kpiListOpen = false;
         _selectedVehicle = null;
         _vehiclePanelMode = _VehiclePanelMode.summary;
+        _liveGaugesDeviceId = null;
       });
       return;
     }
@@ -682,6 +763,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _kpiListOpen = false;
       _activePanelId = null;
       _activePanelTitle = null;
+      // Barra inferior e Telemetria ao vivo nunca abertas juntas.
+      _liveGaugesDeviceId = null;
     });
     _focusVehicle(snapshot);
     _googleMapController?.hideMarkerInfoWindow(
@@ -700,8 +783,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     if (isDoubleTap) {
       setState(() {
+        // Telemetria ao vivo e barra inferior nunca ficam abertas juntas --
+        // abrir uma sempre fecha a outra.
         _liveGaugesDeviceId = snapshot.device.id;
         _selectedVehicle = snapshot.device;
+        _showBottomVehiclePanel = false;
       });
       _focusVehicle(snapshot);
       _googleMapController?.hideMarkerInfoWindow(
@@ -720,6 +806,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _activePanelTitle = null;
       _kpiListOpen = false;
       _vehiclePanelMode = _VehiclePanelMode.summary;
+      // Idem: clique simples reabre a barra normal, então fecha a telemetria
+      // se estiver aberta.
+      _liveGaugesDeviceId = null;
     });
     _focusVehicle(snapshot);
     _googleMapController?.hideMarkerInfoWindow(
@@ -1053,6 +1142,81 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
 
     return _lastResolvedReplayBearing;
+  }
+
+  // Veiculo "parado em repouso": ignicao desligada, sem movimento, e a
+  // posicao atual ja tem pelo menos 10min desde o fixTime. Enquanto nisso,
+  // o bearing fica travado na ultima direcao real resolvida -- sem isso,
+  // qualquer ruido de GPS de poucos metros com o carro parado gera "giro
+  // fantasma" no icone (o carro nao andou, mas o ponto oscilou).
+  static const Duration _liveBearingParkedThreshold = Duration(minutes: 10);
+
+  bool _isVehicleParkedAtRest({
+    required bool? ignitionOn,
+    required bool isMoving,
+    required TraccarPosition? position,
+  }) {
+    if (ignitionOn == true) return false;
+    if (isMoving) return false;
+    final fixTime = DateTime.tryParse(position?.fixTime ?? '');
+    if (fixTime == null) return false;
+    return DateTime.now().toUtc().difference(fixTime.toUtc()) >=
+        _liveBearingParkedThreshold;
+  }
+
+  // Bearing do mapa ao vivo pra um device especifico: mesmo principio do
+  // replay (deslocamento real > 5m entre a posicao anterior conhecida e a
+  // atual), com early-return quando o veiculo esta parado ha tempo (mantem
+  // a ultima direcao real, nao recalcula por ruido). Chamado 1x por device
+  // a cada rebuild da lista de snapshots (_buildVehicleSnapshots), nao
+  // dentro do widget do mapa -- _OperationalMap e StatelessWidget separado,
+  // sem acesso a esses caches por instancia.
+  double? _resolveLiveBearing({
+    required int deviceId,
+    required TraccarPosition? position,
+    required bool? ignitionOn,
+    required bool isMoving,
+  }) {
+    if (position == null) {
+      return _lastResolvedLiveBearingByDevice[deviceId];
+    }
+
+    if (_isVehicleParkedAtRest(
+      ignitionOn: ignitionOn,
+      isMoving: isMoving,
+      position: position,
+    )) {
+      // Nao atualiza a posicao "anterior" enquanto parado -- assim, quando
+      // voltar a andar, o primeiro deslocamento comparado ainda e contra a
+      // posicao de antes de parar (evita comparar 2 pontos parados entre
+      // si, que tambem daria ruido).
+      return _lastResolvedLiveBearingByDevice[deviceId];
+    }
+
+    final previous = _previousLivePositionByDevice[deviceId];
+    if (previous != null) {
+      final resolved = _bearingBetweenCoords(
+        previous.latitude,
+        previous.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      if (resolved != null) {
+        _lastResolvedLiveBearingByDevice[deviceId] = resolved;
+        _previousLivePositionByDevice[deviceId] = position;
+        return resolved;
+      }
+    }
+
+    _previousLivePositionByDevice[deviceId] = position;
+
+    final rawCourse = _normalizeBearing(position.course);
+    if (rawCourse != null) {
+      _lastResolvedLiveBearingByDevice[deviceId] = rawCourse;
+      return rawCourse;
+    }
+
+    return _lastResolvedLiveBearingByDevice[deviceId];
   }
 
   DateTime? _interpolateDateTime(
@@ -1464,6 +1628,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _activePanelTitle = null;
       _replayTimer?.cancel();
       _replayTimer = null;
+      _liveGaugesDeviceId = null;
     });
   }
 
@@ -1474,6 +1639,358 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         .firstOrNull;
     if (settingsItem == null) return;
     _openPanel(settingsItem);
+  }
+
+  // "Trocar senha" no menu do avatar -- antes so mostrava um SnackBar sem
+  // fazer nada ("Perfil ativo nesta sessao"). Reaproveita o mesmo padrao ja
+  // usado em users_screen.dart (body['password'] + updateEntityById), so
+  // que aplicado ao proprio usuario logado (achado pelo email da sessao,
+  // ja que SessionState nao guarda o id do Traccar).
+  Future<void> _openChangePasswordDialog() async {
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    final passwordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool saving = false;
+    bool showPassword = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.25),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) => Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
+                    decoration: const BoxDecoration(
+                      border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF176EEB).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.lock_outline_rounded, color: Color(0xFF176EEB), size: 16),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Trocar senha',
+                          style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 15),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: passwordCtrl,
+                          obscureText: !showPassword,
+                          decoration: InputDecoration(
+                            labelText: 'Nova senha',
+                            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                size: 18,
+                              ),
+                              onPressed: () => setModal(() => showPassword = !showPassword),
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFFF7F9FD),
+                            border: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                            enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: confirmCtrl,
+                          obscureText: !showPassword,
+                          decoration: const InputDecoration(
+                            labelText: 'Confirmar nova senha',
+                            prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
+                            filled: true,
+                            fillColor: Color(0xFFF7F9FD),
+                            border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                          ),
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: 8),
+                          Text(error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+                    decoration: const BoxDecoration(
+                      border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
+                    ),
+                    child: Row(
+                      children: [
+                        OutlinedButton(
+                          onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF526684),
+                            side: const BorderSide(color: Color(0xFFDDE5F0)),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          ),
+                          child: const Text('Cancelar'),
+                        ),
+                        const Spacer(),
+                        FilledButton.icon(
+                          onPressed: saving
+                              ? null
+                              : () async {
+                                  final newPassword = passwordCtrl.text.trim();
+                                  if (newPassword.length < 4) {
+                                    setModal(() => error = 'A senha precisa ter pelo menos 4 caracteres.');
+                                    return;
+                                  }
+                                  if (newPassword != confirmCtrl.text.trim()) {
+                                    setModal(() => error = 'As senhas nao coincidem.');
+                                    return;
+                                  }
+                                  setModal(() {
+                                    saving = true;
+                                    error = null;
+                                  });
+                                  try {
+                                    final users = await client.getUsers(
+                                      cookie: session.cookie,
+                                      authHeader: session.authHeader,
+                                    );
+                                    final me = users.cast<TraccarUser?>().firstWhere(
+                                          (u) => u?.email == session.email,
+                                          orElse: () => null,
+                                        );
+                                    if (me == null) {
+                                      setModal(() {
+                                        saving = false;
+                                        error = 'Nao foi possivel identificar seu usuario.';
+                                      });
+                                      return;
+                                    }
+                                    await client.updateEntityById(
+                                      path: '/users',
+                                      id: me.id,
+                                      cookie: session.cookie,
+                                      authHeader: session.authHeader,
+                                      body: {
+                                        'id': me.id,
+                                        'name': me.name,
+                                        'email': me.email,
+                                        'administrator': me.administrator,
+                                        'readonly': me.readonly,
+                                        'disabled': me.disabled,
+                                        'password': newPassword,
+                                        'attributes': me.attributes,
+                                      },
+                                    );
+                                    if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Senha atualizada com sucesso.'),
+                                          backgroundColor: Color(0xFF10B981),
+                                        ),
+                                      );
+                                    }
+                                  } catch (err) {
+                                    setModal(() {
+                                      saving = false;
+                                      error = 'Falha ao trocar senha: $err';
+                                    });
+                                  }
+                                },
+                          icon: saving
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.check_rounded, size: 15),
+                          label: const Text('Salvar'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF176EEB),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    passwordCtrl.dispose();
+    confirmCtrl.dispose();
+  }
+
+  // Busca global (lupa da barra superior) -- antes era `onTap: () {}`, sem
+  // acao nenhuma. Filtra por placa/nome/IMEI nos devices reais e, ao
+  // escolher um resultado, reaproveita _selectVehicleOnMap (mesmo fluxo do
+  // clique no marker: centraliza o mapa e abre o card do veiculo).
+  Future<void> _openVehicleSearchDialog() async {
+    final devices = ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+    final positions = ref.read(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
+    final allSnapshots = _buildSnapshots(devices, positions);
+    final queryCtrl = TextEditingController();
+
+    String plateOf(_VehicleSnapshot s) =>
+        (s.device.attributes?['plate'] ?? '').toString();
+
+    List<_VehicleSnapshot> filter(String query) {
+      final q = query.trim().toLowerCase();
+      if (q.isEmpty) return const [];
+      return allSnapshots.where((s) {
+        return s.device.name.toLowerCase().contains(q) ||
+            (s.device.uniqueId ?? '').toLowerCase().contains(q) ||
+            plateOf(s).toLowerCase().contains(q);
+      }).take(20).toList();
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.25),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            var results = filter(queryCtrl.text);
+            return Dialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              alignment: Alignment.topCenter,
+              insetPadding: const EdgeInsets.only(top: 90),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460, maxHeight: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                      child: TextField(
+                        controller: queryCtrl,
+                        autofocus: true,
+                        onChanged: (_) => setModal(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por placa, nome ou IMEI',
+                          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF7F9FD),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFE8EFF7)),
+                    Flexible(
+                      child: queryCtrl.text.trim().isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Digite placa, nome ou IMEI do veículo.',
+                                style: TextStyle(color: Color(0xFF60718D), fontSize: 12.5),
+                              ),
+                            )
+                          : results.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'Nenhum veículo encontrado.',
+                                    style: TextStyle(color: Color(0xFF60718D), fontSize: 12.5),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: results.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(height: 1, color: Color(0xFFF0F4F9)),
+                                  itemBuilder: (context, index) {
+                                    final snapshot = results[index];
+                                    final plate = plateOf(snapshot);
+                                    return ListTile(
+                                      dense: true,
+                                      leading: Container(
+                                        width: 30,
+                                        height: 30,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF176EEB).withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(Icons.directions_car_outlined,
+                                            color: Color(0xFF176EEB), size: 16),
+                                      ),
+                                      title: Text(
+                                        snapshot.device.name,
+                                        style: const TextStyle(
+                                          color: Color(0xFF1F2A44),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        [
+                                          if (plate.isNotEmpty) plate,
+                                          if ((snapshot.device.uniqueId ?? '').isNotEmpty)
+                                            snapshot.device.uniqueId!,
+                                        ].join(' • '),
+                                        style: const TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+                                      ),
+                                      onTap: () {
+                                        Navigator.of(dialogContext).pop();
+                                        _selectVehicleOnMap(snapshot);
+                                      },
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    queryCtrl.dispose();
   }
 
   void _refreshOperationalData() {
@@ -1662,6 +2179,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final selectedMapDeviceId = selectedMapDevice?.id;
     final effectiveSelectedDeviceId =
         reportRouteSelection?.deviceId ?? selectedMapDeviceId;
+    // Efeito sonar só roda enquanto há veículo selecionado no mapa -- liga/
+    // desliga o timer fora do build (evita setState durante o build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (effectiveSelectedDeviceId != null) {
+        _ensureSonarTimerRunning();
+      } else {
+        _stopSonarTimer();
+      }
+    });
     final replayQuery = reportRouteSelection == null
         ? _buildReplayQuery(effectiveSelectedDeviceId)
         : null;
@@ -1773,6 +2300,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 child: _OperationalMap(
                   snapshots: snapshots,
                   selectedDeviceId: effectiveSelectedDeviceId,
+                  sonarPhase: _sonarPhase,
                   selectedTrail: _selectedTrail(),
                   selectedReplayPath: selectedReplayPath,
                   selectedReplaySegments: selectedReplaySegments,
@@ -1855,6 +2383,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onRefresh: _refreshOperationalData,
                   onClosePanel: _closePanel,
                   onOpenSettingsPanel: _openSettingsPanel,
+                  onOpenChangePassword: _openChangePasswordDialog,
+                  onOpenVehicleSearch: _openVehicleSearchDialog,
                   showStatusCards: showTopStatusCards,
                   onLogout: () {
                     _handleLogout();
@@ -1995,11 +2525,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   })(),
                   tireReadings:
                       liveGaugesSnapshot?.tireReadings ?? const [],
-                ),
-              if (!pixelTelemetryMode && showLiveGauges)
-                _LiveGaugesBar(
-                  vehicleName: liveGaugesSnapshot?.device.name ?? '',
+                  // Barrinha "Telemetria ao vivo • <nome>" removida (2026-09-05,
+                  // pedido do usuário) -- este X no card assumiu o fechar.
                   onClose: _closeLiveGauges,
+                  latitude: liveGaugesSnapshot?.latLngOrNull?.latitude,
+                  longitude: liveGaugesSnapshot?.latLngOrNull?.longitude,
                 ),
               if (!pixelTelemetryMode)
                 _KpiVehicleList(
@@ -2030,9 +2560,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   cardDensity: visualSettings.cardDensity,
                   sidebarOpen: _menuOpen,
                   onDetails: () => _openVehicleDetails(selectedSnapshot),
-                  onTelemetry: () => setState(
-                    () => _liveGaugesDeviceId = selectedSnapshot.device.id,
-                  ),
+                  onTelemetry: () => setState(() {
+                    _liveGaugesDeviceId = selectedSnapshot.device.id;
+                    _showBottomVehiclePanel = false;
+                  }),
                   onAlerts: () => _openPanel(
                     _operationalMenu.firstWhere((item) => item.id == 'alerts'),
                   ),
@@ -2108,7 +2639,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     _vehiclePanelMode = _VehiclePanelMode.summary;
                   }),
                 ),
-              if (!isCompactScreen) const AiChatFloatingWidget(),
+              if (!isCompactScreen)
+                AiChatFloatingWidget(
+                  // Botão redondo próprio do widget escondido (2026-09-05) --
+                  // agora é o atalho no topo (antigo lugar do sino) que
+                  // abre/fecha este mesmo painel, pra não ter dois controles
+                  // de IA desencontrados na tela.
+                  openOverride: _copilotPanelOpen,
+                  onOpenChanged: (open) =>
+                      setState(() => _copilotPanelOpen = open),
+                ),
               // Overlay de tela cheia (mobile) — precisa ser o último filho
               // da Stack pra ficar por cima do cartão do veículo e do mapa.
               if (!pixelTelemetryMode && isCompactScreen && _mobileMenuOpen)
@@ -2181,6 +2721,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return 'Comandos remotos e a\u00E7\u00F5es operacionais';
       case 'automations':
         return 'Regras e gatilhos automáticos';
+      case 'drivers':
+        return 'Cadastro e gestão de motoristas';
+      // Hubs (reagrupamento 2026-09-03).
+      case 'fleet':
+        return 'Veiculos, motoristas, manutencao e TPMS';
+      case 'monitoring':
+        return 'Alertas, cercas, data log e telemetria';
+      case 'support':
+        return 'Chamados, comunicacao e IA Operacional';
+      case 'automation-hub':
+        return 'Automacoes e comandos remotos';
+      case 'finance-hub':
+        return 'Financeiro e estoque';
       case 'settings':
         return 'Governança e parâmetros do ambiente';
       default:
@@ -2222,16 +2775,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       cached.addAll(tireEntries);
     }
 
-    return [
-      for (var i = 0; i < devices.length; i++)
-        _VehicleSnapshot(
-          device: devices[i],
-          position: positionByDeviceId[devices[i].id],
-          index: i,
-          tireAttributes:
-              _lastKnownTireAttributesByDevice[devices[i].id] ?? const {},
+    final result = <_VehicleSnapshot>[];
+    for (var i = 0; i < devices.length; i++) {
+      final base = _VehicleSnapshot(
+        device: devices[i],
+        position: positionByDeviceId[devices[i].id],
+        index: i,
+        tireAttributes:
+            _lastKnownTireAttributesByDevice[devices[i].id] ?? const {},
+      );
+      result.add(_VehicleSnapshot(
+        device: base.device,
+        position: base.position,
+        index: base.index,
+        tireAttributes: base.tireAttributes,
+        liveBearing: _resolveLiveBearing(
+          deviceId: base.device.id,
+          position: base.position,
+          ignitionOn: base.ignition,
+          isMoving: base.isMoving,
         ),
-    ];
+      ));
+    }
+    return result;
   }
 
   _VehicleSnapshot? _snapshotForDevice(
@@ -2340,6 +2906,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         case 'telemetry':
         case 'logs':
         case 'settings':
+        // Hubs (reagrupamento 2026-09-03) -- Frota e Monitoramento reúnem
+        // só telas de 'tracking', mesmo feature key das antigas.
+        case 'fleet':
+        case 'monitoring':
           featureKey = 'tracking';
           break;
         case 'communication':
@@ -2363,6 +2933,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         case 'automations':
           featureKey = modules['automations'] == true ? 'automations' : 'rules';
           break;
+        // Hub "Atendimento" reúne tickets/communication/ai-operations, cada
+        // um com feature key própria e potencialmente diferente -- não dá
+        // pra reduzir a 1 chave só sem perder granularidade, então esse
+        // hub cai no `null` abaixo (sempre visível) e cada aba interna
+        // continua decidindo sozinha se mostra conteúdo real ou vazio.
+        case 'support':
+          break;
+        // Hub "Automação" reúne automations/commands -- mesma lógica.
+        case 'automation-hub':
+          break;
+        // Hub "Financeiro" reúne finance/inventory -- mesma lógica.
+        case 'finance-hub':
+          break;
       }
 
       if (featureKey == null || featureKey.isEmpty) {
@@ -2376,75 +2959,65 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         case 'MA':
         case 'AE':
           return baseItems.map((item) => item.id).toSet();
+        // Ids traduzidos pros hubs (reagrupamento 2026-09-03): vehicles/
+        // devices/maintenance/tpms -> 'fleet'; alerts/geofences/telemetry/
+        // logs -> 'monitoring'; communication/tickets/ai-operations ->
+        // 'support'; commands/automations -> 'automation-hub'; finance/
+        // inventory -> 'finance-hub'. Cada perfil manteve a mesma
+        // granularidade de acesso que tinha antes, so nomeando o hub em
+        // vez das telas individuais que agora vivem dentro dele.
         case 'SO':
           return const {
             'dashboard',
             'map',
-            'vehicles',
-            'devices',
-            'alerts',
-            'geofences',
-            'maintenance',
+            'fleet',
+            'monitoring',
             'reports',
-            'commands',
-            'communication',
-            'tickets',
+            'automation-hub',
+            'support',
             'mdvr',
-            'telemetry',
-            'logs',
             'settings',
           };
         case 'TEC':
           return const {
             'dashboard',
             'map',
-            'vehicles',
-            'devices',
-            'alerts',
-            'maintenance',
-            'tickets',
-            'communication',
+            'fleet',
+            'monitoring',
+            'support',
             'mdvr',
-            'telemetry',
           };
         case 'GC':
         case 'CF':
           return const {
             'dashboard',
             'map',
-            'vehicles',
-            'devices',
-            'alerts',
-            'geofences',
+            'fleet',
+            'monitoring',
             'reports',
-            'communication',
+            'support',
             'mdvr',
           };
         case 'SAC':
           return const {
             'dashboard',
             'map',
-            'vehicles',
-            'devices',
-            'alerts',
-            'geofences',
+            'fleet',
+            'monitoring',
             'reports',
-            'communication',
-            'tickets',
-            'telemetry',
+            'support',
           };
         case 'FIN':
           return const {
             'dashboard',
             'reports',
-            'finance',
+            'finance-hub',
           };
         case 'EST':
           return const {
             'dashboard',
-            'devices',
-            'maintenance',
-            'inventory',
+            'fleet',
+            'finance-hub',
             'reports',
           };
         case 'OM':
@@ -2452,17 +3025,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           return const {
             'dashboard',
             'map',
-            'vehicles',
-            'devices',
-            'alerts',
-            'geofences',
-            'maintenance',
+            'fleet',
+            'monitoring',
             'reports',
-            'commands',
-            'communication',
-            'tickets',
-            'telemetry',
-            'logs',
+            'automation-hub',
+            'support',
           };
       }
     }
@@ -2587,8 +3154,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _panelFor(String? id) {
     switch (id) {
+      // Dashboard virou hub (2026-09-03): Visão geral + Telemetria + TPMS
+      // juntos -- as 3 são "visão de dado ao vivo da frota", diferente de
+      // Frota (cadastro) ou Monitoramento (evento que exige ação). Não
+      // duplicado -- Telemetria saiu de Monitoramento, TPMS saiu de Frota.
       case 'dashboard':
-        return _buildDashboardPanel();
+        return _HubTabScreen(
+          tabs: const ['Visão geral', 'Telemetria', 'TPMS'],
+          builders: [
+            () => _buildDashboardPanel(),
+            () => _buildTelemetryPanel(),
+            () => _buildTpmsPanel(),
+          ],
+        );
       case 'map':
         return _buildMapPanel();
       case 'vehicles':
@@ -2629,8 +3207,58 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return _buildCommandsPanel();
       case 'automations':
         return _buildAutomationsPanel();
+      case 'drivers':
+        return const DriversScreen();
       case 'settings':
         return _buildSettingsPanel();
+      // Hubs (reagrupamento 2026-09-03) -- cada um \u00E9 um _HubTabScreen com
+      // abas reaproveitando os _buildXPanel() que j\u00E1 existiam soltos na
+      // sidebar. Nenhuma tela de conte\u00FAdo foi reescrita, s\u00F3 a navega\u00E7\u00E3o.
+      case 'fleet':
+        // TPMS mudou pro hub Dashboard (2026-09-03) -- n\u00E3o duplicado aqui.
+        return _HubTabScreen(
+          tabs: const ['Device', 'Motoristas', 'Manuten\u00E7\u00E3o'],
+          builders: [
+            () => _buildDevicesPanel(),
+            () => const DriversScreen(),
+            () => _buildMaintenancePanel(),
+          ],
+        );
+      case 'monitoring':
+        // Telemetria mudou pro hub Dashboard (2026-09-03) -- n\u00E3o duplicado aqui.
+        return _HubTabScreen(
+          tabs: const ['Alertas', 'Cercas', 'Data Log'],
+          builders: [
+            () => _buildAlertsPanel(),
+            () => _buildGeofencesPanel(),
+            () => _buildLogsPanel(),
+          ],
+        );
+      case 'support':
+        return _HubTabScreen(
+          tabs: const ['Chamados', 'Comunica\u00E7\u00E3o', 'IA Operacional'],
+          builders: [
+            () => _buildTicketsPanel(),
+            () => _buildCommunicationPanel(),
+            () => _buildAiOperationsPanel(),
+          ],
+        );
+      case 'automation-hub':
+        return _HubTabScreen(
+          tabs: const ['Automa\u00E7\u00F5es', 'Comandos'],
+          builders: [
+            () => _buildAutomationsPanel(),
+            () => _buildCommandsPanel(),
+          ],
+        );
+      case 'finance-hub':
+        return _HubTabScreen(
+          tabs: const ['Financeiro', 'Estoque'],
+          builders: [
+            () => _buildFinancePanel(),
+            () => _buildInventoryPanel(),
+          ],
+        );
       default:
         return const PlaceholderScreen(
           title: 'M\u00F3dulo em prepara\u00E7\u00E3o',
@@ -3070,6 +3698,7 @@ class _OperationalMap extends StatelessWidget {
     required this.onCameraMove,
     required this.onMapTap,
     required this.onVehicleTap,
+    this.sonarPhase = 0,
   });
 
   final List<_VehicleSnapshot> snapshots;
@@ -3094,6 +3723,9 @@ class _OperationalMap extends StatelessWidget {
   final ValueChanged<gmaps.CameraPosition> onCameraMove;
   final VoidCallback onMapTap;
   final ValueChanged<_VehicleSnapshot> onVehicleTap;
+  // Fase (0..1) do efeito sonar no pin do veículo selecionado -- avança fora
+  // deste widget (Timer no _HomeShellState) porque ele é StatelessWidget.
+  final double sonarPhase;
   static const double clusterZoomThreshold = 11.0;
   static const double _clusterGridSize = 0.035;
 
@@ -3126,7 +3758,9 @@ class _OperationalMap extends StatelessWidget {
 ]
 ''';
 
-  static final Map<int, Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>>
+  // Chave = "tier|tipo1,tipo2,..." -- inclui os tipos em uso pra nao servir
+  // cache velho se a frota mostrada mudar de composicao (ex: troca de filtro).
+  static final Map<String, Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>>
       _vehicleMarkerIconsFutureByTier = {};
 
   // Escala suave do ícone do veículo conforme o zoom (em vez de saltos
@@ -3137,8 +3771,8 @@ class _OperationalMap extends StatelessWidget {
   static double _iconSizeForTier(int tier) {
     const minZoom = 9.0;
     const maxZoom = 18.0;
-    const minSize = 36.0;
-    const maxSize = 58.0;
+    const minSize = 46.0;
+    const maxSize = 84.0;
     final t = ((tier - minZoom) / (maxZoom - minZoom)).clamp(0.0, 1.0);
     return minSize + (maxSize - minSize) * t;
   }
@@ -3151,8 +3785,57 @@ class _OperationalMap extends StatelessWidget {
   // Cache de clusters por contagem (1-999)
   static final Map<int, gmaps.BitmapDescriptor> _clusterIconCache = {};
 
+  // Tipos ja com sprite 3D real (32 posicoes pre-renderizadas, camera fixa,
+  // gerado via GLB -> Three.js headless -- ver assets/icons/map_sprites/).
+  // Os demais tipos continuam no fallback antigo (1 imagem + rotacao) ate
+  // terem o mesmo tratamento.
+  static const Set<_VehicleMarkerType> _spriteEnabledTypes = {
+    _VehicleMarkerType.car,
+    _VehicleMarkerType.motorcycle,
+    _VehicleMarkerType.truck,
+    _VehicleMarkerType.van,
+    _VehicleMarkerType.pickup,
+    _VehicleMarkerType.crane,
+    _VehicleMarkerType.scooter,
+    _VehicleMarkerType.offroad,
+    _VehicleMarkerType.tractor,
+    _VehicleMarkerType.boat,
+    _VehicleMarkerType.excavator,
+    _VehicleMarkerType.backhoe,
+  };
+  static const int _spriteDirections = 32;
+
+  static final Map<String, ui.Image?> _spriteRawImageCache = {};
+
+  static Future<ui.Image?> _loadSpriteRaw(_VehicleMarkerType type, int index) async {
+    final key = '${type.name}_$index';
+    if (_spriteRawImageCache.containsKey(key)) return _spriteRawImageCache[key];
+    final img = await _loadMarkerAsset(
+      'assets/icons/map_sprites/${type.name}/${type.name}_$index.png',
+    );
+    _spriteRawImageCache[key] = img;
+    return img;
+  }
+
+  // Os sprites 3D foram renderizados com a camera orbitando o modelo por um
+  // caminho que deixa a posicao "0" mostrando o veiculo de PERFIL (nao de
+  // frente/cima) -- confirmado visualmente comparando car_0 (perfil total)
+  // com car_8 (traseira de frente pra camera = o que deveria ser o "norte").
+  // Mesmo padrao confirmado em outro tipo (truck_0), entao e um deslocamento
+  // sistematico do script de renderizacao, nao por-tipo. Compensa aqui.
+  static const double _spriteFrontOffsetDeg = 90.0;
+
+  static int _courseToBucket32(double? course) {
+    final step = 360 / _spriteDirections;
+    final effectiveCourse = (course ?? 0) + _spriteFrontOffsetDeg;
+    return ((effectiveCourse + step / 2) / step).floor() % _spriteDirections;
+  }
+
   static Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>
-      _loadVehicleMarkerIcons({double iconSize = 72}) async {
+      _loadVehicleMarkerIcons({
+    double iconSize = 72,
+    required Set<_VehicleMarkerType> typesToLoad,
+  }) async {
     final entries = <_VehicleOperationalStatus, Color>{
       _VehicleOperationalStatus.online: const Color(0xFF22C55E),
       _VehicleOperationalStatus.moving: const Color(0xFF22C55E),
@@ -3160,27 +3843,112 @@ class _OperationalMap extends StatelessWidget {
       _VehicleOperationalStatus.offline: const Color(0xFF9CA3AF),
       _VehicleOperationalStatus.noCommunication: const Color(0xFFF59E0B),
     };
+
+    // So gera icone dos tipos que a frota realmente usa (nao os 22 do enum
+    // inteiro sempre) -- e busca/monta tudo em paralelo, nao um por vez.
+    // Antes disso um unico fetch de sprite chegou a levar ~6s e travava a
+    // tela inteira, porque rodava sequencial pra ~2000 combinacoes.
+    final types = typesToLoad.isEmpty
+        ? _VehicleMarkerType.values.toSet()
+        : typesToLoad;
+    final legacyTypes =
+        types.where((t) => !_spriteEnabledTypes.contains(t)).toList();
+    final spriteTypes = types.where(_spriteEnabledTypes.contains).toList();
+
     final vehicleImages = <_VehicleMarkerType, ui.Image?>{};
-    for (final type in _VehicleMarkerType.values) {
+    await Future.wait(legacyTypes.map((type) async {
       vehicleImages[type] = await _loadMarkerAsset(type.assetPath);
-    }
+    }));
+
+    final spriteImagesByType = <_VehicleMarkerType, List<ui.Image?>>{};
+    await Future.wait(spriteTypes.map((type) async {
+      final images = await Future.wait(
+        List.generate(_spriteDirections, (dir) => _loadSpriteRaw(type, dir)),
+      );
+      spriteImagesByType[type] = images;
+    }));
 
     final icons = <_VehicleMarkerIconKey, gmaps.BitmapDescriptor>{};
+    final buildTasks = <Future<void>>[];
     for (final statusEntry in entries.entries) {
-      for (final type in _VehicleMarkerType.values) {
+      for (final type in spriteTypes) {
+        final images = spriteImagesByType[type]!;
+        for (int dir = 0; dir < _spriteDirections; dir++) {
+          final key = _VehicleMarkerIconKey(type, statusEntry.key, dir);
+          buildTasks.add(_buildSpriteMarkerIconBytes(
+            statusColor: statusEntry.value,
+            spriteImage: images[dir],
+            iconSize: iconSize,
+          ).then((bytes) => icons[key] = gmaps.BitmapDescriptor.bytes(bytes)));
+        }
+      }
+      for (final type in legacyTypes) {
         for (int dir = 0; dir < 8; dir++) {
           final key = _VehicleMarkerIconKey(type, statusEntry.key, dir);
-          final bytes = await _buildVehicleMarkerIconBytes(
+          buildTasks.add(_buildVehicleMarkerIconBytes(
             statusColor: statusEntry.value,
             vehicleImage: vehicleImages[type],
             course: dir * 45.0,
             iconSize: iconSize,
-          );
-          icons[key] = gmaps.BitmapDescriptor.bytes(bytes);
+          ).then((bytes) => icons[key] = gmaps.BitmapDescriptor.bytes(bytes)));
         }
       }
     }
+    await Future.wait(buildTasks);
     return icons;
+  }
+
+  // Marker novo: sprite real (sem rotacao matematica) + halo colorido de
+  // status seguindo o contorno do veiculo (substitui a bolinha solta).
+  static Future<Uint8List> _buildSpriteMarkerIconBytes({
+    required Color statusColor,
+    required ui.Image? spriteImage,
+    double iconSize = 72,
+  }) async {
+    final center = Offset(iconSize / 2, iconSize / 2);
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    if (spriteImage != null) {
+      final maxDim = spriteImage.height > spriteImage.width
+          ? spriteImage.height.toDouble()
+          : spriteImage.width.toDouble();
+      final scale = (iconSize * 0.92) / maxDim;
+      final w = spriteImage.width * scale;
+      final h = spriteImage.height * scale;
+      final srcRect = Rect.fromLTWH(
+          0, 0, spriteImage.width.toDouble(), spriteImage.height.toDouble());
+      final destRect = Rect.fromCenter(center: center, width: w, height: h);
+
+      // Halo: desenha a mesma silhueta (tingida solida na cor do status)
+      // deslocada em anel ao redor -- cria um contorno seguindo o formato
+      // exato do veiculo, em vez de bolinha separada no canto.
+      final haloPaint = Paint()
+        ..colorFilter = ColorFilter.mode(statusColor, BlendMode.srcIn)
+        ..isAntiAlias = true;
+      const haloOffset = 2.4;
+      const haloSteps = 16;
+      for (int i = 0; i < haloSteps; i++) {
+        final angle = (i / haloSteps) * 2 * math.pi;
+        final shift =
+            Offset(math.cos(angle) * haloOffset, math.sin(angle) * haloOffset);
+        canvas.drawImageRect(
+            spriteImage, srcRect, destRect.shift(shift), haloPaint);
+      }
+
+      canvas.drawImageRect(
+          spriteImage, srcRect, destRect, Paint()..isAntiAlias = true);
+    } else {
+      canvas.drawCircle(center, iconSize * 0.3,
+          Paint()..color = statusColor.withValues(alpha: 0.85));
+    }
+
+    final image = await recorder
+        .endRecording()
+        .toImage(iconSize.toInt(), iconSize.toInt());
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
+    if (byteData == null) return Uint8List(0);
+    return byteData.buffer.asUint8List();
   }
 
   static Future<ui.Image?> _loadMarkerAsset(String assetPath) async {
@@ -3552,9 +4320,15 @@ class _OperationalMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconTier = _zoomIconTier(mapZoom);
+    final typesInUse = snapshots.map((s) => s.markerType).toSet();
+    final cacheKey =
+        '$iconTier|${(typesInUse.map((t) => t.name).toList()..sort()).join(',')}';
     final markerIconsFuture = _vehicleMarkerIconsFutureByTier.putIfAbsent(
-      iconTier,
-      () => _loadVehicleMarkerIcons(iconSize: _iconSizeForTier(iconTier)),
+      cacheKey,
+      () => _loadVehicleMarkerIcons(
+        iconSize: _iconSizeForTier(iconTier),
+        typesToLoad: typesInUse,
+      ),
     );
     return FutureBuilder<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>(
       future: markerIconsFuture,
@@ -3573,11 +4347,14 @@ class _OperationalMap extends StatelessWidget {
                     orElse: () => null);
         final replayMarkerType =
             replayVehicleSnapshot?.markerType ?? _VehicleMarkerType.car;
-        final replayBearing8 = _courseToBucket8(reportRouteActiveBearing);
+        final replayBearingBucket =
+            _spriteEnabledTypes.contains(replayMarkerType)
+                ? _courseToBucket32(reportRouteActiveBearing)
+                : _courseToBucket8(reportRouteActiveBearing);
         final replayRouteMarkerIcon = markerIcons[_VehicleMarkerIconKey(
               replayMarkerType,
               _VehicleOperationalStatus.moving,
-              replayBearing8,
+              replayBearingBucket,
             )] ??
             gmaps.BitmapDescriptor.defaultMarkerWithHue(
               gmaps.BitmapDescriptor.hueAzure,
@@ -3621,13 +4398,21 @@ class _OperationalMap extends StatelessWidget {
           final statusSummary = snapshot.speed != null
               ? '${snapshot.statusLabel} - ${snapshot.speedLabel}'
               : snapshot.statusLabel;
-          final course = (isSelectedRouteVehicle ? resolvedReplayBearing : null) ??
+          // Bearing pelo deslocamento real (nao o `course` bruto, que oscila
+          // com ruido de GPS -- mesmo principio ja usado no replay). Parado
+          // ha 10min+ com ignicao/movimento desligados, trava na ultima
+          // direcao real resolvida em vez de recalcular por ruido.
+          final rawCourse = (isSelectedRouteVehicle ? resolvedReplayBearing : null) ??
               selectedReplayPoint?.course ??
               reportRouteActiveBearing ??
-              snapshot.markerRotation;
-          final bearing8 = _courseToBucket8(course);
+              snapshot.liveBearing;
+          final isMoving = (snapshot.speed ?? 0) > 1.5;
+          final course = isMoving || rawCourse != null ? rawCourse : null;
+          final bearingBucket = _spriteEnabledTypes.contains(snapshot.markerType)
+              ? _courseToBucket32(course)
+              : _courseToBucket8(course);
           final markerIcon = markerIcons[_VehicleMarkerIconKey(
-                snapshot.markerType, snapshot.operationalStatus, bearing8)] ??
+                snapshot.markerType, snapshot.operationalStatus, bearingBucket)] ??
               gmaps.BitmapDescriptor.defaultMarkerWithHue(snapshot.markerHue);
           markers.add(
             gmaps.Marker(
@@ -3638,10 +4423,45 @@ class _OperationalMap extends StatelessWidget {
               icon: markerIcon,
               infoWindow: gmaps.InfoWindow(
                 title: '${snapshot.device.name} • $statusSummary',
+                // DEBUG TEMPORARIO -- remover depois de calibrar a
+                // orientacao do sprite. Mostra rumo bruto/efetivo/bucket.
+                snippet:
+                    'DEBUG rumo=$rawCourse efetivo=${rawCourse == null ? null : (rawCourse + _spriteFrontOffsetDeg) % 360} bucket=$bearingBucket',
               ),
               onTap: () => onVehicleTap(snapshot),
             ),
           );
+
+          // Efeito "sonar" -- 3 ondas defasadas saindo do centro do pin
+          // selecionado, cor conforme o status (mesma paleta do card de
+          // veículo). Raio calculado em metros a partir de um tamanho fixo
+          // em pixels, pra não sumir/estourar dependendo do zoom.
+          if (isSelectedRouteVehicle) {
+            final metersPerPixel = 156543.03392 *
+                math.cos(markerPosition.latitude * math.pi / 180) /
+                math.pow(2, mapZoom);
+            const startPx = 9.0;
+            const endPx = 42.0;
+            final sonarColor = snapshot.statusColor;
+            for (var i = 0; i < 3; i++) {
+              final wavePhase = (sonarPhase + i / 3) % 1.0;
+              final radiusPx = startPx + (endPx - startPx) * wavePhase;
+              final opacity = (1.0 - wavePhase).clamp(0.0, 1.0) * 0.55;
+              circles.add(
+                gmaps.Circle(
+                  circleId:
+                      gmaps.CircleId('sonar-${snapshot.device.id}-$i'),
+                  center: markerPosition,
+                  radius: radiusPx * metersPerPixel,
+                  strokeWidth: 2,
+                  strokeColor: sonarColor.withValues(alpha: opacity),
+                  fillColor: const Color(0x00000000),
+                  consumeTapEvents: false,
+                  zIndex: 1,
+                ),
+              );
+            }
+          }
 
           // Labels removidos — card de seleção e painel inferior já exibem as infos.
           final showLabel = false;
@@ -3806,7 +4626,12 @@ class _OperationalMap extends StatelessWidget {
               anchor: const Offset(0.5, 0.5),
               icon: replayRouteMarkerIcon,
               zIndexInt: 1000,
-              infoWindow: const gmaps.InfoWindow(title: 'Ponto ativo da rota'),
+              infoWindow: gmaps.InfoWindow(
+                title: 'Ponto ativo da rota',
+                // DEBUG TEMPORARIO -- remover depois de calibrar.
+                snippet:
+                    'DEBUG rumo=$reportRouteActiveBearing bucket=$replayBearingBucket tipo=${replayMarkerType.name}',
+              ),
             ),
           );
         }
@@ -3829,6 +4654,7 @@ class _OperationalMap extends StatelessWidget {
           tiltGesturesEnabled: false,
           scrollGesturesEnabled: true,
           zoomGesturesEnabled: true,
+          webGestureHandling: gmaps.WebGestureHandling.greedy,
           onMapCreated: onMapCreated,
           onCameraMove: onCameraMove,
           onTap: (_) => onMapTap(),
@@ -4223,6 +5049,9 @@ class _RouteReplayStatusCard extends StatelessWidget {
     required this.odometerKm,
     required this.hourmeterHours,
     this.tireReadings = const [],
+    this.onClose,
+    this.latitude,
+    this.longitude,
   });
 
   final bool visible;
@@ -4234,6 +5063,14 @@ class _RouteReplayStatusCard extends StatelessWidget {
   final double? odometerKm;
   final double? hourmeterHours;
   final List<TireReading> tireReadings;
+  // Só o uso em Telemetria ao vivo passa isto -- fecha ela (a barrinha
+  // "Telemetria ao vivo • <nome>" foi removida, este X assumiu o lugar
+  // dela). O uso em replay de rota não passa nada, então não aparece.
+  final VoidCallback? onClose;
+  // Quando informados, desenha o card "Street View" abaixo do card de
+  // status (Street View Static API, mesma chave do mapa).
+  final double? latitude;
+  final double? longitude;
 
   @override
   Widget build(BuildContext context) {
@@ -4243,11 +5080,32 @@ class _RouteReplayStatusCard extends StatelessWidget {
       right: visible ? 20 : -220,
       top: 100,
       child: IgnorePointer(
+        ignoring: !visible,
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
           opacity: visible ? 1 : 0,
           child: PointerInterceptor(
-            child: Container(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _buildStatusCard(),
+                if (latitude != null && longitude != null) ...[
+                  const SizedBox(height: 10),
+                  _StreetViewCard(
+                    latitude: latitude!,
+                    longitude: longitude!,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusCard() {
+    return Container(
               width: 190,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -4259,6 +5117,27 @@ class _RouteReplayStatusCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                    if (onClose != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            InkWell(
+                              onTap: onClose,
+                              borderRadius: BorderRadius.circular(999),
+                              child: const Padding(
+                                padding: EdgeInsets.all(2),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 16,
+                                  color: Color(0xFF5A6D89),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     _ReplayStatusGroup(
                       title: 'Status do veículo',
                       rows: [
@@ -4341,6 +5220,61 @@ class _RouteReplayStatusCard extends StatelessWidget {
                       _TireDiagramGroup(readings: tireReadings),
                     ],
                 ],
+              ),
+    );
+  }
+}
+
+class _StreetViewCard extends StatelessWidget {
+  const _StreetViewCard({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = 'https://maps.googleapis.com/maps/api/streetview'
+        '?size=380x220&location=$latitude,$longitude&fov=80&pitch=0'
+        '&key=$kGoogleMapsApiKey';
+    // Sem título "Street View" e com padding bem fino -- mesmo ajuste já
+    // feito em _VehicleBottomStreetViewPanel (2026-09-06, pedido do
+    // usuário): a imagem ocupa quase todo o card.
+    return Container(
+      width: 190,
+      height: 120,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return const ColoredBox(
+              color: Color(0xFFEFF3F9),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) => const ColoredBox(
+            color: Color(0xFFEFF3F9),
+            child: Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: Color(0xFF94A3B8),
+                size: 22,
               ),
             ),
           ),
@@ -4546,80 +5480,6 @@ class _ReplayStatusRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LiveGaugesBar extends StatelessWidget {
-  const _LiveGaugesBar({
-    required this.vehicleName,
-    required this.onClose,
-  });
-
-  final String vehicleName;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      left: 222,
-      right: 20,
-      bottom: 20,
-      child: PointerInterceptor(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFD6E0EE)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF111827).withValues(alpha: 0.08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      vehicleName.isEmpty
-                          ? 'Telemetria ao vivo'
-                          : 'Telemetria ao vivo • $vehicleName',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2A44),
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: onClose,
-                    borderRadius: BorderRadius.circular(999),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 20,
-                        color: Color(0xFF5B6B84),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -4938,6 +5798,8 @@ class _TopSearchBar extends StatelessWidget {
     this.cardDensity,
     this.sidebarVisible = true,
     this.onOpenSettingsPanel,
+    this.onOpenChangePassword,
+    this.onOpenVehicleSearch,
     this.showStatusCards = false,
     this.noCommunicationCount = 0,
     this.showMapQuickActions = false,
@@ -4975,6 +5837,8 @@ class _TopSearchBar extends StatelessWidget {
   final VisualCardDensity? cardDensity;
   final bool sidebarVisible;
   final VoidCallback? onOpenSettingsPanel;
+  final VoidCallback? onOpenChangePassword;
+  final VoidCallback? onOpenVehicleSearch;
   final bool showStatusCards;
   final int noCommunicationCount;
   final bool showMapQuickActions;
@@ -5080,15 +5944,14 @@ class _TopSearchBar extends StatelessWidget {
                     ),
                   ),
                 ],
-                // Botão de busca (sem ação implementada ainda) escondido no
-                // mobile — em tela estreita ele empurrava o layout e chegava
-                // a estourar a borda direita da tela.
+                // Escondido no mobile -- em tela estreita empurrava o layout
+                // e chegava a estourar a borda direita da tela.
                 if (!isCompactScreen) ...[
                   const SizedBox(width: 10),
                   _GlassButton(
-                    tooltip: 'Buscar',
+                    tooltip: 'Buscar veículo',
                     icon: Icons.search_rounded,
-                    onTap: () {},
+                    onTap: onOpenVehicleSearch ?? () {},
                   ),
                 ],
               ],
@@ -5199,7 +6062,10 @@ class _TopSearchBar extends StatelessWidget {
           ),
         ),
 
-        // ── RIGHT GROUP: notifications + map layers + avatar ──
+        // ── RIGHT GROUP: copiloto IA + map layers + avatar ──
+        // Sino de notificação removido daqui (2026-09-05, pedido do usuário)
+        // -- não tinha onTap funcional, só decorativo. Lugar cedido pro
+        // atalho do copiloto de IA, que antes só existia dentro dos painéis.
         Positioned(
           right: 16,
           top: 16,
@@ -5208,8 +6074,11 @@ class _TopSearchBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _TopIcon(
-                  icon: Icons.notifications_none_outlined,
-                  count: alertCount > 0 ? alertCount : null,
+                  icon: Icons.auto_awesome_rounded,
+                  count: null,
+                  tooltip: 'Copiloto IA',
+                  selected: aiPanelOpen,
+                  onTap: onAiTap,
                 ),
                 const SizedBox(width: 10),
                 _MapLayersButton(
@@ -5227,6 +6096,16 @@ class _TopSearchBar extends StatelessWidget {
                   compactMenu: compactProfileMenu,
                   avatarOnly: true,
                   onOpenQuickSettings: onOpenSettingsPanel,
+                  onOpenChangePassword: onOpenChangePassword,
+                  showQuickActions: showMapQuickActions,
+                  mapType: mapType,
+                  trafficEnabled: trafficEnabled,
+                  onMapTypeChanged: onMapTypeChanged,
+                  onTrafficToggle: onTrafficToggle,
+                  onRecenter: onRecenter,
+                  onRefreshPositions: onRefreshPositions,
+                  onFilterSelected: onFilterSelected,
+                  onClearFilters: onClearFilters,
                 ),
               ],
             ),
@@ -5466,6 +6345,7 @@ class _ProfileMenuButton extends StatelessWidget {
     this.onRecenter,
     this.onRefreshPositions,
     this.onOpenQuickSettings,
+    this.onOpenChangePassword,
   });
 
   final VoidCallback onLogout;
@@ -5483,6 +6363,7 @@ class _ProfileMenuButton extends StatelessWidget {
   final VoidCallback? onRecenter;
   final VoidCallback? onRefreshPositions;
   final VoidCallback? onOpenQuickSettings;
+  final VoidCallback? onOpenChangePassword;
 
   static const String _profileMenuKey = 'my-profile';
   static const String _quickSettingsKey = 'quick-settings';
@@ -5563,12 +6444,9 @@ class _ProfileMenuButton extends StatelessWidget {
           case _mapRefreshKey:
             onRefreshPositions?.call();
             return;
-          default:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Perfil ativo nesta sessao.'),
-              ),
-            );
+          case _profileMenuKey:
+            onOpenChangePassword?.call();
+            return;
         }
       },
       itemBuilder: (context) {
@@ -5583,12 +6461,12 @@ class _ProfileMenuButton extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  Icons.person_outline_rounded,
+                  Icons.lock_outline_rounded,
                   size: 18,
                   color: Color(0xFF52627C),
                 ),
                 SizedBox(width: 10),
-                Expanded(child: Text('Perfil')),
+                Expanded(child: Text('Trocar senha')),
               ],
             ),
           ),
@@ -5607,43 +6485,6 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
           ),
           if (showQuickActions) ...[
-            const PopupMenuDivider(),
-            const PopupMenuItem<String>(
-              enabled: false,
-              height: 28,
-              child: Text(
-                'Filtros',
-                style: TextStyle(
-                  color: Color(0xFF60718D),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterOnlineKey,
-              child: Text('Online'),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterOfflineKey,
-              child: Text('Offline'),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterMovingKey,
-              child: Text('Em movimento'),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterAlertsKey,
-              child: Text('Alertas'),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterNoComKey,
-              child: Text('Sem comunicação'),
-            ),
-            const PopupMenuItem<String>(
-              value: _filterClearKey,
-              child: Text('Limpar filtros'),
-            ),
             const PopupMenuDivider(),
             const PopupMenuItem<String>(
               enabled: false,
@@ -5873,12 +6714,7 @@ class _SideMenu extends StatelessWidget {
                       children: [
                         Expanded(
                           child: hasLogo
-                              ? Image.asset(
-                                  logoAsset,
-                                  height: 22,
-                                  fit: BoxFit.contain,
-                                  alignment: Alignment.centerLeft,
-                                )
+                              ? _brandLogoImage(logoAsset, height: 22)
                               : Text(
                                   brandName ?? 'SouTracking',
                                   style: const TextStyle(
@@ -6009,12 +6845,7 @@ class _MobileFullScreenMenu extends StatelessWidget {
                   children: [
                     Expanded(
                       child: hasLogo
-                          ? Image.asset(
-                              logoAsset,
-                              height: 26,
-                              fit: BoxFit.contain,
-                              alignment: Alignment.centerLeft,
-                            )
+                          ? _brandLogoImage(logoAsset, height: 26)
                           : Text(
                               brandName ?? 'SouTracking',
                               style: const TextStyle(
@@ -9428,6 +10259,16 @@ class _VehicleBottomContent extends StatelessWidget {
                   Expanded(
                     child: _VehicleBottomEventsPanel(snapshot: snapshot),
                   ),
+                  if (snapshot.latLngOrNull != null) ...[
+                    const VerticalDivider(width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
+                    SizedBox(
+                      width: 220,
+                      child: _VehicleBottomStreetViewPanel(
+                        latitude: snapshot.latLngOrNull!.latitude,
+                        longitude: snapshot.latLngOrNull!.longitude,
+                      ),
+                    ),
+                  ],
                 ],
               );
 
@@ -10565,6 +11406,66 @@ class _VehicleBottomEventsPanel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VehicleBottomStreetViewPanel extends StatelessWidget {
+  const _VehicleBottomStreetViewPanel({
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final double latitude;
+  final double longitude;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = 'https://maps.googleapis.com/maps/api/streetview'
+        '?size=440x220&location=$latitude,$longitude&fov=80&pitch=0'
+        '&key=$kGoogleMapsApiKey';
+    return Container(
+      // Sem título "Street View" e com padding bem fino -- a imagem ocupa
+      // quase todo o card (pedido do usuário, 2026-09-05): a moldura branca
+      // "comia" espaço que a foto podia aproveitar melhor.
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return const ColoredBox(
+              color: Color(0xFFEFF3F9),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) => const ColoredBox(
+            color: Color(0xFFEFF3F9),
+            child: Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: Color(0xFF94A3B8),
+                size: 22,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -19584,7 +20485,9 @@ enum _VehicleMarkerType {
   scooter('scooter.png'),
   train('train.png'),
   tram('tram.png'),
-  trolleybus('trolleybus.png');
+  trolleybus('trolleybus.png'),
+  excavator('default.png'),
+  backhoe('default.png');
 
   const _VehicleMarkerType(this.fileName);
 
@@ -19637,6 +20540,10 @@ enum _VehicleMarkerType {
         return _VehicleMarkerType.tram;
       case 'trolleybus':
         return _VehicleMarkerType.trolleybus;
+      case 'excavator':
+        return _VehicleMarkerType.excavator;
+      case 'backhoe':
+        return _VehicleMarkerType.backhoe;
       case 'default':
       case 'generic':
         return _VehicleMarkerType.generic;
@@ -19714,6 +20621,7 @@ class _VehicleSnapshot {
     this.resolvedAddress,
     this.recentEvents = const [],
     this.tireAttributes = const {},
+    this.liveBearing,
   });
 
   final TraccarDevice device;
@@ -19722,6 +20630,13 @@ class _VehicleSnapshot {
   final String? resolvedAddress;
   final List<Map<String, dynamic>> recentEvents;
   final Map<String, dynamic> tireAttributes;
+  // Bearing do mapa ao vivo ja resolvido (deslocamento real entre posicoes,
+  // travado enquanto o veiculo esta parado ha 10min+) -- calculado em
+  // _buildVehicleSnapshots (_HomeShellState, unico lugar com acesso ao
+  // cache por device de posicao anterior/ultimo bearing), consumido pelo
+  // marker no _OperationalMap (StatelessWidget separado, sem acesso a esse
+  // cache diretamente).
+  final double? liveBearing;
 
   _VehicleSnapshot copyWith({
     String? resolvedAddress,
@@ -19734,6 +20649,7 @@ class _VehicleSnapshot {
       resolvedAddress: resolvedAddress ?? this.resolvedAddress,
       recentEvents: recentEvents ?? this.recentEvents,
       tireAttributes: tireAttributes,
+      liveBearing: liveBearing,
     );
   }
 
@@ -20445,6 +21361,71 @@ String _bearingToCardinalLabel(double bearing) {
   return directions[index];
 }
 
+// Tela de hub genérica -- reagrupamento de sidebar (2026-09-03): junta
+// telas que antes eram itens soltos de menu numa TabBar só, sem reescrever
+// o conteúdo de nenhuma. `builders` é lazy (Function, não Widget direto)
+// pra só montar a aba quando ela for de fato selecionada -- evita
+// construir os 4-5 painéis de uma vez toda hora que o hub abre.
+class _HubTabScreen extends StatefulWidget {
+  const _HubTabScreen({required this.tabs, required this.builders});
+
+  final List<String> tabs;
+  final List<Widget Function()> builders;
+
+  @override
+  State<_HubTabScreen> createState() => _HubTabScreenState();
+}
+
+class _HubTabScreenState extends State<_HubTabScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: widget.tabs.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            labelColor: const Color(0xFF0F69E8),
+            unselectedLabelColor: const Color(0xFF60718D),
+            indicatorColor: const Color(0xFF0F69E8),
+            indicatorWeight: 2,
+            labelStyle:
+                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            unselectedLabelStyle:
+                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            tabs: [for (final t in widget.tabs) Tab(text: t)],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [for (final build in widget.builders) build()],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _OperationalMenuItem {
   const _OperationalMenuItem({
     required this.id,
@@ -20489,17 +21470,17 @@ const List<_OperationalMenuItem> _operationalMenu = [
     icon: Icons.map_outlined,
     color: Color(0xFF10B981),
   ),
+  // Hub "Frota" -- substitui Ve\u00EDculos/Equipamentos/Motoristas/Manuten\u00E7\u00E3o/
+  // TPMS como itens soltos na sidebar (reagrupamento aprovado 2026-09-03,
+  // ver mem\u00F3ria do projeto). As telas antigas continuam existindo e
+  // funcionando por baixo (roteador em _buildPanelContent n\u00E3o foi tocado),
+  // s\u00F3 a entrada de menu delas foi removida daqui -- viram abas dentro do
+  // hub em vez de itens pr\u00F3prios.
   _OperationalMenuItem(
-    id: 'vehicles',
-    label: 'Ve\u00EDculos',
-    icon: Icons.directions_car_outlined,
+    id: 'fleet',
+    label: 'Frota',
+    icon: Icons.local_shipping_outlined,
     color: Color(0xFFF59E0B),
-  ),
-  _OperationalMenuItem(
-    id: 'devices',
-    label: 'Equipamentos',
-    icon: Icons.gps_fixed_outlined,
-    color: Color(0xFF8B5CF6),
   ),
   _OperationalMenuItem(
     id: 'alerts',
@@ -20507,17 +21488,12 @@ const List<_OperationalMenuItem> _operationalMenu = [
     icon: Icons.warning_amber_outlined,
     color: Color(0xFFEF4444),
   ),
+  // Hub "Monitoramento" -- Alertas/Cercas/Data Log/Telemetria.
   _OperationalMenuItem(
-    id: 'geofences',
-    label: 'Cercas',
-    icon: Icons.fence_outlined,
-    color: Color(0xFF14B8A6),
-  ),
-  _OperationalMenuItem(
-    id: 'maintenance',
-    label: 'Manuten\u00E7\u00E3o',
-    icon: Icons.build_outlined,
-    color: Color(0xFFD97706),
+    id: 'monitoring',
+    label: 'Monitoramento',
+    icon: Icons.warning_amber_outlined,
+    color: Color(0xFFEF4444),
   ),
   _OperationalMenuItem(
     id: 'reports',
@@ -20525,71 +21501,32 @@ const List<_OperationalMenuItem> _operationalMenu = [
     icon: Icons.insert_chart_outlined,
     color: Color(0xFF6366F1),
   ),
+  // Hub "Atendimento" -- Chamados/Comunica\u00E7\u00E3o/IA Operacional.
   _OperationalMenuItem(
-    id: 'commands',
-    label: 'Comandos',
-    icon: Icons.terminal_outlined,
-    color: Color(0xFF64748B),
-  ),
-  _OperationalMenuItem(
-    id: 'communication',
-    label: 'Comunica\u00E7\u00E3o',
-    icon: Icons.chat_bubble_outline,
-    color: Color(0xFF06B6D4),
-  ),
-  _OperationalMenuItem(
-    id: 'tickets',
-    label: 'Chamados',
+    id: 'support',
+    label: 'Atendimento',
     icon: Icons.support_agent_outlined,
     color: Color(0xFFF43F5E),
   ),
+  // Hub "Automa\u00E7\u00E3o" -- Automa\u00E7\u00F5es/Comandos.
   _OperationalMenuItem(
-    id: 'ai-operations',
-    label: 'IA Operacional',
-    icon: Icons.auto_awesome_outlined,
-    color: Color(0xFF7C3AED),
+    id: 'automation-hub',
+    label: 'Automa\u00E7\u00E3o',
+    icon: Icons.auto_fix_high_outlined,
+    color: Color(0xFFEC4899),
   ),
+  // Hub "Financeiro" -- Financeiro/Estoque.
   _OperationalMenuItem(
-    id: 'finance',
+    id: 'finance-hub',
     label: 'Financeiro',
     icon: Icons.account_balance_wallet_outlined,
     color: Color(0xFF059669),
-  ),
-  _OperationalMenuItem(
-    id: 'inventory',
-    label: 'Estoque',
-    icon: Icons.inventory_2_outlined,
-    color: Color(0xFFCA8A04),
   ),
   _OperationalMenuItem(
     id: 'mdvr',
     label: 'MDVR / C\u00E2meras',
     icon: Icons.videocam_outlined,
     color: Color(0xFFDC2626),
-  ),
-  _OperationalMenuItem(
-    id: 'telemetry',
-    label: 'Telemetria',
-    icon: Icons.sensors_outlined,
-    color: Color(0xFF2563EB),
-  ),
-  _OperationalMenuItem(
-    id: 'tpms',
-    label: 'TPMS',
-    icon: Icons.tire_repair_outlined,
-    color: Color(0xFF0EA5E9),
-  ),
-  _OperationalMenuItem(
-    id: 'logs',
-    label: 'Data Log',
-    icon: Icons.article_outlined,
-    color: Color(0xFF6B7280),
-  ),
-  _OperationalMenuItem(
-    id: 'automations',
-    label: 'Automa\u00E7\u00F5es',
-    icon: Icons.auto_fix_high_outlined,
-    color: Color(0xFFEC4899),
   ),
   _OperationalMenuItem(
     id: 'settings',

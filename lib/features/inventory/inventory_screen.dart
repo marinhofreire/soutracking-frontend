@@ -137,8 +137,15 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                         setState(() => _location = value),
                     onSupplierChanged: (value) =>
                         setState(() => _supplier = value),
+                    // Categoria/Status/Localização/Fornecedor já cobrem os
+                    // campos filtráveis do mock -- os demais (OS/veículo/
+                    // técnico/chip vinculados) só fazem sentido quando o
+                    // módulo tiver dado real de vínculo. Padronizado com o
+                    // resto da tela (_showMockAction), em vez de fingir que
+                    // resolve algo que os 4 filtros já não resolvem.
                     onMoreFilters: () => _showMockAction(
-                      'Mais filtros sera habilitado na proxima etapa.',
+                      'Estoque ainda usa dado simulado -- filtros adicionais '
+                      'entram quando o módulo tiver integração real.',
                     ),
                     onEntry: () => _showMockAction(
                         'Entrada de itens simulada com sucesso.'),

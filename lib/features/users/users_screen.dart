@@ -655,113 +655,159 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
     }
   }
 
+  static const _fieldDecoration = InputDecoration(
+    filled: true,
+    fillColor: Color(0xFFF7F9FD),
+    border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      elevation: 0,
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: AdminGlassPanel(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 620),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF176EEB).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.person_outline_rounded, color: Color(0xFF176EEB), size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Editar usuário',
+                    style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 15),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+                  ),
+                ],
+              ),
+            ),
+            // Body
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Editar Usuário',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: const Color(0xFF1F2A44),
-                              fontWeight: FontWeight.w700,
-                            ),
+                    TextField(
+                      controller: _nameCtrl,
+                      decoration: _fieldDecoration.copyWith(
+                        labelText: 'Nome',
+                        prefixIcon: const Icon(Icons.badge_outlined, size: 18),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: _fieldDecoration.copyWith(
+                        labelText: 'E-mail',
+                        prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _passwordCtrl,
+                      obscureText: !_showPassword,
+                      decoration: _fieldDecoration.copyWith(
+                        labelText: 'Nova senha (deixe em branco para manter)',
+                        prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            size: 18,
+                          ),
+                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Perfil de acesso',
+                      style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<AppUserRole>(
+                      initialValue: _role,
+                      decoration: _fieldDecoration,
+                      items: AppUserRole.values
+                          .map((r) => DropdownMenuItem(
+                                value: r,
+                                child: Text(labelFromRole(r)),
+                              ))
+                          .toList(),
+                      onChanged: (r) {
+                        if (r != null) setState(() => _role = r);
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _roleDescription(_role),
+                      style: const TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Nome'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _emailCtrl,
-                  decoration: const InputDecoration(labelText: 'E-mail'),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 12),
-                StatefulBuilder(builder: (_, setLocal) {
-                  return TextField(
-                    controller: _passwordCtrl,
-                    obscureText: !_showPassword,
-                    decoration: InputDecoration(
-                      labelText: 'Nova senha (deixe em branco para manter)',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          size: 18,
-                        ),
-                        onPressed: () =>
-                            setState(() => _showPassword = !_showPassword),
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 12),
-                Text(
-                  'Perfil de acesso',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: const Color(0xFF7A8CA8)),
-                ),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<AppUserRole>(
-                  initialValue: _role,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  items: AppUserRole.values
-                      .map((r) => DropdownMenuItem(
-                            value: r,
-                            child: Text(labelFromRole(r)),
-                          ))
-                      .toList(),
-                  onChanged: (r) {
-                    if (r != null) setState(() => _role = r);
-                  },
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _roleDescription(_role),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: const Color(0xFF9AA8BC)),
-                ),
-                const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: AdminActionButton(
-                    label: _saving ? 'Salvando...' : 'Salvar alterações',
-                    onPressed: _saving ? null : _save,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            // Footer
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
+              ),
+              child: Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF526684),
+                      side: const BorderSide(color: Color(0xFFDDE5F0)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    ),
+                    child: const Text('Cancelar'),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_rounded, size: 15),
+                    label: Text(_saving ? 'Salvando...' : 'Salvar alterações'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF176EEB),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

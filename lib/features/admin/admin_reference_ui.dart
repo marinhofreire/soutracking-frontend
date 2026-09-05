@@ -1,4 +1,4 @@
-﻿import 'dart:ui';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -13,6 +13,7 @@ class AdminReferenceScaffold extends StatelessWidget {
     required this.selectedMenu,
     required this.child,
     this.showSecondaryMenu = false,
+    this.hideHeader = false,
   });
 
   final String title;
@@ -21,6 +22,7 @@ class AdminReferenceScaffold extends StatelessWidget {
   final String selectedMenu;
   final Widget child;
   final bool showSecondaryMenu;
+  final bool hideHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +34,7 @@ class AdminReferenceScaffold extends StatelessWidget {
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (breadcrumbs.isNotEmpty)
+            if (!hideHeader && breadcrumbs.isNotEmpty)
               Text(
                 breadcrumbs.join('  >  '),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -40,22 +42,25 @@ class AdminReferenceScaffold extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
               ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF25344A),
-                        ),
+            if (!hideHeader) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF25344A),
+                              ),
+                    ),
                   ),
-                ),
-                if (action != null) action!,
-              ],
-            ),
-            const SizedBox(height: 16),
+                  if (action != null) action!,
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
             child,
           ],
         );
@@ -519,4 +524,3 @@ class _AdminMenuItem {
   final String label;
   final IconData icon;
 }
-

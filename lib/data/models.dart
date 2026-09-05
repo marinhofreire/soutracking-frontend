@@ -22,6 +22,14 @@ class TraccarDevice {
   final Map<String, dynamic>? attributes;
 
   factory TraccarDevice.fromJson(Map<String, dynamic> json) {
+    final attrs = json['attributes'] is Map
+        ? (json['attributes'] as Map).cast<String, dynamic>()
+        : null;
+    // Traccar não tem campo nativo de foto de veículo -- foto de upload
+    // (2026-09-05) fica em attributes.souVehiclePhoto (data URL base64,
+    // mesmo padrão do logo/imagem de login). json['image']/['photo'] como
+    // fallback, caso um dia venha de outra fonte.
+    final uploadedPhoto = attrs?['souVehiclePhoto'] as String?;
     return TraccarDevice(
       id: json['id'] as int,
       name: (json['name'] ?? 'Sem nome') as String,
@@ -30,10 +38,10 @@ class TraccarDevice {
       uniqueId: json['uniqueId'] as String?,
       positionId: json['positionId'] as int?,
       category: json['category'] as String?,
-      image: (json['image'] ?? json['photo']) as String?,
-      attributes: json['attributes'] is Map
-          ? (json['attributes'] as Map).cast<String, dynamic>()
-          : null,
+      image: (uploadedPhoto?.isNotEmpty ?? false)
+          ? uploadedPhoto
+          : (json['image'] ?? json['photo']) as String?,
+      attributes: attrs,
     );
   }
 }
@@ -133,6 +141,31 @@ class TraccarUser {
       administrator: json['administrator'] == true,
       readonly: json['readonly'] == true,
       disabled: json['disabled'] == true,
+      attributes: json['attributes'] is Map
+          ? (json['attributes'] as Map).cast<String, dynamic>()
+          : null,
+    );
+  }
+}
+
+class TraccarDriver {
+  TraccarDriver({
+    required this.id,
+    required this.name,
+    required this.uniqueId,
+    this.attributes,
+  });
+
+  final int id;
+  final String name;
+  final String uniqueId;
+  final Map<String, dynamic>? attributes;
+
+  factory TraccarDriver.fromJson(Map<String, dynamic> json) {
+    return TraccarDriver(
+      id: json['id'] as int,
+      name: (json['name'] ?? '') as String,
+      uniqueId: (json['uniqueId'] ?? '') as String,
       attributes: json['attributes'] is Map
           ? (json['attributes'] as Map).cast<String, dynamic>()
           : null,

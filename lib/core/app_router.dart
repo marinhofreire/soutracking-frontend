@@ -4,6 +4,7 @@ import '../features/assist/assist_create_request_screen.dart';
 import '../features/assist/assist_request_detail_screen.dart';
 import '../features/assist/assist_requests_screen.dart';
 import '../features/assist/assist_visual_dashboard_screen.dart';
+import '../features/checkin/vehicle_checkin_screen.dart';
 import '../features/mdvr/mdvr_device_detail_screen.dart';
 import '../features/mdvr/mdvr_devices_screen.dart';
 
@@ -17,8 +18,13 @@ class AppRoutes {
   static const String mdvrDevices = '/mdvr/devices';
   static const String mdvrDevicePrefix = '/mdvr/device';
 
+  // Landing pública de check-in de motorista (QR code fixo no veículo).
+  static const String checkinDevicePrefix = '/checkin/device';
+
   static String assistRequest(String id) => '$assistRequestPrefix/$id';
   static String mdvrDevice(String id) => '$mdvrDevicePrefix/$id';
+  static String checkinDevice(int deviceId) =>
+      '$checkinDevicePrefix/$deviceId';
 }
 
 Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
@@ -55,6 +61,18 @@ Route<dynamic>? appOnGenerateRoute(RouteSettings settings) {
       settings: settings,
       builder: (_) => const _AssistPrivateDashboardGate(),
     );
+  }
+
+  final checkinDeviceMatch =
+      RegExp(r'^/checkin/device/([0-9]+)$').firstMatch(name);
+  if (checkinDeviceMatch != null) {
+    final deviceId = int.tryParse(checkinDeviceMatch.group(1) ?? '');
+    if (deviceId != null) {
+      return MaterialPageRoute(
+        settings: settings,
+        builder: (_) => VehicleCheckinScreen(deviceId: deviceId),
+      );
+    }
   }
 
   final mdvrMatch = RegExp(r'^/mdvr/device/([^/]+)$').firstMatch(name);

@@ -1,3 +1,78 @@
+/// Um KPI do "Resumo executivo" com valor atual, valor do período anterior
+/// (pra calcular variação %) e uma série de pontos pro sparkline. Nunca
+/// preenchido com dado inventado -- se o período anterior não tem dado
+/// suficiente, `previous` fica null e a UI deve omitir o comparativo.
+class ExecutiveKpi {
+  const ExecutiveKpi({
+    required this.current,
+    required this.previous,
+    required this.sparkline,
+  });
+
+  final double current;
+  final double? previous;
+  final List<double> sparkline;
+
+  /// Variação percentual vs período anterior. Null se não há base de
+  /// comparação (primeiro uso do sistema, ou período anterior sem dado).
+  double? get changePercent {
+    if (previous == null || previous == 0) return null;
+    return ((current - previous!) / previous!) * 100;
+  }
+}
+
+/// KPIs operacionais reais da frota inteira num período, com comparativo.
+/// Fonte: agregação de `/reports/summary` do Traccar por todos os devices.
+class ExecutiveKpiSummary {
+  const ExecutiveKpiSummary({
+    required this.distanceKm,
+    required this.utilizationPercent,
+    required this.operatingHours,
+    required this.criticalAlerts,
+    required this.trendCurrent,
+    required this.trendPrevious,
+    required this.trendLabels,
+    required this.topVehicles,
+  });
+
+  final ExecutiveKpi distanceKm;
+  final ExecutiveKpi utilizationPercent;
+  final ExecutiveKpi operatingHours;
+  final ExecutiveKpi criticalAlerts;
+
+  /// Série diária de km percorridos no período atual/anterior, pro gráfico
+  /// de tendência (2 linhas). `trendLabels` tem a data de cada ponto do
+  /// período atual (eixo X).
+  final List<double> trendCurrent;
+  final List<double> trendPrevious;
+  final List<DateTime> trendLabels;
+
+  final List<TopVehicleActivity> topVehicles;
+
+  static const empty = ExecutiveKpiSummary(
+    distanceKm: ExecutiveKpi(current: 0, previous: null, sparkline: []),
+    utilizationPercent: ExecutiveKpi(current: 0, previous: null, sparkline: []),
+    operatingHours: ExecutiveKpi(current: 0, previous: null, sparkline: []),
+    criticalAlerts: ExecutiveKpi(current: 0, previous: null, sparkline: []),
+    trendCurrent: [],
+    trendPrevious: [],
+    trendLabels: [],
+    topVehicles: [],
+  );
+}
+
+class TopVehicleActivity {
+  const TopVehicleActivity({
+    required this.vehicleName,
+    required this.distanceKm,
+    required this.changePercent,
+  });
+
+  final String vehicleName;
+  final double distanceKm;
+  final double? changePercent;
+}
+
 enum ReportType {
   trips,
   routes,

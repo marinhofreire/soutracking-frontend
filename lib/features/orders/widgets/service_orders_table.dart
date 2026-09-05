@@ -22,7 +22,7 @@ class ServiceOrdersTable extends StatelessWidget {
           const Text(
             'Ordens de servico',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF1F2A44),
               fontWeight: FontWeight.w700,
               fontSize: 16,
             ),
@@ -31,7 +31,7 @@ class ServiceOrdersTable extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
+              color: const Color(0xFFF7F9FD),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
@@ -173,7 +173,7 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFB8C5D9),
+        color: Color(0xFF60718D),
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),

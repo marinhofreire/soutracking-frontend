@@ -1,6 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
-import '../../admin/admin_reference_ui.dart';
 import '../models/driver_models.dart';
 
 class DriversTable extends StatelessWidget {
@@ -10,246 +9,206 @@ class DriversTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AdminGlassPanel(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD6E1EF)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Lista de motoristas',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderCell('Motorista')),
-                Expanded(flex: 2, child: _HeaderCell('Telefone')),
-                Expanded(flex: 2, child: _HeaderCell('CNH')),
-                Expanded(flex: 2, child: _HeaderCell('Veiculo vinculado')),
-                Expanded(flex: 2, child: _HeaderCell('Status')),
-                Expanded(flex: 2, child: _HeaderCell('Última atividade')),
-                Expanded(flex: 2, child: _HeaderCell('Validade CNH')),
-                Expanded(flex: 1, child: _HeaderCell('Score')),
-                Expanded(flex: 2, child: _HeaderCell('Ações')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          for (final record in records)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.84),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDDE5F0)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _DriverCell(name: record.name, base: record.base),
-                  ),
-                  Expanded(flex: 2, child: _ValueCell(record.phone)),
-                  Expanded(flex: 2, child: _ValueCell(record.cnh)),
-                  Expanded(flex: 2, child: _ValueCell(record.vehicle)),
-                  Expanded(
-                    flex: 2,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AdminStatusChip(
-                        label: record.status.label,
-                        color: _statusColor(record.status),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: _ValueCell(_formatDateTime(record.lastActivity)),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AdminStatusChip(
-                        label: _formatCnhLabel(record),
-                        color: _cnhColor(record.cnhState),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: _ValueCell(record.score.toString()),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        _ActionButton(
-                          icon: Icons.visibility_outlined,
-                          color: const Color(0xFF3B82F6),
-                        ),
-                        _ActionButton(
-                          icon: Icons.edit_outlined,
-                          color: const Color(0xFF10B981),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Text(
+              'Lista de motoristas',
+              style: TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
               ),
             ),
+          ),
+          const Divider(height: 1, color: Color(0xFFDCE6F3)),
+          const _DriverTableHeader(),
+          const Divider(height: 1, color: Color(0xFFDCE6F3)),
+          if (records.isEmpty)
+            const SizedBox(
+              height: 150,
+              child: Center(
+                child: Text(
+                  'Nenhum motorista cadastrado ainda.',
+                  style: TextStyle(
+                    color: Color(0xFF60718D),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            )
+          else
+            for (final record in records) _DriverTableRow(record: record),
         ],
       ),
     );
   }
-
-  String _formatDateTime(DateTime value) {
-    final dd = value.day.toString().padLeft(2, '0');
-    final mm = value.month.toString().padLeft(2, '0');
-    final hh = value.hour.toString().padLeft(2, '0');
-    final min = value.minute.toString().padLeft(2, '0');
-    return '$dd/$mm $hh:$min';
-  }
-
-  String _formatDate(DateTime value) {
-    final dd = value.day.toString().padLeft(2, '0');
-    final mm = value.month.toString().padLeft(2, '0');
-    final yyyy = value.year.toString();
-    return '$dd/$mm/$yyyy';
-  }
-
-  String _formatCnhLabel(DriverRecord record) {
-    return '${record.cnhState.label} (${_formatDate(record.cnhExpiry)})';
-  }
-
-  Color _statusColor(DriverStatus status) {
-    switch (status) {
-      case DriverStatus.onRoute:
-        return const Color(0xFF3F8CFF);
-      case DriverStatus.available:
-        return const Color(0xFF10B981);
-      case DriverStatus.withoutVehicle:
-        return const Color(0xFFF59E0B);
-      case DriverStatus.inactive:
-        return const Color(0xFF64748B);
-    }
-  }
-
-  Color _cnhColor(CnhState cnhState) {
-    switch (cnhState) {
-      case CnhState.valid:
-        return const Color(0xFF10B981);
-      case CnhState.expiring:
-        return const Color(0xFFF59E0B);
-      case CnhState.expired:
-        return const Color(0xFFE74B4B);
-    }
-  }
 }
 
-class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.text);
-
-  final String text;
+class _DriverTableHeader extends StatelessWidget {
+  const _DriverTableHeader();
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: Color(0xFFB8C5D9),
-        fontWeight: FontWeight.w700,
-        fontSize: 12,
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      child: Row(
+        children: [
+          _HeaderCell(width: 2.4, label: 'Motorista'),
+          _HeaderCell(width: 1.7, label: 'Telefone'),
+          _HeaderCell(width: 1.5, label: 'CNH'),
+          _HeaderCell(width: 1.8, label: 'Veiculo vinculado'),
+          _HeaderCell(width: 1.8, label: 'Validade CNH'),
+          _HeaderCell(width: 0.9, label: 'Acoes'),
+        ],
       ),
     );
   }
 }
 
-class _ValueCell extends StatelessWidget {
-  const _ValueCell(this.text);
+class _DriverTableRow extends StatelessWidget {
+  const _DriverTableRow({required this.record});
 
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Color(0xFF25344A),
-        fontWeight: FontWeight.w700,
-        fontSize: 12,
-      ),
-    );
-  }
-}
-
-class _DriverCell extends StatelessWidget {
-  const _DriverCell({required this.name, required this.base});
-
-  final String name;
-  final String base;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFF1F2A44),
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          base,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFF60718D),
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.icon, required this.color});
-
-  final IconData icon;
-  final Color color;
+  final DriverRecord record;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-        color: color.withValues(alpha: 0.10),
+      height: 66,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Color(0xFFE2EAF4))),
       ),
-      child: Icon(icon, color: color, size: 16),
+      child: Row(
+        children: [
+          _Cell(
+            width: 2.4,
+            child: Text(
+              record.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          _Cell(width: 1.7, child: _Value(record.phone)),
+          _Cell(width: 1.5, child: _Value(record.cnh)),
+          _Cell(width: 1.8, child: _Value(record.vehicle)),
+          _Cell(
+              width: 1.8,
+              child:
+                  _CnhState(value: record.cnhExpiry, state: record.cnhState)),
+          _Cell(
+            width: 0.9,
+            child: Row(
+              children: const [
+                _ActionIcon(icon: Icons.visibility_outlined),
+                SizedBox(width: 6),
+                _ActionIcon(icon: Icons.edit_outlined),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+class _HeaderCell extends StatelessWidget {
+  const _HeaderCell({required this.width, required this.label});
+  final double width;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+        flex: (width * 10).round(),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF60718D),
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+}
+
+class _Cell extends StatelessWidget {
+  const _Cell({required this.width, required this.child});
+  final double width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+        flex: (width * 10).round(),
+        child: child,
+      );
+}
+
+class _Value extends StatelessWidget {
+  const _Value(this.value);
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        value.trim().isEmpty ? 'Nao informado' : value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF50647E),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+}
+
+class _CnhState extends StatelessWidget {
+  const _CnhState({required this.value, required this.state});
+  final DateTime? value;
+  final CnhState state;
+
+  @override
+  Widget build(BuildContext context) {
+    if (value == null) return const _Value('Nao informado');
+    final color = switch (state) {
+      CnhState.valid => const Color(0xFF18A558),
+      CnhState.expiring => const Color(0xFFF59E0B),
+      CnhState.expired => const Color(0xFFE74B4B),
+      CnhState.unknown => const Color(0xFF8291A8),
+    };
+    final formatted =
+        '${value!.day.toString().padLeft(2, '0')}/${value!.month.toString().padLeft(2, '0')}/${value!.year}';
+    return Text(
+      formatted,
+      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+    );
+  }
+}
+
+class _ActionIcon extends StatelessWidget {
+  const _ActionIcon({required this.icon});
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 29,
+        height: 29,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F6FD),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 16, color: const Color(0xFF176EEB)),
+      );
 }

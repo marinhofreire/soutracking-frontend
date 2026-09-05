@@ -5,6 +5,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/map_config.dart';
 import '../../state/session_state.dart';
+import '../reports/services/report_export_downloader_stub.dart'
+    if (dart.library.html) '../reports/services/report_export_downloader_web.dart'
+    as downloader;
 
 class GeofencesScreen extends ConsumerStatefulWidget {
   const GeofencesScreen({super.key});
@@ -489,6 +492,62 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     return _geofenceDisabled(fence) ? 'Inativa' : 'Ativa';
   }
 
+  String _csvEscape(String value) {
+    if (value.contains(',') || value.contains('"') || value.contains('\n')) {
+      return '"${value.replaceAll('"', '""')}"';
+    }
+    return value;
+  }
+
+  Future<void> _exportGeofencesCsv(List<Map<String, dynamic>> geofences) async {
+    if (geofences.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nenhuma cerca para exportar.')),
+      );
+      return;
+    }
+    final rows = <List<String>>[
+      ['Nome', 'Tipo', 'Status', 'Área/raio', 'Descrição bruta'],
+      for (final fence in geofences)
+        [
+          '${fence['name'] ?? ''}',
+          _geofenceType(fence),
+          _geofenceStatus(fence),
+          _geofenceAreaLabel(fence),
+          '${fence['area'] ?? ''}',
+        ],
+    ];
+    final csv = rows
+        .map((row) => row.map(_csvEscape).join(','))
+        .join('\r\n');
+    final timestamp = DateTime.now();
+    final fileName = 'cercas_'
+        '${timestamp.year}${timestamp.month.toString().padLeft(2, '0')}'
+        '${timestamp.day.toString().padLeft(2, '0')}_'
+        '${timestamp.hour.toString().padLeft(2, '0')}'
+        '${timestamp.minute.toString().padLeft(2, '0')}.csv';
+    try {
+      await downloader.downloadTextFile(
+        fileName: fileName,
+        mimeType: 'text/csv;charset=utf-8',
+        content: csv,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CSV exportado com sucesso.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Falha ao gerar download. Verifique o navegador e tente novamente.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _toggleGeofenceEnabled(Map<String, dynamic> fence) async {
     final id = fence['id'];
     if (id is! int) return;
@@ -782,7 +841,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: () {},
+                onPressed: () => _exportGeofencesCsv(filtered),
                 icon: const Icon(Icons.file_download_outlined, size: 18),
                 label: const Text('Exportar'),
               ),

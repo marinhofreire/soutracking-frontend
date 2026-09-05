@@ -38,6 +38,7 @@ enum CnhState {
   valid,
   expiring,
   expired,
+  unknown,
 }
 
 extension CnhStateLabel on CnhState {
@@ -49,6 +50,8 @@ extension CnhStateLabel on CnhState {
         return 'A vencer';
       case CnhState.expired:
         return 'Vencida';
+      case CnhState.unknown:
+        return 'Nao informada';
     }
   }
 }
@@ -59,6 +62,9 @@ class DriverRecord {
     required this.name,
     required this.phone,
     required this.cnh,
+    required this.cnhCategory,
+    required this.ear,
+    required this.toxicologicoDate,
     required this.vehicle,
     required this.status,
     required this.lastActivity,
@@ -72,10 +78,15 @@ class DriverRecord {
   final String name;
   final String phone;
   final String cnh;
+  final String cnhCategory;
+  final bool ear;
+  final DateTime? toxicologicoDate;
   final String vehicle;
   final DriverStatus status;
   final DateTime lastActivity;
-  final DateTime cnhExpiry;
+  // Nulo quando o motorista nao tem validade de CNH cadastrada -- nunca
+  // inventamos uma data so pra preencher a UI.
+  final DateTime? cnhExpiry;
   final CnhState cnhState;
   final int score;
   final String base;

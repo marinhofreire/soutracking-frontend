@@ -208,7 +208,7 @@ const List<_SensorDefinition> _definitions = [
   ),
   _SensorDefinition(
     canonicalKey: 'nt20.frame',
-    label: 'Frame Pixel TI',
+    label: 'Frame PixelTI',
     group: SensorDisplayGroup.technical,
     icon: Icons.memory_outlined,
     aliases: {'nt20frame'},

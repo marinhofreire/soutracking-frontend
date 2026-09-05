@@ -11,6 +11,8 @@ class WhiteLabelConfig {
     required this.primaryColor,
     required this.secondaryColor,
     this.logoAsset,
+    this.loginBackgroundImage,
+    this.homeHubId,
   });
 
   final String appName;
@@ -18,6 +20,14 @@ class WhiteLabelConfig {
   final Color primaryColor;
   final Color secondaryColor;
   final String? logoAsset;
+  // Imagem de fundo da tela de login -- data URL (base64) ou asset path.
+  // Quando null/vazio, login_screen.dart cai no PNG fixo de referência
+  // (comportamento de antes, preservado).
+  final String? loginBackgroundImage;
+  // Id do hub que abre logo após o login (ex: 'dashboard', 'fleet',
+  // 'monitoring' -- mesmos ids de _operationalMenu em home_shell.dart).
+  // Quando null/vazio, mantém o padrão atual (dashboard).
+  final String? homeHubId;
 
   static const WhiteLabelConfig fallback = WhiteLabelConfig(
     appName: 'SouTracking',
@@ -34,6 +44,8 @@ class WhiteLabelConfig {
       secondaryColor:
           _parseColor(json['secondaryColor']) ?? fallback.secondaryColor,
       logoAsset: json['logoAsset'] as String?,
+      loginBackgroundImage: json['loginBackgroundImage'] as String?,
+      homeHubId: json['homeHubId'] as String?,
     );
   }
 
@@ -44,6 +56,8 @@ class WhiteLabelConfig {
       'primaryColor': _colorToHex(primaryColor),
       'secondaryColor': _colorToHex(secondaryColor),
       'logoAsset': logoAsset,
+      'loginBackgroundImage': loginBackgroundImage,
+      'homeHubId': homeHubId,
     };
   }
 
@@ -53,6 +67,8 @@ class WhiteLabelConfig {
     Color? primaryColor,
     Color? secondaryColor,
     String? logoAsset,
+    String? loginBackgroundImage,
+    String? homeHubId,
   }) {
     return WhiteLabelConfig(
       appName: appName ?? this.appName,
@@ -60,6 +76,9 @@ class WhiteLabelConfig {
       primaryColor: primaryColor ?? this.primaryColor,
       secondaryColor: secondaryColor ?? this.secondaryColor,
       logoAsset: logoAsset ?? this.logoAsset,
+      loginBackgroundImage:
+          loginBackgroundImage ?? this.loginBackgroundImage,
+      homeHubId: homeHubId ?? this.homeHubId,
     );
   }
 

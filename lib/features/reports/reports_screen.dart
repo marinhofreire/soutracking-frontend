@@ -10,8 +10,9 @@ import 'package:http/http.dart' as http;
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'models/report_models.dart';
+import 'providers/executive_summary_provider.dart';
 import 'services/report_export_service.dart';
-import 'widgets/report_category_cards.dart';
+import 'widgets/executive_summary_panel.dart';
 import 'widgets/reports_filters_bar.dart';
 import 'widgets/reports_kpi_row.dart';
 import 'widgets/reports_table.dart';
@@ -212,9 +213,22 @@ List<ReportRecord> _mapReportRecords({
     // Eventos brutos de conexão (online/offline/unknown/moving) repetem
     // várias vezes por dispositivo no período — agrupa em 1 linha por
     // (dispositivo + tipo de evento) em vez de 1 linha por ocorrência.
-    final groupKey = type == ReportType.events
-        ? '${deviceId ?? 'sem-dispositivo'}|${eventType ?? record.name}'
-        : 'individual|${groups.length}|${record.name}|${record.createdAt}';
+    //
+    // Rotas vêm do Traccar como 1 ponto de GPS por posição registrada
+    // (podem ser centenas no período) — mas quando o usuário pede "uma
+    // rota" pra um veículo/período, o resultado esperado é 1 linha só (o
+    // trajeto inteiro do pedido), não 1 por ponto nem 1 por dia. Agrupa
+    // tudo do mesmo device no request inteiro.
+    //
+    // Viagens e paradas são ocorrências discretas de verdade (cada viagem
+    // tem início/fim próprios) — cada uma continua sendo 1 linha, não
+    // agrupa.
+    final groupKey = switch (type) {
+      ReportType.events =>
+        '${deviceId ?? 'sem-dispositivo'}|${eventType ?? record.name}',
+      ReportType.routes => 'routes|${deviceId ?? 'sem-dispositivo'}',
+      _ => 'individual|${groups.length}|${record.name}|${record.createdAt}',
+    };
 
     final existing = groups[groupKey];
     if (existing == null) {
@@ -230,6 +244,8 @@ List<ReportRecord> _mapReportRecords({
     }
   }
 
+  final routesFullPeriod = _resolvePeriod(const {}, from, to);
+
   final records = <ReportRecord>[
     for (final group in groups.values)
       group.occurrences == 1
@@ -239,7 +255,11 @@ List<ReportRecord> _mapReportRecords({
               type: group.latest.type,
               vehicle: group.latest.vehicle,
               driver: group.latest.driver,
-              period: group.latest.period,
+              // Rota agrupada mostra o período inteiro do pedido (from→to),
+              // não só o timestamp do ponto mais recente do trajeto.
+              period: group.latest.type == ReportType.routes
+                  ? routesFullPeriod
+                  : group.latest.period,
               status: group.latest.status,
               createdAt: group.latest.createdAt,
               format: group.latest.format,
@@ -659,8 +679,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   late DateTime _endDateTime;
   late DateTime _appliedStartDateTime;
   late DateTime _appliedEndDateTime;
-  String _type = 'Eventos';
-  String _appliedType = 'Eventos';
+  String _type = 'Resumo operacional';
+  String _appliedType = 'Resumo operacional';
   String _vehicle = 'Todos';
   String _appliedVehicle = 'Todos';
   String _driver = 'Todos';
@@ -1244,8 +1264,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _appliedVehicle = 'Todos';
       _driver = 'Todos';
       _appliedDriver = 'Todos';
-      _type = 'Eventos';
-      _appliedType = 'Eventos';
+      _type = 'Resumo operacional';
+      _appliedType = 'Resumo operacional';
       _eventType = 'Todos';
       _appliedEventType = 'Todos';
       _status = 'Todos';
@@ -1267,6 +1287,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(reportsRealDevicesProvider);
+    final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
+    final executiveAsync = ref.watch(
+      executiveSummaryProvider(
+        ExecutiveSummaryQuery(
+          from: _appliedStartDateTime,
+          to: _appliedEndDateTime,
+          deviceId: _resolveSelectedDeviceId(_appliedVehicle, devices),
+        ),
+      ),
+    );
     // Só busca quando o usuário clicar em "Buscar" — antes disso, a tela
     // abria já disparando uma consulta pesada (frota inteira, 30 dias) sem
     // pedir nada, e isso segurava a abertura do painel.
@@ -1287,8 +1317,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return SizedBox.expand(
       child: listAsync.when(
         data: (records) {
-          final summary = _buildSummary(records);
-          final categories = _buildMainCategories(records);
           final filtered = _applyFilters(records);
           final typeOptions = const [
             'Todos',
@@ -1334,17 +1362,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               return ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  ReportCategoryCards(
-                    categories: categories,
-                    selectedTypeLabel: _appliedType,
-                    onGenerate: (type) {
-                      setState(() {
-                        _type = type.label;
-                        _hasSearched = false;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
                   ReportsFiltersBar(
                     startDateTime: _startDateTime,
                     endDateTime: _endDateTime,
@@ -1400,8 +1417,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     onClearFilters: _clearFilters,
                   ),
                   const SizedBox(height: 12),
-                  ReportsKpiRow(summary: summary),
+                  executiveAsync.when(
+                    data: (summary) => ExecutiveSummaryPanel(summary: summary),
+                    loading: () => const _ExecutiveLoadingPanel(),
+                    error: (_, __) => const _ExecutiveUnavailablePanel(),
+                  ),
                   const SizedBox(height: 12),
+                  const Text(
+                    'Histórico de relatórios',
+                    style: TextStyle(
+                      color: Color(0xFF263650),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: tableHeight,
                     child: ReportsTable(
@@ -4598,6 +4628,55 @@ class _RouteDetailPoint {
     final text = address?.trim() ?? '';
     return text.isEmpty ? 'Nao informado' : text;
   }
+}
+
+class _ExecutiveLoadingPanel extends StatelessWidget {
+  const _ExecutiveLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 250,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD6E0EE)),
+        ),
+        alignment: Alignment.center,
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 2),
+            SizedBox(height: 12),
+            Text(
+              'Carregando resumo executivo...',
+              style: TextStyle(color: Color(0xFF60718D), fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      );
+}
+
+class _ExecutiveUnavailablePanel extends StatelessWidget {
+  const _ExecutiveUnavailablePanel();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 250,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD6E0EE)),
+        ),
+        alignment: Alignment.center,
+        child: const Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Nao foi possivel carregar os dados do resumo executivo.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF60718D), fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
 }
 
 class _LoadingPanel extends StatelessWidget {
