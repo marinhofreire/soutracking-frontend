@@ -29,6 +29,11 @@ migrate_working_dir/
 # /build/ removido para permitir deploy estático no Cloudflare Pages
 /coverage/
 
+# Modelos 3D brutos (fonte dos sprites de mapa pré-renderizados em
+# assets/icons/map_sprites/) -- 70-100MB cada, acima do limite do GitHub
+# (2026-09-06). O app usa só os sprites PNG, nunca os .glb em runtime.
+/assets/3d_source/
+
 # Symbolication related
 app.*.symbols
 
