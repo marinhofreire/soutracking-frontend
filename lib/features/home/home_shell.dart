@@ -422,6 +422,20 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // aparecem juntos no mapa ao mesmo tempo.
   final Map<int, double> _lastResolvedLiveBearingByDevice = {};
   final Map<int, TraccarPosition> _previousLivePositionByDevice = {};
+
+  // Suavização do marcador no mapa ao vivo (2026-09-06, pedido do usuário:
+  // posição real só chega ~1x/minuto do servidor, então sem isso o carro
+  // "teleporta" de um ponto pro outro a cada atualização). Puramente
+  // cosmético no frontend -- não muda a cadência real de posições, só
+  // desliza visualmente entre a última posição conhecida e a nova ao longo
+  // de _liveMarkerAnimDuration. Cada device tem sua própria animação
+  // (podem chegar em momentos diferentes).
+  static const Duration _liveMarkerAnimDuration = Duration(milliseconds: 2500);
+  static const Duration _liveMarkerAnimTick = Duration(milliseconds: 33);
+  final Map<int, gmaps.LatLng> _liveMarkerAnimFromByDevice = {};
+  final Map<int, gmaps.LatLng> _liveMarkerAnimToByDevice = {};
+  final Map<int, DateTime> _liveMarkerAnimStartByDevice = {};
+  Timer? _liveMarkerAnimTimer;
   bool _reportRouteReplay3dEnabled = true;
   String? _lastFocusedReportRouteKey;
   String? _lastReportRouteMapTypeNonce;
@@ -502,6 +516,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _operationalRefreshTimer?.cancel();
     _positionRefreshTimer?.cancel();
     _sonarTimer?.cancel();
+    _liveMarkerAnimTimer?.cancel();
     super.dispose();
   }
 
@@ -1249,6 +1264,76 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
 
     return _lastResolvedLiveBearingByDevice[deviceId];
+  }
+
+  // Registra o alvo de animação quando a posição real de um device muda,
+  // e devolve a posição interpolada pro instante atual. Chamado 1x por
+  // device a cada rebuild da lista de snapshots (mesmo padrão de
+  // _resolveLiveBearing) -- assim o registro do alvo fica em sincronia com
+  // a chegada de dado novo, e o próprio addVehicleMarker só lê o resultado.
+  gmaps.LatLng _resolveAnimatedLivePosition(
+    int deviceId,
+    gmaps.LatLng target,
+  ) {
+    final currentTarget = _liveMarkerAnimToByDevice[deviceId];
+    if (currentTarget == null) {
+      // Primeira vez que vemos esse device -- sem "de onde" animar, começa
+      // direto na posição real.
+      _liveMarkerAnimToByDevice[deviceId] = target;
+      return target;
+    }
+    if (currentTarget.latitude != target.latitude ||
+        currentTarget.longitude != target.longitude) {
+      // Posição real mudou -- a partir de onde a animação anterior estava
+      // (não necessariamente currentTarget, pode estar no meio de uma
+      // animação anterior ainda), pra não dar um "salto" invertido se a
+      // posição mudar de novo antes da animação anterior terminar.
+      final from = _resolveAnimatedLivePositionNow(deviceId) ?? currentTarget;
+      _liveMarkerAnimFromByDevice[deviceId] = from;
+      _liveMarkerAnimToByDevice[deviceId] = target;
+      _liveMarkerAnimStartByDevice[deviceId] = DateTime.now();
+      _ensureLiveMarkerAnimTimerRunning();
+    }
+    return _resolveAnimatedLivePositionNow(deviceId) ?? target;
+  }
+
+  gmaps.LatLng? _resolveAnimatedLivePositionNow(int deviceId) {
+    final from = _liveMarkerAnimFromByDevice[deviceId];
+    final to = _liveMarkerAnimToByDevice[deviceId];
+    final start = _liveMarkerAnimStartByDevice[deviceId];
+    if (from == null || to == null || start == null) return to;
+    final elapsed = DateTime.now().difference(start);
+    if (elapsed >= _liveMarkerAnimDuration) return to;
+    final t = (elapsed.inMilliseconds / _liveMarkerAnimDuration.inMilliseconds)
+        .clamp(0.0, 1.0);
+    // Suavização ease-out -- começa mais rápido e desacelera perto do
+    // destino, fica mais natural que velocidade constante pra um
+    // deslocamento curto e rápido.
+    final eased = 1 - (1 - t) * (1 - t);
+    return gmaps.LatLng(
+      from.latitude + (to.latitude - from.latitude) * eased,
+      from.longitude + (to.longitude - from.longitude) * eased,
+    );
+  }
+
+  void _ensureLiveMarkerAnimTimerRunning() {
+    _liveMarkerAnimTimer ??= Timer.periodic(_liveMarkerAnimTick, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        _liveMarkerAnimTimer = null;
+        return;
+      }
+      final now = DateTime.now();
+      final stillAnimating = _liveMarkerAnimStartByDevice.values.any(
+        (start) => now.difference(start) < _liveMarkerAnimDuration,
+      );
+      if (!stillAnimating) {
+        timer.cancel();
+        _liveMarkerAnimTimer = null;
+        return;
+      }
+      setState(() {});
+    });
   }
 
   DateTime? _interpolateDateTime(
@@ -2980,6 +3065,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         tireAttributes:
             _lastKnownTireAttributesByDevice[devices[i].id] ?? const {},
       );
+      final rawLatLng = base.latLngOrNull;
       result.add(_VehicleSnapshot(
         device: base.device,
         position: base.position,
@@ -2991,6 +3077,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ignitionOn: base.ignition,
           isMoving: base.isMoving,
         ),
+        animatedLatLng: rawLatLng == null
+            ? null
+            : _resolveAnimatedLivePosition(base.device.id, rawLatLng),
       ));
     }
     return result;
@@ -4583,11 +4672,16 @@ class _OperationalMap extends StatelessWidget {
 
         void addVehicleMarker(_VehicleSnapshot snapshot) {
           final isSelectedRouteVehicle = snapshot.device.id == selectedDeviceId;
+          // Fora de replay/relatório, usa a posição suavizada (desliza da
+          // posição anterior até a nova) em vez do salto instantâneo --
+          // dentro de replay/relatório o próprio ponto ativo já é
+          // interpolado por outro mecanismo (_buildReportRouteReplayFrame),
+          // então não precisa (nem deve) passar por essa suavização também.
           final markerPosition = isSelectedRouteVehicle
               ? (selectedReplayPoint?.latLng ??
                   reportRouteActiveLatLng ??
                   snapshot.latLng)
-              : snapshot.latLng;
+              : (snapshot.animatedLatLng ?? snapshot.latLng);
           final statusSummary = snapshot.speed != null
               ? '${snapshot.statusLabel} - ${snapshot.speedLabel}'
               : snapshot.statusLabel;
@@ -21103,6 +21197,7 @@ class _VehicleSnapshot {
     this.recentEvents = const [],
     this.tireAttributes = const {},
     this.liveBearing,
+    this.animatedLatLng,
   });
 
   final TraccarDevice device;
@@ -21118,6 +21213,12 @@ class _VehicleSnapshot {
   // marker no _OperationalMap (StatelessWidget separado, sem acesso a esse
   // cache diretamente).
   final double? liveBearing;
+  // Posicao do marker suavizada (2026-09-06) -- desliza da posicao real
+  // anterior ate a nova ao longo de _liveMarkerAnimDuration, em vez de
+  // "teleportar" a cada atualizacao (posicao real do servidor chega em
+  // media 1x/minuto). Mesma logica de acesso do liveBearing: calculado em
+  // _buildSnapshots, consumido pelo _OperationalMap.
+  final gmaps.LatLng? animatedLatLng;
 
   _VehicleSnapshot copyWith({
     String? resolvedAddress,
