@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' hide Image;
@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:http/http.dart' as http;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/app_constants.dart';
@@ -375,12 +376,26 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  static const Duration _replayTick = Duration(milliseconds: 80);
+  // Cadência visual do marcador (~30fps) -- bem mais frequente que antes
+  // (80ms) pra eliminar o efeito de "tranco" (2026-09-06). O avanço real do
+  // progresso usa o tempo decorrido de verdade (Stopwatch), não assume que
+  // cada disparo do timer levou exatamente esse intervalo -- sob jank/paint
+  // pesado o timer atrasa, e assumir o intervalo nominal fazia o replay
+  // "segurar e pular" pra compensar.
+  static const Duration _replayTick = Duration(milliseconds: 32);
   static const Duration _replaySegment = Duration(milliseconds: 1400);
+  // Cadência de atualização da câmera no replay -- mais espaçada que o
+  // marcador de propósito (câmera não precisa reagir a cada frame, e
+  // animar ela com tanta frequência reiniciava a transição suave a cada
+  // chamada, produzindo o "salto" percebido).
+  static const Duration _replayCameraUpdateInterval =
+      Duration(milliseconds: 180);
   // Segmentos com distância maior que isso (ex: buraco de conexão do
   // rastreador) não são animados suavemente — o marcador salta direto pro
   // próximo ponto em vez de "correr" por um trecho gigante em pouco tempo.
   static const double _replaySegmentMaxAnimatedDistanceKm = 0.6;
+  final Stopwatch _replayStopwatch = Stopwatch();
+  DateTime? _lastReportRouteCameraUpdate;
   static const Duration _operationalRefreshInterval = Duration(seconds: 30);
   static const Duration _positionRefreshInterval = Duration(seconds: 3);
 
@@ -443,6 +458,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   bool _mapTrafficEnabled = true;
   DateTime _blockSurfaceClearUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // Rastro ao vivo -- desligado por padrão (2026-09-06, pedido do usuário:
+  // "liga/desliga"). Quando ligado, o traçado bruto (reta entre pontos GPS)
+  // é substituído pela versão corrigida via OSRM (match-nas-ruas), cacheada
+  // por device pra não bater na API a cada rebuild.
+  bool _liveTrailEnabled = false;
+  final Map<int, List<gmaps.LatLng>> _liveTrailMatchByDeviceId = {};
+  int? _liveTrailMatchInFlightForDeviceId;
+  List<gmaps.LatLng>? _liveTrailMatchedSourceSnapshot;
+
   // Efeito "sonar" (ondas saindo do centro) no pin do veículo selecionado no
   // mapa ao vivo -- só roda enquanto há seleção, pra não gastar ciclo à toa.
   Timer? _sonarTimer;
@@ -454,9 +478,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _sonarTimer ??= Timer.periodic(_sonarTick, (_) {
       if (!mounted) return;
       setState(() {
-        _sonarPhase =
-            (_sonarPhase + _sonarTick.inMilliseconds / _sonarCycle.inMilliseconds) %
-                1.0;
+        _sonarPhase = (_sonarPhase +
+                _sonarTick.inMilliseconds / _sonarCycle.inMilliseconds) %
+            1.0;
       });
     });
   }
@@ -781,7 +805,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final now = DateTime.now();
     final isDoubleTap = _lastVehicleTapDeviceId == snapshot.device.id &&
         _lastVehicleTapTime != null &&
-        now.difference(_lastVehicleTapTime!) < const Duration(milliseconds: 400);
+        now.difference(_lastVehicleTapTime!) <
+            const Duration(milliseconds: 400);
     _lastVehicleTapDeviceId = snapshot.device.id;
     _lastVehicleTapTime = now;
 
@@ -1108,7 +1133,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // via) em vez do `course` bruto do rastreador. Parado ou com ponto muito
   // proximo do vizinho, mantem a ultima direcao resolvida em vez de girar.
   double? _resolveReplayBearing(List<_ReplayPoint> points, int? index) {
-    if (index == null || points.isEmpty || index < 0 || index >= points.length) {
+    if (index == null ||
+        points.isEmpty ||
+        index < 0 ||
+        index >= points.length) {
       return _lastResolvedReplayBearing;
     }
     final current = points[index];
@@ -1290,24 +1318,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return earthRadiusKm * arc;
   }
 
-  double _reportRouteDisplayProgress(
-    double rawProgress,
-    double segmentDistanceKm,
-  ) {
-    const longSegmentThresholdKm = 1.0;
-    if (segmentDistanceKm < longSegmentThresholdKm) {
-      return rawProgress.clamp(0.0, 1.0);
-    }
-    final safeProgress = rawProgress.clamp(0.0, 1.0);
-    if (safeProgress <= 0.35) {
-      return 0.0;
-    }
-    if (safeProgress >= 0.65) {
-      return 1.0;
-    }
-    return ((safeProgress - 0.35) / 0.30).clamp(0.0, 1.0);
-  }
-
   int? _resolveReportRouteSegmentIndex(
     List<ReportRouteMapPoint> points,
     int? pointIndex,
@@ -1364,8 +1374,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ((normalizedBearing / debugBucketSize).round() * debugBucketSize) % 360;
     final finalAngle = segmentBucket.toDouble();
 
-    final isLargeGap =
-        segmentDistanceKm > _replaySegmentMaxAnimatedDistanceKm;
+    final isLargeGap = segmentDistanceKm > _replaySegmentMaxAnimatedDistanceKm;
 
     if (!playing || isLastPoint || isLargeGap) {
       final bearing = _resolveReportRouteBearing(
@@ -1415,6 +1424,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (points.length < 2) return;
     if (_replayTimer != null) {
       _replayTimer?.cancel();
+      _replayStopwatch.stop();
+      _lastReportRouteCameraUpdate = null;
       setState(() {
         _replayTimer = null;
         _routeReplaySegmentProgress = 0;
@@ -1429,11 +1440,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _replayDebugLinesEmitted = 0;
     }
 
+    _replayStopwatch
+      ..reset()
+      ..start();
     final timer = Timer.periodic(_replayTick, (_) {
       if (!mounted) return;
+      // Avança pelo tempo real decorrido desde o tick anterior, não pelo
+      // intervalo nominal do timer -- sob jank o Timer.periodic atrasa (ou
+      // "queima" ticks), e assumir sempre _replayTick.inMilliseconds fazia
+      // o progresso ficar pra trás e depois saltar pra compensar.
+      final elapsedMs = _replayStopwatch.elapsedMilliseconds;
+      _replayStopwatch.reset();
+      if (elapsedMs <= 0) return;
       setState(() {
         _routeReplaySegmentProgress +=
-            _replayTick.inMilliseconds / _replaySegment.inMilliseconds;
+            elapsedMs / _replaySegment.inMilliseconds;
 
         while (_routeReplaySegmentProgress >= 1) {
           if (_selectedReplayIndex >= points.length - 2) {
@@ -1522,15 +1543,30 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     if (_lastFollowedReportRouteReplayKey == key) return;
     _lastFollowedReportRouteReplayKey = key;
 
+    // Câmera atualiza bem menos vezes que o marcador de propósito
+    // (2026-09-06) -- antes ela era animada a cada mudança de posição
+    // interpolada (praticamente todo tick de ~30-80ms), o que reiniciava a
+    // transição suave do Google Maps a cada chamada e produzia o efeito de
+    // "salto" na câmera. Aqui ela só reage no máximo a cada
+    // _replayCameraUpdateInterval, deixando o `animateCamera` (que já é uma
+    // transição suave, não instantânea) terminar antes de ser interrompido
+    // de novo.
+    final now = DateTime.now();
+    final lastUpdate = _lastReportRouteCameraUpdate;
+    if (lastUpdate != null &&
+        now.difference(lastUpdate) < _replayCameraUpdateInterval) {
+      return;
+    }
+    _lastReportRouteCameraUpdate = now;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _googleMapController?.animateCamera(
         gmaps.CameraUpdate.newCameraPosition(
           gmaps.CameraPosition(
             target: gmaps.LatLng(point.latitude, point.longitude),
-            zoom: camera3dEnabled
-                ? _chaseCamZoomForSpeed(point.speedKmh)
-                : 14.6,
+            zoom:
+                camera3dEnabled ? _chaseCamZoomForSpeed(point.speedKmh) : 14.6,
             tilt: camera3dEnabled ? 55 : 0,
             bearing: camera3dEnabled ? (bearing ?? 0) : 0,
           ),
@@ -1572,6 +1608,85 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return List<gmaps.LatLng>.unmodifiable(trail);
   }
 
+  // Rastro ao vivo "colado nas ruas" -- mesmo serviço OSRM já usado no
+  // relatório de rota (reports_screen.dart:_matchSegmentWithOsrm), só que
+  // aqui o buffer é curto (até 24 pontos, ver _recordPositionTrails) então
+  // não precisa de downsample/lotes. Cacheado por device: só refaz a
+  // chamada quando o rastro bruto realmente muda (novo ponto).
+  List<gmaps.LatLng> _liveTrailForDisplay() {
+    if (!_liveTrailEnabled) return _selectedTrail();
+    final id = _selectedVehicle?.id;
+    if (id == null) return const <gmaps.LatLng>[];
+    final matched = _liveTrailMatchByDeviceId[id];
+    if (matched != null && matched.length > 1) return matched;
+    return _selectedTrail();
+  }
+
+  Future<void> _refreshLiveTrailMatchIfNeeded() async {
+    if (!_liveTrailEnabled) return;
+    final id = _selectedVehicle?.id;
+    if (id == null) return;
+    final rawTrail = _selectedTrail();
+    if (rawTrail.length < 2) return;
+    if (_liveTrailMatchInFlightForDeviceId == id &&
+        _liveTrailMatchedSourceSnapshot != null &&
+        _sameTrailSnapshot(_liveTrailMatchedSourceSnapshot!, rawTrail)) {
+      return;
+    }
+    final cached = _liveTrailMatchByDeviceId[id];
+    if (cached != null &&
+        _liveTrailMatchedSourceSnapshot != null &&
+        _sameTrailSnapshot(_liveTrailMatchedSourceSnapshot!, rawTrail)) {
+      return;
+    }
+
+    _liveTrailMatchInFlightForDeviceId = id;
+    _liveTrailMatchedSourceSnapshot = List<gmaps.LatLng>.from(rawTrail);
+    try {
+      final coords =
+          rawTrail.map((p) => '${p.longitude},${p.latitude}').join(';');
+      final radiuses = List.filled(rawTrail.length, '30').join(';');
+      final uri = Uri.parse(
+        'http://204.168.191.10:5333/match/v1/driving/$coords'
+        '?geometries=geojson&overview=full&radiuses=$radiuses',
+      );
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final matchings = json['matchings'] as List<dynamic>?;
+        if (matchings != null && matchings.isNotEmpty) {
+          final geometry =
+              (matchings.first as Map<String, dynamic>)['geometry']
+                  as Map<String, dynamic>;
+          final coordinates = geometry['coordinates'] as List<dynamic>;
+          final points = <gmaps.LatLng>[
+            for (final pair in coordinates)
+              gmaps.LatLng(
+                ((pair as List<dynamic>)[1] as num).toDouble(),
+                (pair[0] as num).toDouble(),
+              ),
+          ];
+          if (points.length > 1) {
+            setState(() => _liveTrailMatchByDeviceId[id] = points);
+          }
+        }
+      }
+    } catch (_) {
+      // Sem internet/serviço fora do ar: mantém o rastro bruto (fallback
+      // silencioso, já é o comportamento padrão quando desligado).
+    }
+  }
+
+  bool _sameTrailSnapshot(List<gmaps.LatLng> a, List<gmaps.LatLng> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_isSameTrailPoint(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
   void _followSelectedVehicleIfNeeded(_VehicleSnapshot? snapshot) {
     if (snapshot == null || !snapshot.hasValidGps) {
       _lastFollowedSelectedPositionKey = null;
@@ -1604,6 +1719,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   void _toggleMapTraffic() {
     setState(() => _mapTrafficEnabled = !_mapTrafficEnabled);
+  }
+
+  // Rastro ao vivo (2026-09-06): desligado por padrão -- o usuário liga só
+  // quando quer auditar/conferir o trajeto recente do veículo selecionado.
+  // Reduz poluição visual e, junto disso, quando ligado o rastro passa a
+  // usar map-matching (OSRM) em vez de reta entre pontos GPS crus (ver
+  // _fetchLiveTrailMatch), corrigindo o "corta reto pela curva".
+  void _toggleLiveTrail() {
+    setState(() => _liveTrailEnabled = !_liveTrailEnabled);
+    if (_liveTrailEnabled) {
+      _refreshLiveTrailMatchIfNeeded();
+    }
   }
 
   void _recenter(List<_VehicleSnapshot> snapshots) {
@@ -1667,7 +1794,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           builder: (ctx, setModal) => Dialog(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
@@ -1676,7 +1804,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   Container(
                     padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
                     decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
+                      border:
+                          Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
                     ),
                     child: Row(
                       children: [
@@ -1684,21 +1813,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           width: 30,
                           height: 30,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF176EEB).withValues(alpha: 0.10),
+                            color:
+                                const Color(0xFF176EEB).withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.lock_outline_rounded, color: Color(0xFF176EEB), size: 16),
+                          child: const Icon(Icons.lock_outline_rounded,
+                              color: Color(0xFF176EEB), size: 16),
                         ),
                         const SizedBox(width: 10),
                         const Text(
                           'Trocar senha',
-                          style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 15),
+                          style: TextStyle(
+                              color: Color(0xFF1F2A44),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15),
                         ),
                         const Spacer(),
                         IconButton(
-                          onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                          onPressed: saving
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
                           icon: const Icon(Icons.close_rounded),
-                          style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+                          style: IconButton.styleFrom(
+                              foregroundColor: const Color(0xFF60718D)),
                         ),
                       ],
                     ),
@@ -1713,18 +1850,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           obscureText: !showPassword,
                           decoration: InputDecoration(
                             labelText: 'Nova senha',
-                            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                            prefixIcon: const Icon(Icons.lock_outline_rounded,
+                                size: 18),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                showPassword
+                                    ? Icons.visibility_off_rounded
+                                    : Icons.visibility_rounded,
                                 size: 18,
                               ),
-                              onPressed: () => setModal(() => showPassword = !showPassword),
+                              onPressed: () =>
+                                  setModal(() => showPassword = !showPassword),
                             ),
                             filled: true,
                             fillColor: const Color(0xFFF7F9FD),
-                            border: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
-                            enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                            border: const OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Color(0xFFDDE5F0))),
+                            enabledBorder: const OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Color(0xFFDDE5F0))),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1733,16 +1878,23 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           obscureText: !showPassword,
                           decoration: const InputDecoration(
                             labelText: 'Confirmar nova senha',
-                            prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
+                            prefixIcon:
+                                Icon(Icons.lock_outline_rounded, size: 18),
                             filled: true,
                             fillColor: Color(0xFFF7F9FD),
-                            border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
-                            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                            border: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Color(0xFFDDE5F0))),
+                            enabledBorder: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Color(0xFFDDE5F0))),
                           ),
                         ),
                         if (error != null) ...[
                           const SizedBox(height: 8),
-                          Text(error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+                          Text(error!,
+                              style: const TextStyle(
+                                  color: Color(0xFFEF4444), fontSize: 12)),
                         ],
                       ],
                     ),
@@ -1755,11 +1907,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     child: Row(
                       children: [
                         OutlinedButton(
-                          onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                          onPressed: saving
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF526684),
                             side: const BorderSide(color: Color(0xFFDDE5F0)),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
                           ),
                           child: const Text('Cancelar'),
                         ),
@@ -1770,11 +1925,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                               : () async {
                                   final newPassword = passwordCtrl.text.trim();
                                   if (newPassword.length < 4) {
-                                    setModal(() => error = 'A senha precisa ter pelo menos 4 caracteres.');
+                                    setModal(() => error =
+                                        'A senha precisa ter pelo menos 4 caracteres.');
                                     return;
                                   }
                                   if (newPassword != confirmCtrl.text.trim()) {
-                                    setModal(() => error = 'As senhas nao coincidem.');
+                                    setModal(() =>
+                                        error = 'As senhas nao coincidem.');
                                     return;
                                   }
                                   setModal(() {
@@ -1786,14 +1943,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                       cookie: session.cookie,
                                       authHeader: session.authHeader,
                                     );
-                                    final me = users.cast<TraccarUser?>().firstWhere(
-                                          (u) => u?.email == session.email,
-                                          orElse: () => null,
-                                        );
+                                    final me =
+                                        users.cast<TraccarUser?>().firstWhere(
+                                              (u) => u?.email == session.email,
+                                              orElse: () => null,
+                                            );
                                     if (me == null) {
                                       setModal(() {
                                         saving = false;
-                                        error = 'Nao foi possivel identificar seu usuario.';
+                                        error =
+                                            'Nao foi possivel identificar seu usuario.';
                                       });
                                       return;
                                     }
@@ -1813,11 +1972,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                         'attributes': me.attributes,
                                       },
                                     );
-                                    if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                                    if (dialogContext.mounted)
+                                      Navigator.of(dialogContext).pop();
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
                                         const SnackBar(
-                                          content: Text('Senha atualizada com sucesso.'),
+                                          content: Text(
+                                              'Senha atualizada com sucesso.'),
                                           backgroundColor: Color(0xFF10B981),
                                         ),
                                       );
@@ -1833,13 +1995,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                               ? const SizedBox(
                                   width: 15,
                                   height: 15,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
                                 )
                               : const Icon(Icons.check_rounded, size: 15),
                           label: const Text('Salvar'),
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF176EEB),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
                           ),
                         ),
                       ],
@@ -1861,8 +2025,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // escolher um resultado, reaproveita _selectVehicleOnMap (mesmo fluxo do
   // clique no marker: centraliza o mapa e abre o card do veiculo).
   Future<void> _openVehicleSearchDialog() async {
-    final devices = ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
-    final positions = ref.read(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
+    final devices =
+        ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+    final positions =
+        ref.read(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
     final allSnapshots = _buildSnapshots(devices, positions);
     final queryCtrl = TextEditingController();
 
@@ -1872,11 +2038,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     List<_VehicleSnapshot> filter(String query) {
       final q = query.trim().toLowerCase();
       if (q.isEmpty) return const [];
-      return allSnapshots.where((s) {
-        return s.device.name.toLowerCase().contains(q) ||
-            (s.device.uniqueId ?? '').toLowerCase().contains(q) ||
-            plateOf(s).toLowerCase().contains(q);
-      }).take(20).toList();
+      return allSnapshots
+          .where((s) {
+            return s.device.name.toLowerCase().contains(q) ||
+                (s.device.uniqueId ?? '').toLowerCase().contains(q) ||
+                plateOf(s).toLowerCase().contains(q);
+          })
+          .take(20)
+          .toList();
     }
 
     await showDialog<void>(
@@ -1889,11 +2058,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             return Dialog(
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               alignment: Alignment.topCenter,
               insetPadding: const EdgeInsets.only(top: 90),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460, maxHeight: 480),
+                constraints:
+                    const BoxConstraints(maxWidth: 460, maxHeight: 480),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1905,7 +2076,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                         onChanged: (_) => setModal(() {}),
                         decoration: InputDecoration(
                           hintText: 'Buscar por placa, nome ou IMEI',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                          prefixIcon:
+                              const Icon(Icons.search_rounded, size: 20),
                           suffixIcon: IconButton(
                             icon: const Icon(Icons.close_rounded, size: 18),
                             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -1914,11 +2086,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           fillColor: const Color(0xFFF7F9FD),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFDDE5F0)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFDDE5F0)),
                           ),
                         ),
                       ),
@@ -1930,7 +2104,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                               padding: EdgeInsets.all(24),
                               child: Text(
                                 'Digite placa, nome ou IMEI do veículo.',
-                                style: TextStyle(color: Color(0xFF60718D), fontSize: 12.5),
+                                style: TextStyle(
+                                    color: Color(0xFF60718D), fontSize: 12.5),
                               ),
                             )
                           : results.isEmpty
@@ -1938,15 +2113,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                   padding: EdgeInsets.all(24),
                                   child: Text(
                                     'Nenhum veículo encontrado.',
-                                    style: TextStyle(color: Color(0xFF60718D), fontSize: 12.5),
+                                    style: TextStyle(
+                                        color: Color(0xFF60718D),
+                                        fontSize: 12.5),
                                   ),
                                 )
                               : ListView.separated(
                                   shrinkWrap: true,
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
                                   itemCount: results.length,
-                                  separatorBuilder: (_, __) =>
-                                      const Divider(height: 1, color: Color(0xFFF0F4F9)),
+                                  separatorBuilder: (_, __) => const Divider(
+                                      height: 1, color: Color(0xFFF0F4F9)),
                                   itemBuilder: (context, index) {
                                     final snapshot = results[index];
                                     final plate = plateOf(snapshot);
@@ -1956,11 +2134,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                         width: 30,
                                         height: 30,
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF176EEB).withValues(alpha: 0.10),
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: const Color(0xFF176EEB)
+                                              .withValues(alpha: 0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
-                                        child: const Icon(Icons.directions_car_outlined,
-                                            color: Color(0xFF176EEB), size: 16),
+                                        child: const Icon(
+                                            Icons.directions_car_outlined,
+                                            color: Color(0xFF176EEB),
+                                            size: 16),
                                       ),
                                       title: Text(
                                         snapshot.device.name,
@@ -1973,10 +2155,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                                       subtitle: Text(
                                         [
                                           if (plate.isNotEmpty) plate,
-                                          if ((snapshot.device.uniqueId ?? '').isNotEmpty)
+                                          if ((snapshot.device.uniqueId ?? '')
+                                              .isNotEmpty)
                                             snapshot.device.uniqueId!,
                                         ].join(' • '),
-                                        style: const TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+                                        style: const TextStyle(
+                                            color: Color(0xFF60718D),
+                                            fontSize: 11.5),
                                       ),
                                       onTap: () {
                                         Navigator.of(dialogContext).pop();
@@ -2082,6 +2267,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         latestEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final snapshots = _buildSnapshots(devices, positions);
     _recordPositionTrails(snapshots);
+    if (_liveTrailEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshLiveTrailMatchIfNeeded();
+      });
+    }
     _VehicleSnapshot? enrichSnapshot(_VehicleSnapshot? snapshot) {
       if (snapshot == null) return null;
       final geocodeKey = _geocodeKey(snapshot);
@@ -2114,10 +2305,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         geofencesAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final liveGaugesSnapshot = _liveGaugesDeviceId == null
         ? null
-        : snapshots
-            .cast<_VehicleSnapshot?>()
-            .firstWhere((s) => s?.device.id == _liveGaugesDeviceId,
-                orElse: () => null);
+        : snapshots.cast<_VehicleSnapshot?>().firstWhere(
+            (s) => s?.device.id == _liveGaugesDeviceId,
+            orElse: () => null);
     final showLiveGauges =
         liveGaugesSnapshot != null && reportRouteSelection == null;
     final reportRouteReplayActive = reportRouteSelection != null;
@@ -2156,13 +2346,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Trajeto corrigido pelo OSRM, já dividido em trechos contínuos — cada
     // trecho vira sua própria polyline, então um buraco de conexão real
     // aparece como buraco visual, não como reta falsa conectando pedaços.
-    final reportRouteMatchedSegments = (reportRouteSelection?.matchedPath ??
-            const <List<MatchedLatLng>>[])
-        .map((segment) => segment
-            .map((point) => gmaps.LatLng(point.latitude, point.longitude))
-            .toList(growable: false))
-        .where((segment) => segment.length > 1)
-        .toList(growable: false);
+    final reportRouteMatchedSegments =
+        (reportRouteSelection?.matchedPath ?? const <List<MatchedLatLng>>[])
+            .map((segment) => segment
+                .map((point) => gmaps.LatLng(point.latitude, point.longitude))
+                .toList(growable: false))
+            .where((segment) => segment.length > 1)
+            .toList(growable: false);
     final reportRouteReplayIndex = reportRoutePoints.isEmpty
         ? null
         : _selectedReplayIndex.clamp(0, reportRoutePoints.length - 1).toInt();
@@ -2305,7 +2495,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   snapshots: snapshots,
                   selectedDeviceId: effectiveSelectedDeviceId,
                   sonarPhase: _sonarPhase,
-                  selectedTrail: _selectedTrail(),
+                  selectedTrail: _liveTrailForDisplay(),
                   selectedReplayPath: selectedReplayPath,
                   selectedReplaySegments: selectedReplaySegments,
                   selectedReplayPoint: selectedReplayPoint,
@@ -2371,8 +2561,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   kpis: kpis,
                   activeFilter: _kpiListOpen ? _activeKpiFilter : null,
                   onKpiTap: _openKpi,
-                  onMenuTap:
-                      isCompactScreen ? _toggleMobileMenu : _toggleSidebarCompact,
+                  onMenuTap: isCompactScreen
+                      ? _toggleMobileMenu
+                      : _toggleSidebarCompact,
                   menuOpen: isCompactScreen ? _mobileMenuOpen : _menuOpen,
                   // No mobile a régua lateral nunca é desenhada, então o botão
                   // de menu deve ficar encostado na esquerda (não deslocado
@@ -2402,6 +2593,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   trafficEnabled: _mapTrafficEnabled,
                   onMapTypeChanged: _setMapViewType,
                   onTrafficToggle: _toggleMapTraffic,
+                  liveTrailEnabled: _liveTrailEnabled,
+                  onLiveTrailToggle: _toggleLiveTrail,
                   onRecenter: () => _recenter(snapshots),
                   onRefreshPositions: _refreshOperationalData,
                   onFilterSelected: _openKpi,
@@ -2492,8 +2685,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   visible: showLiveGauges,
                   speedKmh: liveGaugesSnapshot?.speedKmh,
                   rpm: _attrAsDouble(
-                        liveGaugesSnapshot?._mergedAttributes['rpm'],
-                      ) ==
+                            liveGaugesSnapshot?._mergedAttributes['rpm'],
+                          ) ==
                           null
                       ? null
                       : _attrAsDouble(
@@ -2527,8 +2720,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     );
                     return hours == null ? null : hours / 3600000.0;
                   })(),
-                  tireReadings:
-                      liveGaugesSnapshot?.tireReadings ?? const [],
+                  tireReadings: liveGaugesSnapshot?.tireReadings ?? const [],
                   // Barrinha "Telemetria ao vivo • <nome>" removida (2026-09-05,
                   // pedido do usuário) -- este X no card assumiu o fechar.
                   onClose: _closeLiveGauges,
@@ -2832,9 +3024,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             .where((it) => it.isOperationalOnline)
             .toList(growable: false);
       case _KpiFilter.offline:
-        return snapshots
-            .where((it) => it.isOffline)
-            .toList(growable: false);
+        return snapshots.where((it) => it.isOffline).toList(growable: false);
       case _KpiFilter.moving:
         return snapshots
             .where((it) => it.isOperationalMoving)
@@ -3659,8 +3849,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           detail: 'Registro ativo de integração',
           child: _AutomationWorkbenchScreen(
             title: 'Integração MackFlow/Bridge',
-            description:
-                'Registra payloads de integração para uso do Bridge.',
+            description: 'Registra payloads de integração para uso do Bridge.',
             scope: 'bridge',
             actionType: 'evento',
           ),
@@ -3764,7 +3953,8 @@ class _OperationalMap extends StatelessWidget {
 
   // Chave = "tier|tipo1,tipo2,..." -- inclui os tipos em uso pra nao servir
   // cache velho se a frota mostrada mudar de composicao (ex: troca de filtro).
-  static final Map<String, Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>>
+  static final Map<String,
+          Future<Map<_VehicleMarkerIconKey, gmaps.BitmapDescriptor>>>
       _vehicleMarkerIconsFutureByTier = {};
 
   // Escala suave do ícone do veículo conforme o zoom (em vez de saltos
@@ -3780,6 +3970,7 @@ class _OperationalMap extends StatelessWidget {
     final t = ((tier - minZoom) / (maxZoom - minZoom)).clamp(0.0, 1.0);
     return minSize + (maxSize - minSize) * t;
   }
+
   static final Map<int, Future<gmaps.BitmapDescriptor>>
       _replayRouteMarkerFutureByBucket =
       <int, Future<gmaps.BitmapDescriptor>>{};
@@ -3811,7 +4002,8 @@ class _OperationalMap extends StatelessWidget {
 
   static final Map<String, ui.Image?> _spriteRawImageCache = {};
 
-  static Future<ui.Image?> _loadSpriteRaw(_VehicleMarkerType type, int index) async {
+  static Future<ui.Image?> _loadSpriteRaw(
+      _VehicleMarkerType type, int index) async {
     final key = '${type.name}_$index';
     if (_spriteRawImageCache.containsKey(key)) return _spriteRawImageCache[key];
     final img = await _loadMarkerAsset(
@@ -3852,9 +4044,8 @@ class _OperationalMap extends StatelessWidget {
     // inteiro sempre) -- e busca/monta tudo em paralelo, nao um por vez.
     // Antes disso um unico fetch de sprite chegou a levar ~6s e travava a
     // tela inteira, porque rodava sequencial pra ~2000 combinacoes.
-    final types = typesToLoad.isEmpty
-        ? _VehicleMarkerType.values.toSet()
-        : typesToLoad;
+    final types =
+        typesToLoad.isEmpty ? _VehicleMarkerType.values.toSet() : typesToLoad;
     final legacyTypes =
         types.where((t) => !_spriteEnabledTypes.contains(t)).toList();
     final spriteTypes = types.where(_spriteEnabledTypes.contains).toList();
@@ -3994,8 +4185,8 @@ class _OperationalMap extends StatelessWidget {
       canvas.translate(-center.dx, -center.dy);
       canvas.drawImageRect(
         vehicleImage,
-        Rect.fromLTWH(
-            0, 0, vehicleImage.width.toDouble(), vehicleImage.height.toDouble()),
+        Rect.fromLTWH(0, 0, vehicleImage.width.toDouble(),
+            vehicleImage.height.toDouble()),
         Rect.fromCenter(center: center, width: w, height: h),
         Paint()..isAntiAlias = true,
       );
@@ -4053,7 +4244,8 @@ class _OperationalMap extends StatelessWidget {
   }) async {
     const cardW = 190.0;
     const cardH = 44.0;
-    const bottomPad = 44.0; // empurra label acima do ícone (72px, ancor 0.5,0.5)
+    const bottomPad =
+        44.0; // empurra label acima do ícone (72px, ancor 0.5,0.5)
     const totalH = cardH + bottomPad;
     const r = 9.0;
 
@@ -4127,9 +4319,8 @@ class _OperationalMap extends StatelessWidget {
     )..layout(maxWidth: cardW - 26);
     speedPainter.paint(canvas, const Offset(23, 24));
 
-    final image = await recorder
-        .endRecording()
-        .toImage(cardW.toInt(), totalH.toInt());
+    final image =
+        await recorder.endRecording().toImage(cardW.toInt(), totalH.toInt());
     final byteData = await image.toByteData(format: ImageByteFormat.png);
     if (byteData == null) return Uint8List(0);
     return byteData.buffer.asUint8List();
@@ -4145,13 +4336,13 @@ class _OperationalMap extends StatelessWidget {
     final canvas = Canvas(recorder);
 
     // Anel externo translúcido
-    canvas.drawCircle(
-        center, r + 6, Paint()..color = const Color(0x332F80FF));
+    canvas.drawCircle(center, r + 6, Paint()..color = const Color(0x332F80FF));
     // Círculo sólido
     canvas.drawCircle(center, r, Paint()..color = const Color(0xFF2F80FF));
     // Borda branca
     canvas.drawCircle(
-        center, r,
+        center,
+        r,
         Paint()
           ..color = Colors.white
           ..style = PaintingStyle.stroke
@@ -4171,13 +4362,12 @@ class _OperationalMap extends StatelessWidget {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas,
-        Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+    tp.paint(
+        canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
 
     final image =
         await recorder.endRecording().toImage(size.toInt(), size.toInt());
-    final byteData =
-        await image.toByteData(format: ImageByteFormat.png);
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
     final desc = gmaps.BitmapDescriptor.bytes(
         byteData?.buffer.asUint8List() ?? Uint8List(0));
     _clusterIconCache[count] = desc;
@@ -4345,10 +4535,9 @@ class _OperationalMap extends StatelessWidget {
         // conforme o rumo do ponto ativo do replay.
         final replayVehicleSnapshot = selectedDeviceId == null
             ? null
-            : snapshots
-                .cast<_VehicleSnapshot?>()
-                .firstWhere((s) => s?.device.id == selectedDeviceId,
-                    orElse: () => null);
+            : snapshots.cast<_VehicleSnapshot?>().firstWhere(
+                (s) => s?.device.id == selectedDeviceId,
+                orElse: () => null);
         final replayMarkerType =
             replayVehicleSnapshot?.markerType ?? _VehicleMarkerType.car;
         final replayBearingBucket =
@@ -4406,17 +4595,21 @@ class _OperationalMap extends StatelessWidget {
           // com ruido de GPS -- mesmo principio ja usado no replay). Parado
           // ha 10min+ com ignicao/movimento desligados, trava na ultima
           // direcao real resolvida em vez de recalcular por ruido.
-          final rawCourse = (isSelectedRouteVehicle ? resolvedReplayBearing : null) ??
-              selectedReplayPoint?.course ??
-              reportRouteActiveBearing ??
-              snapshot.liveBearing;
+          final rawCourse =
+              (isSelectedRouteVehicle ? resolvedReplayBearing : null) ??
+                  selectedReplayPoint?.course ??
+                  reportRouteActiveBearing ??
+                  snapshot.liveBearing;
           final isMoving = (snapshot.speed ?? 0) > 1.5;
           final course = isMoving || rawCourse != null ? rawCourse : null;
-          final bearingBucket = _spriteEnabledTypes.contains(snapshot.markerType)
-              ? _courseToBucket32(course)
-              : _courseToBucket8(course);
+          final bearingBucket =
+              _spriteEnabledTypes.contains(snapshot.markerType)
+                  ? _courseToBucket32(course)
+                  : _courseToBucket8(course);
           final markerIcon = markerIcons[_VehicleMarkerIconKey(
-                snapshot.markerType, snapshot.operationalStatus, bearingBucket)] ??
+                  snapshot.markerType,
+                  snapshot.operationalStatus,
+                  bearingBucket)] ??
               gmaps.BitmapDescriptor.defaultMarkerWithHue(snapshot.markerHue);
           markers.add(
             gmaps.Marker(
@@ -4453,8 +4646,7 @@ class _OperationalMap extends StatelessWidget {
               final opacity = (1.0 - wavePhase).clamp(0.0, 1.0) * 0.55;
               circles.add(
                 gmaps.Circle(
-                  circleId:
-                      gmaps.CircleId('sonar-${snapshot.device.id}-$i'),
+                  circleId: gmaps.CircleId('sonar-${snapshot.device.id}-$i'),
                   center: markerPosition,
                   radius: radiusPx * metersPerPixel,
                   strokeWidth: 2,
@@ -5110,121 +5302,121 @@ class _RouteReplayStatusCard extends StatelessWidget {
 
   Widget _buildStatusCard() {
     return Container(
-              width: 190,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFDDE5F0)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      width: 190,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE5F0)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (onClose != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                    if (onClose != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            InkWell(
-                              onTap: onClose,
-                              borderRadius: BorderRadius.circular(999),
-                              child: const Padding(
-                                padding: EdgeInsets.all(2),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  size: 16,
-                                  color: Color(0xFF5A6D89),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                  InkWell(
+                    onTap: onClose,
+                    borderRadius: BorderRadius.circular(999),
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: Color(0xFF5A6D89),
                       ),
-                    _ReplayStatusGroup(
-                      title: 'Status do veículo',
-                      rows: [
-                        _ReplayStatusRow(
-                          icon: Icons.power_settings_new_rounded,
-                          label: 'Ignição',
-                          active: ignition,
-                        ),
-                        const SizedBox(height: 6),
-                        _ReplayStatusRow(
-                          icon: Icons.directions_car_filled_rounded,
-                          label: 'Movimento',
-                          active: motion,
-                        ),
-                      ],
                     ),
-                    const SizedBox(height: 4),
-                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    const SizedBox(height: 10),
-                    _ReplayStatusGroup(
-                      title: 'Energia',
-                      rows: [
-                        _ReplayStatusValueRow(
-                          icon: Icons.battery_std_rounded,
-                          label: 'Bateria',
-                          value: (batteryLabel == null || batteryLabel!.trim().isEmpty)
-                              ? 'Sem dado'
-                              : batteryLabel!,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    const SizedBox(height: 10),
-                    _ReplayStatusGroup(
-                      title: 'Comunicação',
-                      rows: [
-                        _ReplayStatusValueRow(
-                          icon: Icons.satellite_alt_rounded,
-                          label: 'Satélites',
-                          value: satellites == null
-                              ? 'Sem dado'
-                              : satellites!.toStringAsFixed(0),
-                        ),
-                        _ReplayStatusValueRow(
-                          icon: Icons.signal_cellular_alt_rounded,
-                          label: 'Sinal',
-                          value: (signalLabel == null || signalLabel!.trim().isEmpty)
-                              ? 'Sem dado'
-                              : signalLabel!,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    const SizedBox(height: 10),
-                    _ReplayStatusGroup(
-                      title: 'Operacional',
-                      rows: [
-                        _ReplayStatusValueRow(
-                          icon: Icons.speed_outlined,
-                          label: 'Odômetro',
-                          value: odometerKm == null
-                              ? 'Sem dado'
-                              : '${odometerKm!.toStringAsFixed(1)} km',
-                        ),
-                        _ReplayStatusValueRow(
-                          icon: Icons.timer_outlined,
-                          label: 'Horímetro',
-                          value: hourmeterHours == null
-                              ? 'Sem dado'
-                              : '${hourmeterHours!.toStringAsFixed(1)} h',
-                        ),
-                      ],
-                    ),
-                    if (tireReadings.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                      const SizedBox(height: 10),
-                      _TireDiagramGroup(readings: tireReadings),
-                    ],
+                  ),
                 ],
               ),
+            ),
+          _ReplayStatusGroup(
+            title: 'Status do veículo',
+            rows: [
+              _ReplayStatusRow(
+                icon: Icons.power_settings_new_rounded,
+                label: 'Ignição',
+                active: ignition,
+              ),
+              const SizedBox(height: 6),
+              _ReplayStatusRow(
+                icon: Icons.directions_car_filled_rounded,
+                label: 'Movimento',
+                active: motion,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 10),
+          _ReplayStatusGroup(
+            title: 'Energia',
+            rows: [
+              _ReplayStatusValueRow(
+                icon: Icons.battery_std_rounded,
+                label: 'Bateria',
+                value: (batteryLabel == null || batteryLabel!.trim().isEmpty)
+                    ? 'Sem dado'
+                    : batteryLabel!,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 10),
+          _ReplayStatusGroup(
+            title: 'Comunicação',
+            rows: [
+              _ReplayStatusValueRow(
+                icon: Icons.satellite_alt_rounded,
+                label: 'Satélites',
+                value: satellites == null
+                    ? 'Sem dado'
+                    : satellites!.toStringAsFixed(0),
+              ),
+              _ReplayStatusValueRow(
+                icon: Icons.signal_cellular_alt_rounded,
+                label: 'Sinal',
+                value: (signalLabel == null || signalLabel!.trim().isEmpty)
+                    ? 'Sem dado'
+                    : signalLabel!,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 10),
+          _ReplayStatusGroup(
+            title: 'Operacional',
+            rows: [
+              _ReplayStatusValueRow(
+                icon: Icons.speed_outlined,
+                label: 'Odômetro',
+                value: odometerKm == null
+                    ? 'Sem dado'
+                    : '${odometerKm!.toStringAsFixed(1)} km',
+              ),
+              _ReplayStatusValueRow(
+                icon: Icons.timer_outlined,
+                label: 'Horímetro',
+                value: hourmeterHours == null
+                    ? 'Sem dado'
+                    : '${hourmeterHours!.toStringAsFixed(1)} h',
+              ),
+            ],
+          ),
+          if (tireReadings.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 10),
+            _TireDiagramGroup(readings: tireReadings),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -5330,8 +5522,9 @@ class _TireChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        reading.isLowBattery ? const Color(0xFFE0533D) : const Color(0xFF2F9E5C);
+    final color = reading.isLowBattery
+        ? const Color(0xFFE0533D)
+        : const Color(0xFF2F9E5C);
     return Container(
       width: 78,
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
@@ -5460,7 +5653,8 @@ class _ReplayStatusRow extends StatelessWidget {
     final color = active == null
         ? const Color(0xFF94A3B8)
         : (active! ? const Color(0xFF16A34A) : const Color(0xFFDC2626));
-    final text = active == null ? 'Sem dado' : (active! ? 'Ligada' : 'Desligada');
+    final text =
+        active == null ? 'Sem dado' : (active! ? 'Ligada' : 'Desligada');
     return Row(
       children: [
         Icon(icon, size: 18, color: color),
@@ -5811,6 +6005,8 @@ class _TopSearchBar extends StatelessWidget {
     this.trafficEnabled,
     this.onMapTypeChanged,
     this.onTrafficToggle,
+    this.liveTrailEnabled,
+    this.onLiveTrailToggle,
     this.onRecenter,
     this.onRefreshPositions,
     this.onFilterSelected,
@@ -5850,6 +6046,8 @@ class _TopSearchBar extends StatelessWidget {
   final bool? trafficEnabled;
   final ValueChanged<gmaps.MapType>? onMapTypeChanged;
   final VoidCallback? onTrafficToggle;
+  final bool? liveTrailEnabled;
+  final VoidCallback? onLiveTrailToggle;
   final VoidCallback? onRecenter;
   final VoidCallback? onRefreshPositions;
   final ValueChanged<_KpiFilter>? onFilterSelected;
@@ -5882,240 +6080,242 @@ class _TopSearchBar extends StatelessWidget {
     final sidebarW = menuOpen
         ? (isCompactDensity ? 190.0 : 206.0)
         : (isCompactDensity ? 52.0 : 56.0);
-    final topBarLeft =
-        sidebarVisible ? sidebarLeft + sidebarW + 10 : 16.0;
+    final topBarLeft = sidebarVisible ? sidebarLeft + sidebarW + 10 : 16.0;
 
     return Positioned.fill(
       child: Stack(
         children: [
-        // ── LEFT GROUP: sidebar toggle + optional logo + search ──
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          left: topBarLeft,
-          top: 16,
-          child: _SurfaceGuard(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _GlassButton(
-                  tooltip: menuOpen ? 'Recolher menu' : 'Expandir menu',
-                  icon: Icons.apps_rounded,
-                  onTap: onMenuTap,
-                ),
-                if (!hideBrand) ...[
-                  const SizedBox(width: 10),
-                  _GlassSurface(
-                    width: brandWidth,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
+          // ── LEFT GROUP: sidebar toggle + optional logo + search ──
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            left: topBarLeft,
+            top: 16,
+            child: _SurfaceGuard(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _GlassButton(
+                    tooltip: menuOpen ? 'Recolher menu' : 'Expandir menu',
+                    icon: Icons.apps_rounded,
+                    onTap: onMenuTap,
+                  ),
+                  if (!hideBrand) ...[
+                    const SizedBox(width: 10),
+                    _GlassSurface(
+                      width: brandWidth,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: hasBrandLogo
+                                ? Image.asset(
+                                    brandLogoAsset,
+                                    height: logoHeight,
+                                    fit: BoxFit.contain,
+                                    alignment: Alignment.centerLeft,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Text(
+                                        brandName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: const Color(0xFF1F2A44),
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: compactLogo ? 13 : 16,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Text(
+                                    brandName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: const Color(0xFF1F2A44),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: compactLogo ? 13 : 16,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: hasBrandLogo
-                              ? Image.asset(
-                                  brandLogoAsset,
-                                  height: logoHeight,
-                                  fit: BoxFit.contain,
-                                  alignment: Alignment.centerLeft,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Text(
-                                      brandName,
+                  ],
+                  // Escondido no mobile -- em tela estreita empurrava o layout
+                  // e chegava a estourar a borda direita da tela.
+                  if (!isCompactScreen) ...[
+                    const SizedBox(width: 10),
+                    _GlassButton(
+                      tooltip: 'Buscar veículo',
+                      icon: Icons.search_rounded,
+                      onTap: onOpenVehicleSearch ?? () {},
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          // ── CENTER GROUP: KPI chips or panel title — FIXED at screen center ──
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 16,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: panelOpen
+                    ? _SurfaceGuard(
+                        child: _GlassSurface(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF176EEB)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: const Icon(
+                                  Icons.dashboard_customize_outlined,
+                                  color: Color(0xFF176EEB),
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 280),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: const Color(0xFF1F2A44),
+                                      style: const TextStyle(
+                                        color: Color(0xFF1F2A44),
                                         fontWeight: FontWeight.w900,
-                                        fontSize: compactLogo ? 13 : 16,
+                                        fontSize: 13,
                                       ),
-                                    );
-                                  },
-                                )
-                              : Text(
-                                  brandName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: const Color(0xFF1F2A44),
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: compactLogo ? 13 : 16,
-                                  ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      activeSubtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Color(0xFF60718D),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                // Escondido no mobile -- em tela estreita empurrava o layout
-                // e chegava a estourar a borda direita da tela.
-                if (!isCompactScreen) ...[
-                  const SizedBox(width: 10),
-                  _GlassButton(
-                    tooltip: 'Buscar veículo',
-                    icon: Icons.search_rounded,
-                    onTap: onOpenVehicleSearch ?? () {},
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-
-        // ── CENTER GROUP: KPI chips or panel title — FIXED at screen center ──
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 16,
-          child: Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: panelOpen
-                  ? _SurfaceGuard(
-                      child: _GlassSurface(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF176EEB)
-                                    .withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(9),
                               ),
-                              child: const Icon(
-                                Icons.dashboard_customize_outlined,
-                                color: Color(0xFF176EEB),
-                                size: 18,
+                              const SizedBox(width: 4),
+                              IconButton(
+                                tooltip: 'Atualizar dados',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: onRefresh,
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  color: Color(0xFF52627C),
+                                  size: 20,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 280),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF1F2A44),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    activeSubtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF60718D),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
+                              IconButton(
+                                tooltip: 'Fechar painel',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: onClosePanel,
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  color: Color(0xFF52627C),
+                                  size: 20,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              tooltip: 'Atualizar dados',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: onRefresh,
-                              icon: const Icon(
-                                Icons.refresh_rounded,
-                                color: Color(0xFF52627C),
-                                size: 20,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Fechar painel',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: onClosePanel,
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Color(0xFF52627C),
-                                size: 20,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : (showStatusCards
-                      ? _SurfaceGuard(
-                          child: _KpiStrip(
-                            kpis: kpis,
-                            activeFilter: activeFilter,
-                            onTap: onKpiTap,
+                            ],
                           ),
-                        )
-                      // Em tela estreita a faixa de KPIs cobria o botão de
-                      // menu no canto esquerdo — no mobile ela some daqui.
-                      : const SizedBox.shrink()),
+                        ),
+                      )
+                    : (showStatusCards
+                        ? _SurfaceGuard(
+                            child: _KpiStrip(
+                              kpis: kpis,
+                              activeFilter: activeFilter,
+                              onTap: onKpiTap,
+                            ),
+                          )
+                        // Em tela estreita a faixa de KPIs cobria o botão de
+                        // menu no canto esquerdo — no mobile ela some daqui.
+                        : const SizedBox.shrink()),
+              ),
             ),
           ),
-        ),
 
-        // ── RIGHT GROUP: copiloto IA + map layers + avatar ──
-        // Sino de notificação removido daqui (2026-09-05, pedido do usuário)
-        // -- não tinha onTap funcional, só decorativo. Lugar cedido pro
-        // atalho do copiloto de IA, que antes só existia dentro dos painéis.
-        Positioned(
-          right: 16,
-          top: 16,
-          child: _SurfaceGuard(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _TopIcon(
-                  icon: Icons.auto_awesome_rounded,
-                  count: null,
-                  tooltip: 'Copiloto IA',
-                  selected: aiPanelOpen,
-                  onTap: onAiTap,
-                ),
-                const SizedBox(width: 10),
-                _MapLayersButton(
-                  mapType: mapType,
-                  trafficEnabled: trafficEnabled,
-                  onMapTypeChanged: onMapTypeChanged,
-                  onTrafficToggle: onTrafficToggle,
-                  onRecenter: onRecenter,
-                ),
-                const SizedBox(width: 10),
-                _ProfileMenuButton(
-                  onLogout: onLogout,
-                  profileName: profileName,
-                  profileDetail: profileDetail,
-                  compactMenu: compactProfileMenu,
-                  avatarOnly: true,
-                  onOpenQuickSettings: onOpenSettingsPanel,
-                  onOpenChangePassword: onOpenChangePassword,
-                  showQuickActions: showMapQuickActions,
-                  mapType: mapType,
-                  trafficEnabled: trafficEnabled,
-                  onMapTypeChanged: onMapTypeChanged,
-                  onTrafficToggle: onTrafficToggle,
-                  onRecenter: onRecenter,
-                  onRefreshPositions: onRefreshPositions,
-                  onFilterSelected: onFilterSelected,
-                  onClearFilters: onClearFilters,
-                ),
-              ],
+          // ── RIGHT GROUP: copiloto IA + map layers + avatar ──
+          // Sino de notificação removido daqui (2026-09-05, pedido do usuário)
+          // -- não tinha onTap funcional, só decorativo. Lugar cedido pro
+          // atalho do copiloto de IA, que antes só existia dentro dos painéis.
+          Positioned(
+            right: 16,
+            top: 16,
+            child: _SurfaceGuard(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TopIcon(
+                    icon: Icons.auto_awesome_rounded,
+                    count: null,
+                    tooltip: 'Copiloto IA',
+                    selected: aiPanelOpen,
+                    onTap: onAiTap,
+                  ),
+                  const SizedBox(width: 10),
+                  _MapLayersButton(
+                    mapType: mapType,
+                    trafficEnabled: trafficEnabled,
+                    onMapTypeChanged: onMapTypeChanged,
+                    onTrafficToggle: onTrafficToggle,
+                    onRecenter: onRecenter,
+                  ),
+                  const SizedBox(width: 10),
+                  _ProfileMenuButton(
+                    onLogout: onLogout,
+                    profileName: profileName,
+                    profileDetail: profileDetail,
+                    compactMenu: compactProfileMenu,
+                    avatarOnly: true,
+                    onOpenQuickSettings: onOpenSettingsPanel,
+                    onOpenChangePassword: onOpenChangePassword,
+                    showQuickActions: showMapQuickActions,
+                    mapType: mapType,
+                    trafficEnabled: trafficEnabled,
+                    onMapTypeChanged: onMapTypeChanged,
+                    onTrafficToggle: onTrafficToggle,
+                    liveTrailEnabled: liveTrailEnabled,
+                    onLiveTrailToggle: onLiveTrailToggle,
+                    onRecenter: onRecenter,
+                    onRefreshPositions: onRefreshPositions,
+                    onFilterSelected: onFilterSelected,
+                    onClearFilters: onClearFilters,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -6346,6 +6546,8 @@ class _ProfileMenuButton extends StatelessWidget {
     this.trafficEnabled,
     this.onMapTypeChanged,
     this.onTrafficToggle,
+    this.liveTrailEnabled,
+    this.onLiveTrailToggle,
     this.onRecenter,
     this.onRefreshPositions,
     this.onOpenQuickSettings,
@@ -6364,6 +6566,9 @@ class _ProfileMenuButton extends StatelessWidget {
   final bool? trafficEnabled;
   final ValueChanged<gmaps.MapType>? onMapTypeChanged;
   final VoidCallback? onTrafficToggle;
+  // Rastro ao vivo -- liga/desliga (2026-09-06), mesmo padrão do Trânsito.
+  final bool? liveTrailEnabled;
+  final VoidCallback? onLiveTrailToggle;
   final VoidCallback? onRecenter;
   final VoidCallback? onRefreshPositions;
   final VoidCallback? onOpenQuickSettings;
@@ -6381,6 +6586,7 @@ class _ProfileMenuButton extends StatelessWidget {
   static const String _mapSatelliteKey = 'map-satellite';
   static const String _mapHybridKey = 'map-hybrid';
   static const String _mapTrafficKey = 'map-traffic';
+  static const String _mapLiveTrailKey = 'map-live-trail';
   static const String _mapRecenterKey = 'map-recenter';
   static const String _mapRefreshKey = 'map-refresh';
   static const String _logoutMenuKey = 'logout';
@@ -6442,6 +6648,9 @@ class _ProfileMenuButton extends StatelessWidget {
           case _mapTrafficKey:
             onTrafficToggle?.call();
             return;
+          case _mapLiveTrailKey:
+            onLiveTrailToggle?.call();
+            return;
           case _mapRecenterKey:
             onRecenter?.call();
             return;
@@ -6458,6 +6667,7 @@ class _ProfileMenuButton extends StatelessWidget {
         final isSatelliteMap = mapType == gmaps.MapType.satellite;
         final isHybridMap = mapType == gmaps.MapType.hybrid;
         final trafficOn = trafficEnabled == true;
+        final liveTrailOn = liveTrailEnabled == true;
 
         return [
           const PopupMenuItem<String>(
@@ -6559,6 +6769,21 @@ class _ProfileMenuButton extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   const Text('Trânsito on/off'),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: _mapLiveTrailKey,
+              child: Row(
+                children: [
+                  Icon(
+                    liveTrailOn
+                        ? Icons.check_box_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Rastro on/off'),
                 ],
               ),
             ),
@@ -6750,7 +6975,8 @@ class _SideMenu extends StatelessWidget {
                         height: 34,
                         child: Center(
                           child: Container(
-                            width: 28, height: 28,
+                            width: 28,
+                            height: 28,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
                                 colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
@@ -6760,7 +6986,11 @@ class _SideMenu extends StatelessWidget {
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: const Center(
-                              child: Text('S', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                              child: Text('S',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14)),
                             ),
                           ),
                         ),
@@ -6862,7 +7092,8 @@ class _MobileFullScreenMenu extends StatelessWidget {
                     IconButton(
                       tooltip: 'Fechar',
                       onPressed: onClose,
-                      icon: const Icon(Icons.close_rounded, color: Color(0xFF324968)),
+                      icon: const Icon(Icons.close_rounded,
+                          color: Color(0xFF324968)),
                     ),
                   ],
                 ),
@@ -6971,7 +7202,8 @@ class _MobileMenuTile extends StatelessWidget {
 // ── Sidebar footer widgets ─────────────────────────────────────────────────────
 
 class _SideMenuFooter extends StatelessWidget {
-  const _SideMenuFooter({required this.userEmail, required this.isAdmin, required this.onLogout});
+  const _SideMenuFooter(
+      {required this.userEmail, required this.isAdmin, required this.onLogout});
   final String userEmail;
   final bool isAdmin;
   final VoidCallback onLogout;
@@ -6993,7 +7225,8 @@ class _SideMenuFooter extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 28, height: 28,
+                width: 28,
+                height: 28,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
@@ -7003,7 +7236,11 @@ class _SideMenuFooter extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                  child: Text(initial,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -7011,12 +7248,19 @@ class _SideMenuFooter extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(role, style: const TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 11)),
+                    Text(role,
+                        style: const TextStyle(
+                            color: Color(0xFF1F2A44),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11)),
                     Text(
                       userEmail,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF9DB1CC), fontSize: 10, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                          color: Color(0xFF9DB1CC),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -7036,11 +7280,23 @@ class _SideMenuFooter extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle)),
+              Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                      color: Color(0xFF10B981), shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              const Text('Online', style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.w700)),
+              const Text('Online',
+                  style: TextStyle(
+                      color: Color(0xFF10B981),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700)),
               const Spacer(),
-              const Text('v1.0.1', style: TextStyle(color: Color(0xFF9DB1CC), fontSize: 10, fontWeight: FontWeight.w600)),
+              const Text('v1.0.1',
+                  style: TextStyle(
+                      color: Color(0xFF9DB1CC),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ],
@@ -7050,7 +7306,8 @@ class _SideMenuFooter extends StatelessWidget {
 }
 
 class _SideMenuFooterCollapsed extends StatelessWidget {
-  const _SideMenuFooterCollapsed({required this.userEmail, required this.onLogout});
+  const _SideMenuFooterCollapsed(
+      {required this.userEmail, required this.onLogout});
   final String userEmail;
   final VoidCallback onLogout;
 
@@ -7061,7 +7318,8 @@ class _SideMenuFooterCollapsed extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 28, height: 28,
+          width: 28,
+          height: 28,
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
@@ -7071,7 +7329,11 @@ class _SideMenuFooterCollapsed extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           child: Center(
-            child: Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+            child: Text(initial,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12)),
           ),
         ),
         const SizedBox(height: 4),
@@ -7109,16 +7371,12 @@ class _MenuTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeLabel = formatDisplayText(item.label);
     final accent = item.color ?? const Color(0xFF176EEB);
-    final iconColor = selected
-        ? accent
-        : accent.withValues(alpha: 0.55);
+    final iconColor = selected ? accent : accent.withValues(alpha: 0.55);
     final textColor = selected ? accent : const Color(0xFF3D4F6B);
-    final bgColor = selected
-        ? accent.withValues(alpha: 0.10)
-        : Colors.transparent;
-    final borderColor = selected
-        ? accent.withValues(alpha: 0.28)
-        : Colors.transparent;
+    final bgColor =
+        selected ? accent.withValues(alpha: 0.10) : Colors.transparent;
+    final borderColor =
+        selected ? accent.withValues(alpha: 0.28) : Colors.transparent;
 
     return Material(
       color: bgColor,
@@ -7243,9 +7501,8 @@ class _KpiChip extends StatelessWidget {
                 : Colors.white.withValues(alpha: 0.84),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: selected
-                  ? const Color(0xFFB7D5FF)
-                  : const Color(0xFFE3EAF3),
+              color:
+                  selected ? const Color(0xFFB7D5FF) : const Color(0xFFE3EAF3),
             ),
             boxShadow: [
               BoxShadow(
@@ -7277,7 +7534,8 @@ class _KpiChip extends StatelessWidget {
                 top: -6,
                 right: -8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: selected ? const Color(0xFF176EEB) : filter.color,
                     borderRadius: BorderRadius.circular(8),
@@ -7581,8 +7839,10 @@ class _IntegratedPanel extends StatelessWidget {
     } else {
       sidebarEdge = compactDensity ? 64.0 : 72.0;
     }
-    final double panelGap = sidebarVisible ? (compactDensity ? 14.0 : 16.0) : 0.0;
-    final leftInset = compact ? 16.0 : (sidebarVisible ? sidebarEdge + panelGap : 16.0);
+    final double panelGap =
+        sidebarVisible ? (compactDensity ? 14.0 : 16.0) : 0.0;
+    final leftInset =
+        compact ? 16.0 : (sidebarVisible ? sidebarEdge + panelGap : 16.0);
     const rightInset = 24.0;
     final availableWidth = screenWidth - leftInset - rightInset;
     final width = availableWidth
@@ -8687,7 +8947,9 @@ class _PixelDevicesTable extends StatelessWidget {
   DataRow _deviceRow(_VehicleSnapshot row) {
     final statusText = _statusLabel(row);
     final statusColor = _statusColor(row);
-    final model = (row.modelLabel.isEmpty || row.modelLabel == '—' || row.modelLabel == 'Não informado')
+    final model = (row.modelLabel.isEmpty ||
+            row.modelLabel == '—' ||
+            row.modelLabel == 'Não informado')
         ? row.device.name
         : row.modelLabel;
     final groupRaw = row.device.attributes?['groupId'] ??
@@ -9315,22 +9577,17 @@ class _HighlightsRail extends StatelessWidget {
                   _HighlightItem(
                     icon: Icons.map_outlined,
                     title: 'Mapa como plano de fundo',
-                    text:
-                        'Google Maps híbrido sempre visível.',
+                    text: 'Google Maps híbrido sempre visível.',
                   ),
                   _HighlightItem(
                     icon: Icons.layers_outlined,
-                    title:
-                        'Menus translúcidos',
-                    text:
-                        'Painéis claros sobre o mapa.',
+                    title: 'Menus translúcidos',
+                    text: 'Painéis claros sobre o mapa.',
                   ),
                   _HighlightItem(
                     icon: Icons.speed_rounded,
-                    title:
-                        'Tráfego e velocidade',
-                    text:
-                        'Tráfego Google + telemetria do veículo.',
+                    title: 'Tráfego e velocidade',
+                    text: 'Tráfego Google + telemetria do veículo.',
                   ),
                 ],
               ),
@@ -9461,9 +9718,9 @@ class _VehicleCompactPopup extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
                       child: Row(
-
-                children: [
-                          _VehicleAvatar(snapshot: snapshot, size: 44, iconSize: 22),
+                        children: [
+                          _VehicleAvatar(
+                              snapshot: snapshot, size: 44, iconSize: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -9483,16 +9740,25 @@ class _VehicleCompactPopup extends StatelessWidget {
                                 Row(
                                   children: [
                                     Container(
-                                      width: 6, height: 6,
-                                      decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                          color: statusColor,
+                                          shape: BoxShape.circle),
                                     ),
                                     const SizedBox(width: 5),
                                     Text(snapshot.statusLabel,
-                                        style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
+                                        style: TextStyle(
+                                            color: statusColor,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700)),
                                     if (isMoving) ...[
                                       const SizedBox(width: 6),
                                       Text('· ${snapshot.speedLabel}',
-                                          style: const TextStyle(color: Color(0xFF52627C), fontSize: 11, fontWeight: FontWeight.w600)),
+                                          style: const TextStyle(
+                                              color: Color(0xFF52627C),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600)),
                                     ],
                                   ],
                                 ),
@@ -9504,7 +9770,8 @@ class _VehicleCompactPopup extends StatelessWidget {
                             onTap: onClose,
                             child: const Padding(
                               padding: EdgeInsets.all(6),
-                              child: Icon(Icons.close_rounded, size: 16, color: Color(0xFF8899B0)),
+                              child: Icon(Icons.close_rounded,
+                                  size: 16, color: Color(0xFF8899B0)),
                             ),
                           ),
                         ],
@@ -9512,7 +9779,8 @@ class _VehicleCompactPopup extends StatelessWidget {
                     ),
                     Container(
                       margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF6F9FD),
                         borderRadius: BorderRadius.circular(10),
@@ -9520,29 +9788,52 @@ class _VehicleCompactPopup extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          _PopupMetric(icon: Icons.speed_rounded, label: 'Velocidade', value: snapshot.speedLabel, color: const Color(0xFF176EEB)),
+                          _PopupMetric(
+                              icon: Icons.speed_rounded,
+                              label: 'Velocidade',
+                              value: snapshot.speedLabel,
+                              color: const Color(0xFF176EEB)),
                           _popupDivider(),
                           _PopupMetric(
-                            icon: Icons.power_settings_new_rounded, label: 'Ignição', value: snapshot.ignitionLabel,
-                            color: snapshot.ignition == true ? const Color(0xFF16A34A) : const Color(0xFF6B7B94),
+                            icon: Icons.power_settings_new_rounded,
+                            label: 'Ignição',
+                            value: snapshot.ignitionLabel,
+                            color: snapshot.ignition == true
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFF6B7B94),
                           ),
                           _popupDivider(),
-                          _PopupMetric(icon: Icons.battery_charging_full_rounded, label: 'Bateria', value: snapshot.batteryLabel, color: const Color(0xFF0F766E)),
+                          _PopupMetric(
+                              icon: Icons.battery_charging_full_rounded,
+                              label: 'Bateria',
+                              value: snapshot.batteryLabel,
+                              color: const Color(0xFF0F766E)),
                           _popupDivider(),
-                          _PopupMetric(icon: Icons.network_cell_rounded, label: 'GSM', value: snapshot.gsmSignalLabel, color: const Color(0xFF7C3AED)),
+                          _PopupMetric(
+                              icon: Icons.network_cell_rounded,
+                              label: 'GSM',
+                              value: snapshot.gsmSignalLabel,
+                              color: const Color(0xFF7C3AED)),
                         ],
                       ),
                     ),
-                    if (snapshot.address.isNotEmpty && snapshot.address != 'Não informado')
+                    if (snapshot.address.isNotEmpty &&
+                        snapshot.address != 'Não informado')
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
                         child: Row(
                           children: [
-                            const Icon(Icons.place_outlined, size: 13, color: Color(0xFF8899B0)),
+                            const Icon(Icons.place_outlined,
+                                size: 13, color: Color(0xFF8899B0)),
                             const SizedBox(width: 5),
                             Expanded(
-                              child: Text(snapshot.address, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Color(0xFF52627C), fontSize: 11, fontWeight: FontWeight.w600)),
+                              child: Text(snapshot.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Color(0xFF52627C),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
                             ),
                           ],
                         ),
@@ -9555,14 +9846,22 @@ class _VehicleCompactPopup extends StatelessWidget {
                             child: GestureDetector(
                               onTap: onDetails,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 9),
-                                decoration: BoxDecoration(color: const Color(0xFF176EEB), borderRadius: BorderRadius.circular(9)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 9),
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF176EEB),
+                                    borderRadius: BorderRadius.circular(9)),
                                 child: const Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.open_in_full_rounded, color: Colors.white, size: 14),
+                                    Icon(Icons.open_in_full_rounded,
+                                        color: Colors.white, size: 14),
                                     SizedBox(width: 6),
-                                    Text('Ver detalhes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                                    Text('Ver detalhes',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800)),
                                   ],
                                 ),
                               ),
@@ -9570,12 +9869,21 @@ class _VehicleCompactPopup extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           if (onTelemetry != null) ...[
-                            _PopupAction(icon: Icons.speed_rounded, tooltip: 'Telemetria ao vivo', onTap: onTelemetry!),
+                            _PopupAction(
+                                icon: Icons.speed_rounded,
+                                tooltip: 'Telemetria ao vivo',
+                                onTap: onTelemetry!),
                             const SizedBox(width: 6),
                           ],
-                          _PopupAction(icon: Icons.notifications_none_outlined, tooltip: 'Alertas', onTap: onAlerts),
+                          _PopupAction(
+                              icon: Icons.notifications_none_outlined,
+                              tooltip: 'Alertas',
+                              onTap: onAlerts),
                           const SizedBox(width: 6),
-                          _PopupAction(icon: Icons.share_outlined, tooltip: 'Compartilhar', onTap: onShare),
+                          _PopupAction(
+                              icon: Icons.share_outlined,
+                              tooltip: 'Compartilhar',
+                              onTap: onShare),
                         ],
                       ),
                     ),
@@ -9590,14 +9898,19 @@ class _VehicleCompactPopup extends StatelessWidget {
   }
 
   Widget _popupDivider() => Container(
-        width: 1, height: 28,
+        width: 1,
+        height: 28,
         margin: const EdgeInsets.symmetric(horizontal: 6),
         color: const Color(0xFFDDE5F0),
       );
 }
 
 class _PopupMetric extends StatelessWidget {
-  const _PopupMetric({required this.icon, required this.label, required this.value, required this.color});
+  const _PopupMetric(
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.color});
   final IconData icon;
   final String label;
   final String value;
@@ -9611,10 +9924,21 @@ class _PopupMetric extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(height: 3),
-          Text(label, style: const TextStyle(color: Color(0xFF8899B0), fontSize: 8.5, fontWeight: FontWeight.w700, letterSpacing: 0.3)),
+          Text(label,
+              style: const TextStyle(
+                  color: Color(0xFF8899B0),
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3)),
           const SizedBox(height: 2),
-          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF1A2540), fontSize: 11, fontWeight: FontWeight.w900)),
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Color(0xFF1A2540),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900)),
         ],
       ),
     );
@@ -9680,8 +10004,8 @@ class _VehicleBottomBar extends StatelessWidget {
       // px a mais que a altura "nominal" do header — sem essa folga o card
       // estourava embaixo (RenderFlex overflow) com o nome em 2 linhas.
       _VehiclePanelMode.collapsed => compactDensity ? 72.0 : 78.0,
-      _VehiclePanelMode.summary   => compactDensity ? 218.0 : 240.0,
-      _VehiclePanelMode.full      => compactDensity ? 218.0 : 240.0,
+      _VehiclePanelMode.summary => compactDensity ? 218.0 : 240.0,
+      _VehiclePanelMode.full => compactDensity ? 218.0 : 240.0,
     };
 
     return AnimatedPositioned(
@@ -9878,85 +10202,101 @@ class _VehicleBottomContent extends StatelessWidget {
 
         // Reusable name+badge+subtitle widget
         Widget nameBlock({double nameFontSize = 13.0}) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Flexible(
-                  child: Text(
-                    snapshot.device.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: const Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w900,
-                      fontSize: nameFontSize,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        snapshot.device.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: const Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w900,
+                          fontSize: nameFontSize,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 7),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                            color: statusColor.withValues(alpha: 0.30)),
+                      ),
+                      child: Text(
+                        isDriver
+                            ? snapshot.driverStatusLabel
+                            : snapshot.statusLabel,
+                        style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 9.8),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 7),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.30)),
-                  ),
-                  child: Text(
-                    isDriver ? snapshot.driverStatusLabel : snapshot.statusLabel,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.w900, fontSize: 9.8),
-                  ),
+                const SizedBox(height: 2),
+                Text(
+                  '${snapshot.identifierLabel} • ${snapshot.relativeLastPoint}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Color(0xFF52627C),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10.0),
                 ),
               ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${snapshot.identifierLabel} • ${snapshot.relativeLastPoint}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF52627C), fontWeight: FontWeight.w700, fontSize: 10.0),
-            ),
-          ],
-        );
+            );
 
         // Reusable action buttons (IA + expand/collapse + close). Em telas
         // estreitas o botão de IA já aparece de novo no corpo (summaryBody/
         // infoStrip) — repeti-lo aqui também duplicava o botão e era a causa
         // do overflow residual no cabeçalho.
         Widget actionButtons() => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!compact) ...[
-              _AiAssistButton(onTap: onAiTap),
-              const SizedBox(width: 6),
-            ],
-            IconButton(
-              tooltip: isCollapsed ? 'Expandir' : 'Recolher',
-              onPressed: () => onModeChanged(isCollapsed ? _VehiclePanelMode.full : _VehiclePanelMode.collapsed),
-              visualDensity: VisualDensity.compact,
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFF4F7FC),
-                side: const BorderSide(color: Color(0xFFDDE5F0)),
-              ),
-              icon: Icon(
-                isCollapsed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                color: const Color(0xFF5A6D89), size: 18,
-              ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'Fechar',
-              onPressed: onClose,
-              visualDensity: VisualDensity.compact,
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFF4F7FC),
-                side: const BorderSide(color: Color(0xFFDDE5F0)),
-              ),
-              icon: const Icon(Icons.close_rounded, color: Color(0xFF5A6D89), size: 18),
-            ),
-          ],
-        );
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!compact) ...[
+                  _AiAssistButton(onTap: onAiTap),
+                  const SizedBox(width: 6),
+                ],
+                IconButton(
+                  tooltip: isCollapsed ? 'Expandir' : 'Recolher',
+                  onPressed: () => onModeChanged(isCollapsed
+                      ? _VehiclePanelMode.full
+                      : _VehiclePanelMode.collapsed),
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFF4F7FC),
+                    side: const BorderSide(color: Color(0xFFDDE5F0)),
+                  ),
+                  icon: Icon(
+                    isCollapsed
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: const Color(0xFF5A6D89),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Fechar',
+                  onPressed: onClose,
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFF4F7FC),
+                    side: const BorderSide(color: Color(0xFFDDE5F0)),
+                  ),
+                  icon: const Icon(Icons.close_rounded,
+                      color: Color(0xFF5A6D89), size: 18),
+                ),
+              ],
+            );
 
         final header = SizedBox(
           height: headerH,
@@ -9970,9 +10310,12 @@ class _VehicleBottomContent extends StatelessWidget {
                     ? Image.network(
                         photoUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _VehicleHeaderPhotoFallback(color: iconColor, icon: iconData),
+                        errorBuilder: (_, __, ___) =>
+                            _VehicleHeaderPhotoFallback(
+                                color: iconColor, icon: iconData),
                       )
-                    : _VehicleHeaderPhotoFallback(color: iconColor, icon: iconData),
+                    : _VehicleHeaderPhotoFallback(
+                        color: iconColor, icon: iconData),
               ),
               // ── Header always identical regardless of collapsed/expanded ──
               // Em telas estreitas (celular) o nome vira Expanded e a faixa
@@ -9994,30 +10337,70 @@ class _VehicleBottomContent extends StatelessWidget {
                       ),
                     ),
               if (!compact) ...[
-                const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFDDE5F0)),
+                const VerticalDivider(
+                    width: 1, thickness: 1, color: Color(0xFFDDE5F0)),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                     child: Row(
                       children: [
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.speed_rounded, label: 'Velocidade', value: snapshot.speedLabel, accent: const Color(0xFF176EEB))),
-                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.power_settings_new_rounded, label: 'Ignição', value: snapshot.ignitionLabel, accent: const Color(0xFF16A34A))),
-                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.battery_charging_full_rounded, label: 'Bateria', value: snapshot.batteryLabel, accent: const Color(0xFF16A34A))),
-                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.network_cell_rounded, label: 'Sinal GSM', value: snapshot.gsmSignalLabel, accent: const Color(0xFF16A34A))),
-                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.schedule_rounded, label: 'Última atualização', value: snapshot.lastCommunicationLabel, subtitle: snapshot.relativeLastPoint, accent: const Color(0xFF334155))),
-                        const VerticalDivider(width: 18, color: Color(0xFFE2E8F0)),
-                        Expanded(child: _VehicleMapMetricCell(icon: Icons.place_outlined, label: 'Endereço', value: snapshot.address, accent: const Color(0xFF334155), maxLines: 2)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.speed_rounded,
+                                label: 'Velocidade',
+                                value: snapshot.speedLabel,
+                                accent: const Color(0xFF176EEB))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.power_settings_new_rounded,
+                                label: 'Ignição',
+                                value: snapshot.ignitionLabel,
+                                accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.battery_charging_full_rounded,
+                                label: 'Bateria',
+                                value: snapshot.batteryLabel,
+                                accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.network_cell_rounded,
+                                label: 'Sinal GSM',
+                                value: snapshot.gsmSignalLabel,
+                                accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.schedule_rounded,
+                                label: 'Última atualização',
+                                value: snapshot.lastCommunicationLabel,
+                                subtitle: snapshot.relativeLastPoint,
+                                accent: const Color(0xFF334155))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.place_outlined,
+                                label: 'Endereço',
+                                value: snapshot.address,
+                                accent: const Color(0xFF334155),
+                                maxLines: 2)),
                       ],
                     ),
                   ),
                 ),
               ],
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                 child: actionButtons(),
               ),
             ],
@@ -10254,17 +10637,20 @@ class _VehicleBottomContent extends StatelessWidget {
                     width: 200,
                     child: _VehicleCommandsPanel(snapshot: snapshot),
                   ),
-                  const VerticalDivider(width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
+                  const VerticalDivider(
+                      width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
                   SizedBox(
                     width: 200,
                     child: _VehicleTelemetryPanel(snapshot: snapshot),
                   ),
-                  const VerticalDivider(width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
+                  const VerticalDivider(
+                      width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
                   Expanded(
                     child: _VehicleBottomEventsPanel(snapshot: snapshot),
                   ),
                   if (snapshot.latLngOrNull != null) ...[
-                    const VerticalDivider(width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
+                    const VerticalDivider(
+                        width: 17, thickness: 1, color: Color(0xFFDDE5F0)),
                     SizedBox(
                       width: 220,
                       child: _VehicleBottomStreetViewPanel(
@@ -10356,7 +10742,11 @@ class _VehicleHeaderPhotoFallback extends StatelessWidget {
 // ── Vehicle thumb (photo fallback) ────────────────────────────────────────────
 
 class _VehicleIconThumb extends StatelessWidget {
-  const _VehicleIconThumb({required this.size, required this.icon, required this.color, required this.isCollapsed});
+  const _VehicleIconThumb(
+      {required this.size,
+      required this.icon,
+      required this.color,
+      required this.isCollapsed});
   final double size;
   final IconData icon;
   final Color color;
@@ -10367,7 +10757,8 @@ class _VehicleIconThumb extends StatelessWidget {
     final bg = Color.lerp(color, Colors.white, 0.88)!;
     final border = Color.lerp(color, Colors.white, 0.65)!;
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(isCollapsed ? 9 : 12),
@@ -10398,7 +10789,10 @@ class _AiAssistButton extends StatelessWidget {
           ),
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF176EEB).withValues(alpha: 0.30), blurRadius: 8, offset: const Offset(0, 3)),
+            BoxShadow(
+                color: const Color(0xFF176EEB).withValues(alpha: 0.30),
+                blurRadius: 8,
+                offset: const Offset(0, 3)),
           ],
         ),
         child: const Row(
@@ -10406,7 +10800,12 @@ class _AiAssistButton extends StatelessWidget {
           children: [
             Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 14),
             SizedBox(width: 6),
-            Text('IA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
+            Text('IA',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    letterSpacing: 0.5)),
           ],
         ),
       ),
@@ -10572,7 +10971,8 @@ class _SpeedGauge extends StatelessWidget {
             child: AspectRatio(
               aspectRatio: 1.0,
               child: CustomPaint(
-                painter: _SpeedGaugePainter(speed: speed, maxSpeed: _maxSpeed, color: arcColor),
+                painter: _SpeedGaugePainter(
+                    speed: speed, maxSpeed: _maxSpeed, color: arcColor),
                 child: Align(
                   alignment: const Alignment(0, 0.62),
                   child: Column(
@@ -10668,7 +11068,8 @@ class _SpeedGauge extends StatelessWidget {
 }
 
 class _SpeedGaugePainter extends CustomPainter {
-  const _SpeedGaugePainter({required this.speed, required this.maxSpeed, required this.color});
+  const _SpeedGaugePainter(
+      {required this.speed, required this.maxSpeed, required this.color});
   final double speed;
   final double maxSpeed;
   final Color color;
@@ -10687,18 +11088,23 @@ class _SpeedGaugePainter extends CustomPainter {
     // ── Background circles ─────────────────────────────────────────
     canvas.drawCircle(center, r + 6, Paint()..color = const Color(0xFF040A10));
     canvas.drawCircle(center, r + 3, Paint()..color = const Color(0xFF08111C));
-    canvas.drawCircle(center, r,     Paint()..color = const Color(0xFF0A1825));
+    canvas.drawCircle(center, r, Paint()..color = const Color(0xFF0A1825));
 
     // Inner ring stroke
-    canvas.drawCircle(center, r + 1, Paint()
-      ..color = const Color(0xFF1A3050)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5);
+    canvas.drawCircle(
+        center,
+        r + 1,
+        Paint()
+          ..color = const Color(0xFF1A3050)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
 
     // ── Track arc ──────────────────────────────────────────────────
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: r - 5),
-      _startAngle, _sweepAngle, false,
+      _startAngle,
+      _sweepAngle,
+      false,
       Paint()
         ..color = const Color(0xFF122030)
         ..style = PaintingStyle.stroke
@@ -10709,7 +11115,9 @@ class _SpeedGaugePainter extends CustomPainter {
     if (fraction > 0.005) {
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: r - 5),
-        _startAngle, _sweepAngle * fraction, false,
+        _startAngle,
+        _sweepAngle * fraction,
+        false,
         Paint()
           ..color = color.withValues(alpha: 0.22)
           ..style = PaintingStyle.stroke
@@ -10719,7 +11127,9 @@ class _SpeedGaugePainter extends CustomPainter {
       );
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: r - 5),
-        _startAngle, _sweepAngle * fraction, false,
+        _startAngle,
+        _sweepAngle * fraction,
+        false,
         Paint()
           ..color = color
           ..style = PaintingStyle.stroke
@@ -10741,7 +11151,9 @@ class _SpeedGaugePainter extends CustomPainter {
         Offset(cx + outerR * math.cos(angle), cy + outerR * math.sin(angle)),
         Offset(cx + innerR * math.cos(angle), cy + innerR * math.sin(angle)),
         Paint()
-          ..color = isMajor ? Colors.white.withValues(alpha: 0.52) : Colors.white.withValues(alpha: 0.18)
+          ..color = isMajor
+              ? Colors.white.withValues(alpha: 0.52)
+              : Colors.white.withValues(alpha: 0.18)
           ..strokeWidth = isMajor ? 1.4 : 0.7
           ..strokeCap = StrokeCap.round,
       );
@@ -10753,7 +11165,10 @@ class _SpeedGaugePainter extends CustomPainter {
         final tp = TextPainter(
           text: TextSpan(
             text: (i * 10).toString(),
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: (r * 0.115).clamp(8.0, 13.0), fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.48),
+                fontSize: (r * 0.115).clamp(8.0, 13.0),
+                fontWeight: FontWeight.w600),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
@@ -10767,20 +11182,28 @@ class _SpeedGaugePainter extends CustomPainter {
     final tipX = cx + needleLen * math.cos(needleAngle);
     final tipY = cy + needleLen * math.sin(needleAngle);
     final bw = r * 0.038;
-    final b1 = Offset(cx + bw * math.cos(needleAngle + math.pi / 2), cy + bw * math.sin(needleAngle + math.pi / 2));
-    final b2 = Offset(cx + bw * math.cos(needleAngle - math.pi / 2), cy + bw * math.sin(needleAngle - math.pi / 2));
+    final b1 = Offset(cx + bw * math.cos(needleAngle + math.pi / 2),
+        cy + bw * math.sin(needleAngle + math.pi / 2));
+    final b2 = Offset(cx + bw * math.cos(needleAngle - math.pi / 2),
+        cy + bw * math.sin(needleAngle - math.pi / 2));
 
     // Glow
-    canvas.drawLine(center, Offset(tipX, tipY),
-      Paint()
-        ..color = color.withValues(alpha: 0.40)
-        ..strokeWidth = 10
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    canvas.drawLine(
+        center,
+        Offset(tipX, tipY),
+        Paint()
+          ..color = color.withValues(alpha: 0.40)
+          ..strokeWidth = 10
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
 
     // Body
     canvas.drawPath(
-      Path()..moveTo(tipX, tipY)..lineTo(b1.dx, b1.dy)..lineTo(b2.dx, b2.dy)..close(),
+      Path()
+        ..moveTo(tipX, tipY)
+        ..lineTo(b1.dx, b1.dy)
+        ..lineTo(b2.dx, b2.dy)
+        ..close(),
       Paint()..color = Colors.white.withValues(alpha: 0.90),
     );
 
@@ -10788,13 +11211,16 @@ class _SpeedGaugePainter extends CustomPainter {
     canvas.drawCircle(Offset(tipX, tipY), 2.5, Paint()..color = color);
 
     // ── Center hub ─────────────────────────────────────────────────
-    canvas.drawCircle(center, r * 0.12, Paint()..color = const Color(0xFF08111C));
-    canvas.drawCircle(center, r * 0.08, Paint()..color = color.withValues(alpha: 0.85));
+    canvas.drawCircle(
+        center, r * 0.12, Paint()..color = const Color(0xFF08111C));
+    canvas.drawCircle(
+        center, r * 0.08, Paint()..color = color.withValues(alpha: 0.85));
     canvas.drawCircle(center, r * 0.04, Paint()..color = Colors.white);
   }
 
   @override
-  bool shouldRepaint(_SpeedGaugePainter old) => old.speed != speed || old.color != color;
+  bool shouldRepaint(_SpeedGaugePainter old) =>
+      old.speed != speed || old.color != color;
 }
 
 // ignore: unused_element
@@ -10821,7 +11247,10 @@ class _VehicleBottomSpeedPanel extends StatelessWidget {
               Expanded(
                 child: const Text(
                   'Velocidade (últimas 2 horas)',
-                  style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 13),
+                  style: TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13),
                 ),
               ),
             ],
@@ -10834,9 +11263,15 @@ class _VehicleBottomSpeedPanel extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('120', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                    Text('60',  style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                    Text('0',   style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
+                    Text('120',
+                        style:
+                            TextStyle(color: Color(0xFF70829A), fontSize: 11)),
+                    Text('60',
+                        style:
+                            TextStyle(color: Color(0xFF70829A), fontSize: 11)),
+                    Text('0',
+                        style:
+                            TextStyle(color: Color(0xFF70829A), fontSize: 11)),
                   ],
                 ),
                 const SizedBox(width: 10),
@@ -10845,7 +11280,24 @@ class _VehicleBottomSpeedPanel extends StatelessWidget {
                     children: [
                       Expanded(
                         child: CustomPaint(
-                          painter: _SpeedLinePainter(values: const [58,48,57,44,68,52,56,45,61,50,42,47,36,52,44,48]),
+                          painter: _SpeedLinePainter(values: const [
+                            58,
+                            48,
+                            57,
+                            44,
+                            68,
+                            52,
+                            56,
+                            45,
+                            61,
+                            50,
+                            42,
+                            47,
+                            36,
+                            52,
+                            44,
+                            48
+                          ]),
                           child: const SizedBox.expand(),
                         ),
                       ),
@@ -10853,11 +11305,21 @@ class _VehicleBottomSpeedPanel extends StatelessWidget {
                       const Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('08:30', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                          Text('09:00', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                          Text('09:30', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                          Text('10:00', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
-                          Text('10:30', style: TextStyle(color: Color(0xFF70829A), fontSize: 11)),
+                          Text('08:30',
+                              style: TextStyle(
+                                  color: Color(0xFF70829A), fontSize: 11)),
+                          Text('09:00',
+                              style: TextStyle(
+                                  color: Color(0xFF70829A), fontSize: 11)),
+                          Text('09:30',
+                              style: TextStyle(
+                                  color: Color(0xFF70829A), fontSize: 11)),
+                          Text('10:00',
+                              style: TextStyle(
+                                  color: Color(0xFF70829A), fontSize: 11)),
+                          Text('10:30',
+                              style: TextStyle(
+                                  color: Color(0xFF70829A), fontSize: 11)),
                         ],
                       ),
                     ],
@@ -11858,8 +12320,7 @@ class _VehicleCommandsPanel extends ConsumerStatefulWidget {
       _VehicleCommandsPanelState();
 }
 
-class _VehicleCommandsPanelState
-    extends ConsumerState<_VehicleCommandsPanel> {
+class _VehicleCommandsPanelState extends ConsumerState<_VehicleCommandsPanel> {
   bool _sending = false;
   String? _lastSent;
 
@@ -11868,8 +12329,7 @@ class _VehicleCommandsPanelState
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar comando'),
-        content: Text(
-            'Enviar "$label" para ${widget.snapshot.device.name}?'),
+        content: Text('Enviar "$label" para ${widget.snapshot.device.name}?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -11912,12 +12372,27 @@ class _VehicleCommandsPanelState
   @override
   Widget build(BuildContext context) {
     const cmds = [
-      ('engineStop',     Icons.lock_outline_rounded,           'Bloquear',    Color(0xFFEF4444)),
-      ('engineResume',   Icons.lock_open_rounded,              'Desbloquear', Color(0xFF16A34A)),
-      ('positionSingle', Icons.my_location_outlined,           'Localizar',   Color(0xFF176EEB)),
-      ('alarm',          Icons.notifications_active_outlined,  'Alarme',      Color(0xFFF59E0B)),
-      ('reboot',         Icons.restart_alt_rounded,            'Reiniciar',   Color(0xFF6366F1)),
-      ('custom',         Icons.code_rounded,                   'Custom',      Color(0xFF64748B)),
+      ('engineStop', Icons.lock_outline_rounded, 'Bloquear', Color(0xFFEF4444)),
+      (
+        'engineResume',
+        Icons.lock_open_rounded,
+        'Desbloquear',
+        Color(0xFF16A34A)
+      ),
+      (
+        'positionSingle',
+        Icons.my_location_outlined,
+        'Localizar',
+        Color(0xFF176EEB)
+      ),
+      (
+        'alarm',
+        Icons.notifications_active_outlined,
+        'Alarme',
+        Color(0xFFF59E0B)
+      ),
+      ('reboot', Icons.restart_alt_rounded, 'Reiniciar', Color(0xFF6366F1)),
+      ('custom', Icons.code_rounded, 'Custom', Color(0xFF64748B)),
     ];
 
     return Container(
@@ -11931,7 +12406,8 @@ class _VehicleCommandsPanelState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.terminal_rounded, size: 13, color: Color(0xFF5A6D89)),
+            const Icon(Icons.terminal_rounded,
+                size: 13, color: Color(0xFF5A6D89)),
             const SizedBox(width: 5),
             const Text('Comandos',
                 style: TextStyle(
@@ -11941,7 +12417,8 @@ class _VehicleCommandsPanelState
             if (_sending) ...[
               const SizedBox(width: 8),
               const SizedBox(
-                  width: 10, height: 10,
+                  width: 10,
+                  height: 10,
                   child: CircularProgressIndicator(strokeWidth: 1.5)),
             ],
           ]),
@@ -12012,9 +12489,7 @@ class _CommandButton extends StatelessWidget {
             const SizedBox(width: 4),
             Text(label,
                 style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 10.5)),
+                    color: color, fontWeight: FontWeight.w800, fontSize: 10.5)),
           ],
         ),
       ),
@@ -12108,24 +12583,58 @@ class _VehicleTelemetryPanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(children: [
-                  Expanded(child: _TelCell(icon: Icons.satellite_alt_rounded, label: 'Satélites', value: _satLabel, color: const Color(0xFF176EEB))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.satellite_alt_rounded,
+                          label: 'Satélites',
+                          value: _satLabel,
+                          color: const Color(0xFF176EEB))),
                   const SizedBox(width: 8),
-                  Expanded(child: _TelCell(icon: Icons.terrain_rounded, label: 'Altitude', value: _altLabel, color: const Color(0xFF334155))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.terrain_rounded,
+                          label: 'Altitude',
+                          value: _altLabel,
+                          color: const Color(0xFF334155))),
                 ]),
                 const SizedBox(height: 6),
                 Row(children: [
-                  Expanded(child: _TelCell(icon: Icons.route_rounded, label: 'Odômetro', value: _odomLabel, color: const Color(0xFF0F766E))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.route_rounded,
+                          label: 'Odômetro',
+                          value: _odomLabel,
+                          color: const Color(0xFF0F766E))),
                   const SizedBox(width: 8),
-                  Expanded(child: _TelCell(icon: Icons.timer_outlined, label: 'Horômetro', value: _hoursLabel, color: const Color(0xFF7C3AED))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.timer_outlined,
+                          label: 'Horômetro',
+                          value: _hoursLabel,
+                          color: const Color(0xFF7C3AED))),
                 ]),
                 const SizedBox(height: 6),
                 Row(children: [
-                  Expanded(child: _TelCell(icon: Icons.explore_rounded, label: 'Rumo', value: _courseLabel, color: const Color(0xFFF59E0B))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.explore_rounded,
+                          label: 'Rumo',
+                          value: _courseLabel,
+                          color: const Color(0xFFF59E0B))),
                   const SizedBox(width: 8),
-                  Expanded(child: _TelCell(icon: Icons.directions_car_outlined, label: 'Movimento', value: _motionLabel, color: const Color(0xFF16A34A))),
+                  Expanded(
+                      child: _TelCell(
+                          icon: Icons.directions_car_outlined,
+                          label: 'Movimento',
+                          value: _motionLabel,
+                          color: const Color(0xFF16A34A))),
                 ]),
                 const SizedBox(height: 6),
-                _TelCell(icon: Icons.my_location_rounded, label: 'Coordenadas', value: _coordLabel, color: const Color(0xFF52627C)),
+                _TelCell(
+                    icon: Icons.my_location_rounded,
+                    label: 'Coordenadas',
+                    value: _coordLabel,
+                    color: const Color(0xFF52627C)),
               ],
             ),
           ),
@@ -12136,7 +12645,11 @@ class _VehicleTelemetryPanel extends StatelessWidget {
 }
 
 class _TelCell extends StatelessWidget {
-  const _TelCell({required this.icon, required this.label, required this.value, required this.color});
+  const _TelCell(
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.color});
   final IconData icon;
   final String label;
   final String value;
@@ -12156,9 +12669,18 @@ class _TelCell extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(color: Color(0xFF8899B0), fontSize: 8.5, fontWeight: FontWeight.w700)),
-              Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF1F2A44), fontSize: 11.5, fontWeight: FontWeight.w900)),
+              Text(label,
+                  style: const TextStyle(
+                      color: Color(0xFF8899B0),
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w700)),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900)),
             ],
           ),
         ),
@@ -13119,7 +13641,12 @@ class _MapLayersButton extends StatelessWidget {
         PopupMenuItem<String>(
           value: 'normal',
           child: Row(children: [
-            Icon(isNormal ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 16, color: const Color(0xFF176EEB)),
+            Icon(
+                isNormal
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 16,
+                color: const Color(0xFF176EEB)),
             const SizedBox(width: 10),
             const Text('Padrão'),
           ]),
@@ -13127,7 +13654,12 @@ class _MapLayersButton extends StatelessWidget {
         PopupMenuItem<String>(
           value: 'satellite',
           child: Row(children: [
-            Icon(isSatellite ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 16, color: const Color(0xFF176EEB)),
+            Icon(
+                isSatellite
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 16,
+                color: const Color(0xFF176EEB)),
             const SizedBox(width: 10),
             const Text('Satélite'),
           ]),
@@ -13135,7 +13667,12 @@ class _MapLayersButton extends StatelessWidget {
         PopupMenuItem<String>(
           value: 'hybrid',
           child: Row(children: [
-            Icon(isHybrid ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 16, color: const Color(0xFF176EEB)),
+            Icon(
+                isHybrid
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 16,
+                color: const Color(0xFF176EEB)),
             const SizedBox(width: 10),
             const Text('Híbrido'),
           ]),
@@ -13145,7 +13682,9 @@ class _MapLayersButton extends StatelessWidget {
           value: 'traffic',
           child: Row(children: [
             Icon(
-              trafficOn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+              trafficOn
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
               size: 16,
               color: const Color(0xFF176EEB),
             ),
@@ -15205,8 +15744,7 @@ class _InventoryDemoScreen extends StatelessWidget {
       color: Color(0xFF047857),
     ),
     _InventorySummaryData(
-      title:
-          'Em manutenção',
+      title: 'Em manutenção',
       value: '6',
       icon: Icons.build_circle_outlined,
       color: Color(0xFFD97706),
@@ -15265,8 +15803,7 @@ class _InventoryDemoScreen extends StatelessWidget {
       model: 'RELE-12V',
       idNumber: '-',
       carrier: '-',
-      status:
-          'Manutenção',
+      status: 'Manutenção',
       technician: 'Carlos Tecnico',
       vehicle: 'XYZ-9876',
       movement: 'Retorno tecnico',
@@ -15521,8 +16058,7 @@ class _InventoryDemoScreen extends StatelessWidget {
               _InventoryFlowLine(text: 'Bridge'),
               _InventoryFlowLine(text: 'Google Sheets'),
               _InventoryFlowLine(text: 'Aba Itens atualiza status'),
-              _InventoryFlowLine(
-                  text: 'Aba Movimentações registra Histórico'),
+              _InventoryFlowLine(text: 'Aba Movimentações registra Histórico'),
             ],
           ),
         ),
@@ -16236,17 +16772,8 @@ class _TelemetryRaceShowcaseScreen extends StatefulWidget {
 class _TelemetryRaceShowcaseScreenState
     extends State<_TelemetryRaceShowcaseScreen> {
   static const _seasonOptions = ['Temporada atual demo'];
-  static const _raceOptions = [
-    'Austrália',
-    'China',
-    'Japão',
-    'Bahrein'
-  ];
-  static const _sessionOptions = [
-    'Treino',
-    'Classificação',
-    'Corrida'
-  ];
+  static const _raceOptions = ['Austrália', 'China', 'Japão', 'Bahrein'];
+  static const _sessionOptions = ['Treino', 'Classificação', 'Corrida'];
   static const _driverOptions = [
     'Bortoleto',
     'Verstappen',
@@ -16262,12 +16789,9 @@ class _TelemetryRaceShowcaseScreenState
   ];
 
   final Map<String, _RaceTelemetryCircuit> _circuits = {
-    'Austrália':
-        _RaceTelemetryCircuit(
-      raceName:
-          'Austrália',
-      trackSubtitle:
-          'Albert Park • Setores 1/2/3',
+    'Austrália': _RaceTelemetryCircuit(
+      raceName: 'Austrália',
+      trackSubtitle: 'Albert Park • Setores 1/2/3',
       pathPoints: const [
         Offset(0.13, 0.62),
         Offset(0.22, 0.79),
@@ -16296,24 +16820,21 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'aus-3',
-          label:
-              'Aceleração máxima',
+          label: 'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.76, 0.43),
           accent: Color(0xFF22C55E),
         ),
         _RaceTelemetryEvent(
           id: 'aus-4',
-          label:
-              'Perda de aderência',
+          label: 'Perda de aderência',
           sector: 'Setor 1',
           position: Offset(0.34, 0.24),
           accent: Color(0xFFA855F7),
         ),
         _RaceTelemetryEvent(
           id: 'aus-5',
-          label:
-              'Volta rápida',
+          label: 'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.63, 0.30),
           accent: Color(0xFF3B82F6),
@@ -16322,8 +16843,7 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'China': _RaceTelemetryCircuit(
       raceName: 'China',
-      trackSubtitle:
-          'Shanghai • Setores 1/2/3',
+      trackSubtitle: 'Shanghai • Setores 1/2/3',
       pathPoints: const [
         Offset(0.15, 0.70),
         Offset(0.25, 0.82),
@@ -16359,20 +16879,16 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'chi-4',
-          label:
-              'Aceleração máxima',
+          label: 'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.69, 0.27),
           accent: Color(0xFF3B82F6),
         ),
       ],
     ),
-    'Japão':
-        _RaceTelemetryCircuit(
-      raceName:
-          'Japão',
-      trackSubtitle:
-          'Suzuka • Setores 1/2/3',
+    'Japão': _RaceTelemetryCircuit(
+      raceName: 'Japão',
+      trackSubtitle: 'Suzuka • Setores 1/2/3',
       pathPoints: const [
         Offset(0.16, 0.67),
         Offset(0.23, 0.82),
@@ -16387,8 +16903,7 @@ class _TelemetryRaceShowcaseScreenState
       events: const [
         _RaceTelemetryEvent(
           id: 'jpn-1',
-          label:
-              'Perda de aderência',
+          label: 'Perda de aderência',
           sector: 'Setor 1',
           position: Offset(0.25, 0.81),
           accent: Color(0xFFEF4444),
@@ -16409,8 +16924,7 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'jpn-4',
-          label:
-              'Volta rápida',
+          label: 'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.46, 0.22),
           accent: Color(0xFF3B82F6),
@@ -16419,8 +16933,7 @@ class _TelemetryRaceShowcaseScreenState
     ),
     'Bahrein': _RaceTelemetryCircuit(
       raceName: 'Bahrein',
-      trackSubtitle:
-          'Sakhir • Setores 1/2/3',
+      trackSubtitle: 'Sakhir • Setores 1/2/3',
       pathPoints: const [
         Offset(0.14, 0.72),
         Offset(0.29, 0.83),
@@ -16456,16 +16969,14 @@ class _TelemetryRaceShowcaseScreenState
         ),
         _RaceTelemetryEvent(
           id: 'bah-4',
-          label:
-              'Aceleração máxima',
+          label: 'Aceleração máxima',
           sector: 'Setor 3',
           position: Offset(0.63, 0.24),
           accent: Color(0xFF3B82F6),
         ),
         _RaceTelemetryEvent(
           id: 'bah-5',
-          label:
-              'Volta rápida',
+          label: 'Volta rápida',
           sector: 'Setor 2',
           position: Offset(0.36, 0.25),
           accent: Color(0xFFA855F7),
@@ -16489,8 +17000,7 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 92,
       gsmSignal: 88,
-      lastCommunication:
-          'há 9 s',
+      lastCommunication: 'há 9 s',
       fuelOrLoad: 54,
       trackerTemperature: 39,
       behavior: 'normal',
@@ -16509,16 +17019,13 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 94,
       gsmSignal: 86,
-      lastCommunication:
-          'há 7 s',
+      lastCommunication: 'há 7 s',
       fuelOrLoad: 49,
       trackerTemperature: 40,
-      behavior:
-          'atenção',
+      behavior: 'atenção',
     ),
     'Norris': const _RaceTelemetryDriverSnapshot(
-      tireCompound:
-          'Médio',
+      tireCompound: 'Médio',
       tireLife: 66,
       speedKmh: 301,
       rpm: 11910,
@@ -16531,15 +17038,13 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 89,
       gsmSignal: 85,
-      lastCommunication:
-          'há 11 s',
+      lastCommunication: 'há 11 s',
       fuelOrLoad: 56,
       trackerTemperature: 38,
       behavior: 'normal',
     ),
     'Leclerc': const _RaceTelemetryDriverSnapshot(
-      tireCompound:
-          'Intermediário',
+      tireCompound: 'Intermediário',
       tireLife: 60,
       speedKmh: 300,
       rpm: 11760,
@@ -16552,8 +17057,7 @@ class _TelemetryRaceShowcaseScreenState
       ignitionOn: true,
       gpsSignal: 87,
       gsmSignal: 82,
-      lastCommunication:
-          'há 13 s',
+      lastCommunication: 'há 13 s',
       fuelOrLoad: 52,
       trackerTemperature: 41,
       behavior: 'risco',
@@ -16615,10 +17119,7 @@ class _TelemetryRaceShowcaseScreenState
 
     final tireLifeShift = _selectedSession == 'Corrida'
         ? -5
-        : (_selectedSession ==
-                'Classificação'
-            ? -2
-            : 4);
+        : (_selectedSession == 'Classificação' ? -2 : 4);
 
     return base.copyWith(
       speedKmh: (base.speedKmh + speedAdjust).clamp(120, 360),
@@ -16631,10 +17132,7 @@ class _TelemetryRaceShowcaseScreenState
               .clamp(15, 100),
       behavior: _selectedSession == 'Corrida' && driver == 'Leclerc'
           ? 'risco'
-          : (_selectedSession ==
-                  'Classificação'
-              ? 'atenção'
-              : 'normal'),
+          : (_selectedSession == 'Classificação' ? 'atenção' : 'normal'),
     );
   }
 
@@ -16776,8 +17274,7 @@ class _TelemetryRaceShowcaseScreenState
                     },
                   ),
                   _RaceTelemetryFilterDropdown(
-                    label:
-                        'Sessão',
+                    label: 'Sessão',
                     value: _selectedSession,
                     options: _sessionOptions,
                     onChanged: (value) {
@@ -17100,10 +17597,7 @@ class _TelemetryRaceShowcaseScreenState
           const SizedBox(height: 8),
           _RaceTelemetryInfoLine(label: 'Piloto', value: _selectedDriver),
           _RaceTelemetryInfoLine(label: 'Prova', value: _selectedRace),
-          _RaceTelemetryInfoLine(
-              label:
-                  'Sessão',
-              value: _selectedSession),
+          _RaceTelemetryInfoLine(label: 'Sessão', value: _selectedSession),
           _RaceTelemetryInfoLine(label: 'Pneu', value: snapshot.tireCompound),
           _RaceTelemetryInfoLine(
             label: 'Vida do pneu',
@@ -17122,17 +17616,14 @@ class _TelemetryRaceShowcaseScreenState
           _RaceTelemetryInfoLine(label: 'Freio', value: '${snapshot.brake}%'),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do pneu',
-            value:
-                '${snapshot.tireTempC}Â°C',
+            value: '${snapshot.tireTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
             label: 'Temperatura do motor',
-            value:
-                '${snapshot.engineTempC}Â°C',
+            value: '${snapshot.engineTempC}Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Gap para comparação',
+            label: 'Gap para comparação',
             value: comparison == null
                 ? 'n/a'
                 : '${comparison.speedDelta >= 0 ? '+' : ''}${comparison.speedDelta} km/h',
@@ -17167,8 +17658,7 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.trackerBattery}%',
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Ignição',
+            label: 'Ignição',
             value: snapshot.ignitionOn ? 'Ligada' : 'Desligada',
           ),
           _RaceTelemetryInfoLine(
@@ -17180,19 +17670,15 @@ class _TelemetryRaceShowcaseScreenState
             value: '${snapshot.gsmSignal}%',
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Última comunicação',
+            label: 'Última comunicação',
             value: snapshot.lastCommunication,
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Temperatura do baú/motor',
-            value:
-                '${snapshot.trackerTemperature}Â°C',
+            label: 'Temperatura do baú/motor',
+            value: '${snapshot.trackerTemperature}Â°C',
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Nível de combustível/carga',
+            label: 'Nível de combustível/carga',
             value: '${snapshot.fuelOrLoad}%',
           ),
           _RaceTelemetryInfoLine(
@@ -17231,15 +17717,9 @@ class _TelemetryRaceShowcaseScreenState
             ),
           ),
           const SizedBox(height: 8),
-          const _RaceTelemetryBullet(
-              text:
-                  'detectar condução agressiva;'),
-          const _RaceTelemetryBullet(
-              text:
-                  'prever manutenção;'),
-          const _RaceTelemetryBullet(
-              text:
-                  'monitorar bateria e comunicação;'),
+          const _RaceTelemetryBullet(text: 'detectar condução agressiva;'),
+          const _RaceTelemetryBullet(text: 'prever manutenção;'),
+          const _RaceTelemetryBullet(text: 'monitorar bateria e comunicação;'),
           const _RaceTelemetryBullet(text: 'identificar perda de sinal;'),
           const _RaceTelemetryBullet(text: 'cruzar evento com mapa;'),
           const _RaceTelemetryBullet(text: 'gerar alerta ou chamado;'),
@@ -17284,23 +17764,19 @@ class _TelemetryRaceShowcaseScreenState
             value: comparison.comparedDriver,
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Diferença de velocidade',
+            label: 'Diferença de velocidade',
             value: formatDelta(comparison.speedDelta, ' km/h'),
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Diferença de frenagem',
+            label: 'Diferença de frenagem',
             value: formatDelta(comparison.brakingDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Diferença de aceleração',
+            label: 'Diferença de aceleração',
             value: formatDelta(comparison.throttleDelta, '%'),
           ),
           _RaceTelemetryInfoLine(
-            label:
-                'Diferença de desgaste de pneu',
+            label: 'Diferença de desgaste de pneu',
             value: formatDelta(comparison.tireWearDelta, '%'),
           ),
         ],
@@ -20357,7 +20833,8 @@ enum _KpiFilter {
   offline('Offline', Icons.wifi_off_rounded, Color(0xFF94A3B8)),
   moving('Em movimento', Icons.near_me_outlined, Color(0xFFF59E0B)),
   alerts('Alertas', Icons.warning_amber_rounded, Color(0xFFEF4444)),
-  noCommunication('Sem comunicação', Icons.signal_wifi_off_rounded, Color(0xFF64748B));
+  noCommunication(
+      'Sem comunicação', Icons.signal_wifi_off_rounded, Color(0xFF64748B));
 
   const _KpiFilter(this.title, this.icon, this.color);
 
@@ -20671,12 +21148,11 @@ class _VehicleSnapshot {
         TireReading(
           index: i + 1,
           rawId: ids[i],
-          batteryVolts: (tireAttributes['tire${ids[i]}Battery'] as num?)
-              ?.toDouble(),
-          temperatureC: (tireAttributes['tire${ids[i]}Temp'] as num?)
-              ?.toInt(),
-          pressureRaw: (tireAttributes['tire${ids[i]}Pressure'] as num?)
-              ?.toInt(),
+          batteryVolts:
+              (tireAttributes['tire${ids[i]}Battery'] as num?)?.toDouble(),
+          temperatureC: (tireAttributes['tire${ids[i]}Temp'] as num?)?.toInt(),
+          pressureRaw:
+              (tireAttributes['tire${ids[i]}Pressure'] as num?)?.toInt(),
         ),
     ];
   }
@@ -21539,3 +22015,16 @@ const List<_OperationalMenuItem> _operationalMenu = [
     color: Color(0xFF9CA3AF),
   ),
 ];
+  // LERP linear puro (2026-09-06) -- havia uma "zona morta" aqui (segmentos
+  // >= 1km ficavam parados até 35% do progresso, aceleravam até 65% e
+  // travavam em 1.0 dali em diante), que é a causa direta do efeito
+  // "anda, segura, pula" no replay. Segmentos realmente grandes (buraco de
+  // conexão do rastreador) já são tratados à parte por `isLargeGap` (ver
+  // `_buildReportRouteReplayFrame`), então não precisam de tratamento
+  // especial aqui -- todo segmento animável usa o mesmo progresso linear.
+  double _reportRouteDisplayProgress(
+    double rawProgress,
+    double segmentDistanceKm,
+  ) {
+    return rawProgress.clamp(0.0, 1.0);
+  }
