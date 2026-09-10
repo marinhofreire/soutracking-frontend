@@ -311,6 +311,9 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                   final hasSensors = _selectedSensorKeys.isNotEmpty;
                   final hasGroup = _groupController.text.trim().isNotEmpty;
 
+                  final isMobile =
+                      MediaQuery.sizeOf(context).width < 760;
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -368,11 +371,15 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                       const SizedBox(height: 16),
                       // ── Body ──
                       Expanded(
-                        child: Row(
+                        child: Flex(
+                          direction:
+                              isMobile ? Axis.vertical : Axis.horizontal,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // ── Left: single scroll form ──
-                            Expanded(
+                            Flexible(
+                              flex: isMobile ? 3 : 1,
+                              fit: FlexFit.tight,
                               child: SingleChildScrollView(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -975,13 +982,19 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 20),
+                            SizedBox(
+                              width: isMobile ? 0 : 20,
+                              height: isMobile ? 16 : 0,
+                            ),
                             // ── Right: Actions + Summary Panel ──
                             // Botões de ação vêm primeiro, sempre visíveis
                             // sem precisar rolar (antes ficavam depois do
                             // Resumo, exigindo scroll no painel de 860px).
-                            SizedBox(
-                              width: 240,
+                            Flexible(
+                              flex: isMobile ? 2 : 0,
+                              fit: FlexFit.loose,
+                              child: SizedBox(
+                              width: isMobile ? double.infinity : 240,
                               child: SingleChildScrollView(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1174,6 +1187,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                   ],
                                 ),
                               ),
+                            ),
                             ),
                           ],
                         ),

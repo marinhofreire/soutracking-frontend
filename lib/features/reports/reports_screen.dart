@@ -1831,6 +1831,8 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
     final point = _points[_currentIndex];
     final bearing = _bearingAt(_currentIndex);
     final event = _nearestEvent(point.effectiveTime);
@@ -1908,8 +1910,11 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                     Positioned(
                       left: 16,
                       top: 16,
+                      right: isMobile ? 16 : null,
                       child: Container(
-                        constraints: const BoxConstraints(maxWidth: 340),
+                        constraints: BoxConstraints(
+                          maxWidth: isMobile ? double.infinity : 340,
+                        ),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -1972,7 +1977,8 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                       Positioned(
                         left: 16,
                         bottom: 88,
-                        width: 320,
+                        right: isMobile ? 16 : null,
+                        width: isMobile ? null : 320,
                         child: _ReplayPointDetailsCard(
                           vehicleLabel: widget.vehicleName,
                           point: point,
@@ -1983,6 +1989,7 @@ class _ReportReplayDialogBodyState extends State<_ReportReplayDialogBody> {
                           onClose: () => setState(() => _showDetails = false),
                         ),
                       ),
+                    if (!isMobile)
                     Positioned(
                       right: 16,
                       top: 16,

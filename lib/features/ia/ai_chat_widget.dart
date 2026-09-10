@@ -191,10 +191,12 @@ class _AiChatFloatingWidgetState extends ConsumerState<AiChatFloatingWidget> {
   }
 
   Widget _buildPanel() {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final panelWidth = screenWidth < 760 ? screenWidth - 40 : 340.0;
     return Material(
       color: Colors.transparent,
       child: Container(
-        width: 340,
+        width: panelWidth,
         height: 440,
         decoration: BoxDecoration(
           color: const Color(0xFF0F1A2B),

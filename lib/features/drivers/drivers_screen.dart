@@ -399,7 +399,12 @@ class _DriversScreenState extends ConsumerState<DriversScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.25),
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (ctx, setModal) => Dialog(
+          builder: (ctx, setModal) {
+          final isMobile = MediaQuery.sizeOf(ctx).width < 760;
+          return Dialog(
+            insetPadding: isMobile
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
+                : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.transparent,
             shape:
@@ -952,7 +957,8 @@ class _DriversScreenState extends ConsumerState<DriversScreen> {
                 ],
               ),
             ),
-          ),
+          );
+          }
         );
       },
     );
