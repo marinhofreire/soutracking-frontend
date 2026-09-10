@@ -2930,6 +2930,59 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onOpenChanged: (open) =>
                       setState(() => _copilotPanelOpen = open),
                 ),
+              // Botão "Veículos" -- só no mobile (2026-09-10). No desktop a
+              // lista de veículos abre clicando num card de KPI do topo, mas
+              // esses cards não aparecem em tela estreita, então no PWA não
+              // havia como abrir a lista (só tocando no marker do mapa).
+              if (!pixelTelemetryMode &&
+                  isCompactScreen &&
+                  _activePanelId == null &&
+                  !_mobileMenuOpen &&
+                  _selectedVehicle == null &&
+                  !showLiveGauges)
+                Positioned(
+                  left: 16,
+                  bottom: 20,
+                  child: _SurfaceGuard(
+                    child: Material(
+                      color: Colors.white,
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () => setState(() {
+                          _activeKpiFilter = _KpiFilter.total;
+                          _kpiListOpen = !_kpiListOpen;
+                        }),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _kpiListOpen
+                                    ? Icons.close_rounded
+                                    : Icons.directions_car_filled_rounded,
+                                size: 18,
+                                color: const Color(0xFF176EEB),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _kpiListOpen ? 'Fechar' : 'Veículos',
+                                style: const TextStyle(
+                                  color: Color(0xFF1F2A44),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               // Overlay de tela cheia (mobile) — precisa ser o último filho
               // da Stack pra ficar por cima do cartão do veículo e do mapa.
               if (!pixelTelemetryMode && isCompactScreen && _mobileMenuOpen)
@@ -3124,6 +3177,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return snapshots
             .where((it) => it.hasNoCommunication)
             .toList(growable: false);
+      case _KpiFilter.total:
+        return snapshots;
     }
   }
 
@@ -7756,17 +7811,25 @@ class _KpiVehicleList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compactDensity = cardDensity == VisualCardDensity.compact;
-    final panelWidth = compactDensity ? 320.0 : 348.0;
-    final sidebarWidth = !sidebarVisible
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
+    // No mobile a lista ocupa quase toda a largura (não tem sidebar pra
+    // deslocar) e começa mais embaixo (barra de topo + botão flutuante).
+    final panelWidth = isMobile
+        ? screenWidth - 24
+        : (compactDensity ? 320.0 : 348.0);
+    final sidebarWidth = !sidebarVisible || isMobile
         ? 0.0
         : (sidebarOpen ? (compactDensity ? 208.0 : 224.0) : 72.0);
-    final openedLeft = sidebarWidth + (compactDensity ? 12.0 : 16.0);
+    final openedLeft = isMobile
+        ? 12.0
+        : sidebarWidth + (compactDensity ? 12.0 : 16.0);
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
       left: open ? openedLeft : -panelWidth - 28,
-      top: 126,
-      bottom: 18,
+      top: isMobile ? 84 : 126,
+      bottom: isMobile ? 78 : 18,
       width: panelWidth,
       child: IgnorePointer(
         ignoring: !open,
@@ -7945,14 +8008,25 @@ class _IntegratedPanel extends StatelessWidget {
     final centeredOffset =
         ((availableWidth - width) / 2).clamp(0.0, 1000.0).toDouble();
     final centeredLeft = leftInset + centeredOffset;
+    // No PWA mobile a barra de navegação do navegador reduz a altura
+    // visível de forma dinâmica -- qualquer card flutuante com margens
+    // deixava o rodapé (busca, botões, lista) fora da área tocável. No
+    // mobile o painel vira TELA CHEIA de verdade (como app nativo): sem
+    // margem, ocupa a tela toda, com SafeArea + scroll interno garantindo
+    // que dá pra chegar no fim de qualquer conteúdo (2026-09-10).
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final topInset = compact ? 0.0 : 92.0;
+    final bottomInset = compact ? 0.0 : 24.0;
+    final mobileLeft = compact ? 0.0 : centeredLeft;
+    final mobileWidth = compact ? screenWidth : width;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
-      left: open ? centeredLeft : screenWidth + 36,
-      top: 92,
-      bottom: 24,
-      width: width,
+      left: open ? mobileLeft : screenWidth + 36,
+      top: open ? topInset : (compact ? screenHeight + 36 : topInset),
+      bottom: bottomInset,
+      width: mobileWidth,
       child: IgnorePointer(
         ignoring: !open,
         child: _SurfaceGuard(
@@ -7961,9 +8035,43 @@ class _IntegratedPanel extends StatelessWidget {
             opacity: open ? 1 : 0,
             child: _GlassSurface(
               padding: EdgeInsets.zero,
-              child: Column(
+              child: SafeArea(
+                bottom: compact,
+                top: compact,
+                child: Column(
                 children: [
-                  if (!hideHeader)
+                  if (compact)
+                    // Barra de topo própria (mobile) -- botão voltar +
+                    // título, igual navegação de app nativo.
+                    SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 4),
+                          IconButton(
+                            onPressed: onClose,
+                            icon: const Icon(Icons.arrow_back_rounded,
+                                color: Color(0xFF1F2A44)),
+                          ),
+                          Expanded(
+                            child: Text(
+                              title.isEmpty ? 'Voltar' : title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1F2A44),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                      ),
+                    ),
+                  if (compact)
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  if (!hideHeader && !compact)
                     SizedBox(
                       height: 68,
                       child: Row(
@@ -8042,6 +8150,7 @@ class _IntegratedPanel extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
               ),
             ),
           ),
@@ -10093,21 +10202,32 @@ class _VehicleBottomBar extends StatelessWidget {
         : (sidebarOpen
             ? (compactDensity ? 208.0 : 224.0)
             : (compactDensity ? 68.0 : 72.0));
+    final isMobile = width < 760;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final screenHeight = MediaQuery.sizeOf(context).height;
     final height = switch (effectivePanelMode) {
       // Cabeçalho colapsado (nome + placa + pílula de status) precisa de uns
       // px a mais que a altura "nominal" do header — sem essa folga o card
       // estourava embaixo (RenderFlex overflow) com o nome em 2 linhas.
       _VehiclePanelMode.collapsed => compactDensity ? 72.0 : 78.0,
-      _VehiclePanelMode.summary => compactDensity ? 218.0 : 240.0,
-      _VehiclePanelMode.full => compactDensity ? 218.0 : 240.0,
+      // No mobile o conteúdo (foto + nome + telemetria + eventos) não cabe
+      // em 218px e ficava cortado fora da tela; deixa a barra ocupar até
+      // 55% da tela e o scroll interno resolve o resto (2026-09-10).
+      _VehiclePanelMode.summary =>
+        isMobile ? screenHeight * 0.55 : (compactDensity ? 218.0 : 240.0),
+      _VehiclePanelMode.full =>
+        isMobile ? screenHeight * 0.7 : (compactDensity ? 218.0 : 240.0),
     };
+    // Sobe a barra pra fora do alcance da barra de navegação do navegador
+    // no PWA (safe area + folga).
+    final bottomGap = isMobile ? (safeBottom + 12.0) : 14.0;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
-      left: width >= 980 ? (16.0 + sidebarWidth + 10.0) : 16,
-      right: compactDensity ? 12 : 16,
-      bottom: visible ? 14 : -height - 28,
+      left: isMobile ? 8 : (width >= 980 ? (16.0 + sidebarWidth + 10.0) : 16),
+      right: isMobile ? 8 : (compactDensity ? 12 : 16),
+      bottom: visible ? bottomGap : -height - 28 - safeBottom,
       height: height,
       child: IgnorePointer(
         ignoring: !visible,
@@ -20928,7 +21048,11 @@ enum _KpiFilter {
   moving('Em movimento', Icons.near_me_outlined, Color(0xFFF59E0B)),
   alerts('Alertas', Icons.warning_amber_rounded, Color(0xFFEF4444)),
   noCommunication(
-      'Sem comunicação', Icons.signal_wifi_off_rounded, Color(0xFF64748B));
+      'Sem comunicação', Icons.signal_wifi_off_rounded, Color(0xFF64748B)),
+  // "Todos" -- usado pela lista de veículos do mobile (botão flutuante),
+  // que mostra a frota inteira sem filtro (2026-09-10).
+  total('Todos os veículos', Icons.directions_car_filled_rounded,
+      Color(0xFF176EEB));
 
   const _KpiFilter(this.title, this.icon, this.color);
 
@@ -21026,6 +21150,8 @@ class _FleetKpis {
         return alerts;
       case _KpiFilter.noCommunication:
         return noCommunication;
+      case _KpiFilter.total:
+        return online + offline;
     }
   }
 }
