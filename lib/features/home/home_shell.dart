@@ -10885,14 +10885,30 @@ class _VehicleBottomContent extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 children: [
                   SizedBox(
-                    height: 120,
+                    height: 150,
                     child: _VehicleTelemetryPanel(snapshot: snapshot),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   SizedBox(
-                    height: 120,
+                    height: 160,
                     child: _VehicleBottomEventsPanel(snapshot: snapshot),
                   ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 200,
+                    child: _VehicleCommandsPanel(snapshot: snapshot),
+                  ),
+                  if (snapshot.latLngOrNull != null) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 180,
+                      child: _VehicleBottomStreetViewPanel(
+                        latitude: snapshot.latLngOrNull!.latitude,
+                        longitude: snapshot.latLngOrNull!.longitude,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                 ],
               )
             : Row(
