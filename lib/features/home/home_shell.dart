@@ -5933,11 +5933,14 @@ class _RouteReplayControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeTotal = total <= 0 ? 1 : total;
     final boundedIndex = index.clamp(0, safeTotal - 1).toInt();
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      left: 222,
-      right: 20,
+      // No mobile não há sidebar -- left fixo de 222 empurrava a barra de
+      // controles de replay pra fora (2026-09-10).
+      left: isMobile ? 12 : 222,
+      right: isMobile ? 12 : 20,
       bottom: visible ? 20 : -180,
       child: IgnorePointer(
         ignoring: !visible,
@@ -7748,10 +7751,11 @@ class _NoVehiclesMapHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxW = MediaQuery.sizeOf(context).width - 32;
     return IgnorePointer(
       child: Center(
         child: _GlassSurface(
-          width: 360,
+          width: maxW < 360 ? maxW : 360,
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           child: const Column(
             mainAxisSize: MainAxisSize.min,
@@ -9890,15 +9894,22 @@ class _VehicleCompactPopup extends StatelessWidget {
     final compactDensity = cardDensity == VisualCardDensity.compact;
     final statusColor = snapshot.statusColor;
     final isMoving = snapshot.isMoving;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
+    // No mobile o balão vazava ~200px pra fora da tela (left fixo em 242 +
+    // width 320 numa tela de 360). Agora ocupa quase a largura toda, com
+    // margens simétricas (2026-09-10).
+    final popupLeft = isMobile ? 10.0 : (compactDensity ? 242.0 : 270.0);
+    final popupWidth = isMobile ? screenWidth - 20.0 : 320.0;
     return Positioned(
-      left: compactDensity ? 242 : 270,
-      top: 142,
+      left: popupLeft,
+      top: isMobile ? 84 : 142,
       child: _SurfaceGuard(
         child: Transform.scale(
-          scale: balloonScale,
+          scale: isMobile ? 1.0 : balloonScale,
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 320,
+            width: popupWidth,
             child: Material(
               color: Colors.transparent,
               child: Container(
@@ -14150,13 +14161,18 @@ class _CopilotOperationalPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
+    // No mobile o painel de ajustes visuais (390px fixo) vazava pela
+    // direita; ocupa quase a largura toda (2026-09-10).
+    final panelWidth = isMobile ? screenWidth - 20.0 : 390.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
-      top: 92,
-      bottom: 24,
-      right: open ? 16 : -410,
-      width: 390,
+      top: isMobile ? 56 : 92,
+      bottom: isMobile ? 8 : 24,
+      right: open ? (isMobile ? 10 : 16) : -panelWidth - 40,
+      width: panelWidth,
       child: IgnorePointer(
         ignoring: !open,
         child: _SurfaceGuard(
