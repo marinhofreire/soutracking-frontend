@@ -5419,42 +5419,66 @@ class _RouteReplayStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
+    // No mobile o card desce pra baixo dos 2 gauges (que ficam lado a lado
+    // no topo, ~top 68 + ~altura), e ocupa a largura toda em vez de um
+    // card estreito à direita colidindo com os gauges (2026-09-10). O
+    // conteúdo scrolla internamente.
+    final topPos = isMobile ? (screenWidth / 2 + 60) : 100.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      right: visible ? 20 : -220,
-      top: 100,
+      left: isMobile ? 12 : null,
+      right: isMobile ? 12 : (visible ? 20 : -220),
+      top: topPos,
+      bottom: isMobile ? 12 : null,
       child: IgnorePointer(
         ignoring: !visible,
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
           opacity: visible ? 1 : 0,
           child: PointerInterceptor(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                _buildStatusCard(),
-                if (latitude != null && longitude != null) ...[
-                  const SizedBox(height: 10),
-                  _StreetViewCard(
-                    latitude: latitude!,
-                    longitude: longitude!,
+            child: isMobile
+                ? SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildStatusCard(true),
+                        if (latitude != null && longitude != null) ...[
+                          const SizedBox(height: 10),
+                          _StreetViewCard(
+                            latitude: latitude!,
+                            longitude: longitude!,
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildStatusCard(false),
+                      if (latitude != null && longitude != null) ...[
+                        const SizedBox(height: 10),
+                        _StreetViewCard(
+                          latitude: latitude!,
+                          longitude: longitude!,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ],
-            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStatusCard() {
+  Widget _buildStatusCard(bool isMobile) {
     return Container(
-      width: 190,
+      width: isMobile ? double.infinity : 190,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
+        color: Colors.white.withValues(alpha: isMobile ? 0.96 : 0.72),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
@@ -5584,12 +5608,13 @@ class _StreetViewCard extends StatelessWidget {
     // Sem título "Street View" e com padding bem fino -- mesmo ajuste já
     // feito em _VehicleBottomStreetViewPanel (2026-09-06, pedido do
     // usuário): a imagem ocupa quase todo o card.
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
     return Container(
-      width: 190,
-      height: 120,
+      width: isMobile ? double.infinity : 190,
+      height: isMobile ? 160 : 120,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
+        color: Colors.white.withValues(alpha: isMobile ? 0.96 : 0.72),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
@@ -5848,49 +5873,64 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 760;
     final sidebarLeft = !sidebarVisible ? 20.0 : (sidebarOpen ? 222.0 : 90.0);
+
+    // No mobile os 2 gauges ficavam empilhados à esquerda, semi-
+    // transparentes, ATRÁS do card de status (colisão total). Agora ficam
+    // lado a lado no topo, menores, e o card de status desce pra baixo
+    // deles (ver _RouteReplayStatusCard) (2026-09-10).
+    final gaugeSize = isMobile ? (screenWidth - 40) / 2 : 170.0;
+    final km = SizedBox(
+      width: gaugeSize,
+      height: gaugeSize,
+      child: DialGauge(
+        label: 'km/h',
+        unit: '',
+        value: speedKmh ?? 0,
+        max: 240,
+        color: const Color(0xFF2D8CFF),
+        ticks: const [0, 40, 80, 120, 160, 200, 240],
+        loading: false,
+      ),
+    );
+    final rp = SizedBox(
+      width: gaugeSize,
+      height: gaugeSize,
+      child: DialGauge(
+        label: 'RPM',
+        unit: 'x1000',
+        value: rpm ?? 0,
+        max: 8,
+        color: const Color(0xFFEF4444),
+        ticks: const [0, 2, 4, 6, 8],
+        loading: false,
+      ),
+    );
+
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      left: visible ? sidebarLeft : sidebarLeft - 180,
-      top: 100,
+      left: isMobile ? 12 : (visible ? sidebarLeft : sidebarLeft - 180),
+      top: isMobile ? 68 : 100,
       child: IgnorePointer(
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
           opacity: visible ? 1 : 0,
           child: PointerInterceptor(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 170,
-                  height: 170,
-                  child: DialGauge(
-                    label: 'km/h',
-                    unit: '',
-                    value: speedKmh ?? 0,
-                    max: 240,
-                    color: const Color(0xFF2D8CFF),
-                    ticks: const [0, 40, 80, 120, 160, 200, 240],
-                    loading: false,
+            child: isMobile
+                ? SizedBox(
+                    width: screenWidth - 24,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [km, const SizedBox(width: 8), rp],
+                    ),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [km, const SizedBox(height: 12), rp],
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: 170,
-                  height: 170,
-                  child: DialGauge(
-                    label: 'RPM',
-                    unit: 'x1000',
-                    value: rpm ?? 0,
-                    max: 8,
-                    color: const Color(0xFFEF4444),
-                    ticks: const [0, 2, 4, 6, 8],
-                    loading: false,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
