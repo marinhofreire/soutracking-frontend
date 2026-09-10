@@ -1640,11 +1640,18 @@ class _ReportReplayDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final isMobile = size.width < 760;
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      insetPadding: isMobile
+          ? const EdgeInsets.all(6)
+          : const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       backgroundColor: Colors.transparent,
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 1320, maxHeight: 820),
+        constraints: BoxConstraints(
+          maxWidth: isMobile ? size.width - 12 : 1320,
+          maxHeight: isMobile ? size.height - 90 : 820,
+        ),
         decoration: BoxDecoration(
           color: const Color(0xFFF7FAFF),
           borderRadius: BorderRadius.circular(24),
@@ -3605,11 +3612,15 @@ class _RouteDetailDialogState extends State<_RouteDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final isMobile = size.width < 760;
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      insetPadding: isMobile
+          ? const EdgeInsets.all(8)
+          : const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
       child: SizedBox(
-        width: 1040,
-        height: 720,
+        width: isMobile ? size.width - 16 : 1040,
+        height: isMobile ? size.height - 100 : 720,
         child: FutureBuilder<List<_RouteDetailPoint>>(
           future: widget.pointsFuture,
           builder: (context, snapshot) {

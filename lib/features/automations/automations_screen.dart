@@ -583,12 +583,13 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(devicesProvider);
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
+    final screenWidth = MediaQuery.sizeOf(context).width;
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.25),
         child: Center(
           child: Container(
-            width: 520,
+            width: screenWidth < 760 ? screenWidth - 24 : 520,
             constraints: const BoxConstraints(maxHeight: 560),
             decoration: BoxDecoration(
               color: Colors.white,

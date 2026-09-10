@@ -2436,6 +2436,26 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
+    // No mobile as 3 colunas (leftWidth + center + rightWidth = ~461px
+    // fixos) estouravam a tela em TODAS as abas de Configurações (listras
+    // amarelo/preto). Empilha numa Column (2026-09-10).
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          left,
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 12),
+          center,
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 12),
+          right,
+        ],
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

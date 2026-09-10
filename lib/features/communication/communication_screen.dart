@@ -186,7 +186,9 @@ class _CommunicationScreenState
       builder: (context) => AlertDialog(
         title: const Text('Histórico de envios'),
         content: SizedBox(
-          width: 640,
+          width: MediaQuery.sizeOf(context).width < 760
+              ? double.maxFinite
+              : 640,
           child: rows.isEmpty
               ? const Text('Não informado')
               : ListView.separated(
@@ -477,43 +479,70 @@ class _CommunicationScreenState
         ),
         const SizedBox(height: 10),
 
-        // ── Two-panel layout ─────────────────────────────────────────────────
+        // ── Two-panel layout (desktop) / single-panel (mobile) ─────────────
         Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                flex: 5,
-                child: _leftListPanel(
-                  rows: filteredRows,
-                  emptySubtitle: 'Atualize os filtros ou aguarde novos dados',
-                  onSelect: (row) => setState(() {
-                    _selectedRow = row;
-                    if (_activeTab == _CommunicationTab.conversations) {
-                      _selectedTicket = row.ticket;
-                    } else {
-                      _selectedDeviceId = row.deviceId;
-                    }
-                  }),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 4,
-                child: _activeTab == _CommunicationTab.conversations
-                    ? _rightWhatsappPanel(
-                        ticket: _selectedTicket,
-                        history: conversationHistory,
-                      )
-                    : _rightConversationPanel(
-                        selectedDevice: selectedDevice,
-                        selectedPosition: selectedPosition,
-                        selectedStatus: selectedStatus,
-                        selectedStatusColor: selectedStatusColor,
-                        history: conversationHistory,
-                      ),
-              ),
-            ],
-          ),
+          child: Builder(builder: (context) {
+            final isMobile = MediaQuery.sizeOf(context).width < 760;
+            final listPanel = _leftListPanel(
+              rows: filteredRows,
+              emptySubtitle: 'Atualize os filtros ou aguarde novos dados',
+              onSelect: (row) => setState(() {
+                _selectedRow = row;
+                if (_activeTab == _CommunicationTab.conversations) {
+                  _selectedTicket = row.ticket;
+                } else {
+                  _selectedDeviceId = row.deviceId;
+                }
+              }),
+            );
+            final detailPanel = _activeTab == _CommunicationTab.conversations
+                ? _rightWhatsappPanel(
+                    ticket: _selectedTicket,
+                    history: conversationHistory,
+                  )
+                : _rightConversationPanel(
+                    selectedDevice: selectedDevice,
+                    selectedPosition: selectedPosition,
+                    selectedStatus: selectedStatus,
+                    selectedStatusColor: selectedStatusColor,
+                    history: conversationHistory,
+                  );
+
+            if (isMobile) {
+              // Um painel por vez: enquanto nada selecionado, mostra a
+              // lista; ao selecionar, mostra o detalhe com botão voltar.
+              final hasSelection = _activeTab ==
+                      _CommunicationTab.conversations
+                  ? _selectedTicket != null
+                  : _selectedDeviceId != null;
+              if (!hasSelection) return listPanel;
+              return Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _selectedRow = null;
+                        _selectedTicket = null;
+                        _selectedDeviceId = null;
+                      }),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: const Text('Voltar à lista'),
+                    ),
+                  ),
+                  Expanded(child: detailPanel),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(flex: 5, child: listPanel),
+                const SizedBox(width: 10),
+                Expanded(flex: 4, child: detailPanel),
+              ],
+            );
+          }),
         ),
       ],
     );
