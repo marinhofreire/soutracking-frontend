@@ -5421,11 +5421,10 @@ class _RouteReplayStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isMobile = screenWidth < 760;
-    // No mobile o card desce pra baixo dos 2 gauges (que ficam lado a lado
-    // no topo, ~top 68 + ~altura), e ocupa a largura toda em vez de um
-    // card estreito à direita colidindo com os gauges (2026-09-10). O
-    // conteúdo scrolla internamente.
-    final topPos = isMobile ? (screenWidth / 2 + 60) : 100.0;
+    // No mobile o card desce pra baixo da barra fina de km/h+RPM (que agora
+    // e' um Container curto ancorado em top:64, ~52px de altura), ocupando a
+    // largura toda. O conteudo scrolla internamente (2026-09-10).
+    final topPos = isMobile ? 128.0 : 100.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
@@ -5877,11 +5876,70 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
     final isMobile = screenWidth < 760;
     final sidebarLeft = !sidebarVisible ? 20.0 : (sidebarOpen ? 222.0 : 90.0);
 
-    // No mobile os 2 gauges ficavam empilhados à esquerda, semi-
-    // transparentes, ATRÁS do card de status (colisão total). Agora ficam
-    // lado a lado no topo, menores, e o card de status desce pra baixo
-    // deles (ver _RouteReplayStatusCard) (2026-09-10).
-    final gaugeSize = isMobile ? (screenWidth - 40) / 2 : 170.0;
+    // No celular NAO cabem 2 velocimetros circulares -- viram uma barra
+    // fina no topo com km/h e RPM em texto grande + mini barra de progresso.
+    // Os DialGauge circulares ficam so no desktop (2026-09-10).
+    if (isMobile) {
+      return AnimatedPositioned(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        left: 10,
+        right: 10,
+        top: visible ? 64 : 48,
+        child: IgnorePointer(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: visible ? 1 : 0,
+            child: PointerInterceptor(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFDDE5F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _MiniGaugeReadout(
+                        label: 'km/h',
+                        value: speedKmh ?? 0,
+                        max: 240,
+                        color: const Color(0xFF2D8CFF),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 34,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      color: const Color(0xFFE2E8F0),
+                    ),
+                    Expanded(
+                      child: _MiniGaugeReadout(
+                        label: 'RPM',
+                        value: rpm ?? 0,
+                        max: 8,
+                        color: const Color(0xFFEF4444),
+                        decimals: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final gaugeSize = 170.0;
     final km = SizedBox(
       width: gaugeSize,
       height: gaugeSize,
@@ -5912,28 +5970,83 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      left: isMobile ? 12 : (visible ? sidebarLeft : sidebarLeft - 180),
-      top: isMobile ? 68 : 100,
+      left: visible ? sidebarLeft : sidebarLeft - 180,
+      top: 100,
       child: IgnorePointer(
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
           opacity: visible ? 1 : 0,
           child: PointerInterceptor(
-            child: isMobile
-                ? SizedBox(
-                    width: screenWidth - 24,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [km, const SizedBox(width: 8), rp],
-                    ),
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [km, const SizedBox(height: 12), rp],
-                  ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [km, const SizedBox(height: 12), rp],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Leitura compacta usada no lugar do DialGauge circular no mobile:
+/// valor grande + rótulo + barrinha de progresso.
+class _MiniGaugeReadout extends StatelessWidget {
+  const _MiniGaugeReadout({
+    required this.label,
+    required this.value,
+    required this.max,
+    required this.color,
+    this.decimals = 0,
+  });
+
+  final String label;
+  final double value;
+  final double max;
+  final Color color;
+  final int decimals;
+
+  @override
+  Widget build(BuildContext context) {
+    final frac = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              value.toStringAsFixed(decimals),
+              style: TextStyle(
+                color: color,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: frac,
+            minHeight: 4,
+            backgroundColor: const Color(0xFFE8EFF7),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
     );
   }
 }
