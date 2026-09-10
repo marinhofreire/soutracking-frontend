@@ -191,6 +191,8 @@ class _TelemetrySensorsScreenState
   }
 
   Widget _buildToolbar(List<TraccarDevice> devices, int rowsCount) {
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
+    final fieldW = isMobile ? MediaQuery.sizeOf(context).width - 56 : null;
     return _TranslucentCard(
       child: Wrap(
         spacing: 10,
@@ -198,7 +200,7 @@ class _TelemetrySensorsScreenState
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           SizedBox(
-            width: 260,
+            width: fieldW ?? 260,
             child: DropdownButtonFormField<int>(
               key: ValueKey<int?>(_deviceId),
               initialValue: _deviceId,
@@ -218,7 +220,7 @@ class _TelemetrySensorsScreenState
             ),
           ),
           SizedBox(
-            width: 300,
+            width: fieldW ?? 300,
             child: TextField(
               onChanged: (value) => setState(() => _search = value),
               decoration: const InputDecoration(
@@ -446,50 +448,82 @@ class _TelemetrySensorsScreenState
         ? '${(odometer / 1000).toStringAsFixed(2)} km'
         : '--';
 
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
+    final cells = <_QuickStatCell>[
+      _QuickStatCell(
+        icon: Icons.circle,
+        iconColor: isOnline ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+        iconSize: 10,
+        label: isOnline ? 'Online' : 'Offline',
+        subtitle: isOnline ? 'Equipamento conectado' : 'Sem comunicação',
+      ),
+      _QuickStatCell(
+        icon: Icons.power_settings_new_rounded,
+        iconColor: _ignitionColor(snapshot.ignition),
+        label: 'Ignição',
+        subtitle: snapshot.ignition == null
+            ? '--'
+            : snapshot.ignition!
+                ? 'Ligada'
+                : 'Desligada',
+      ),
+      _QuickStatCell(
+        icon: Icons.gps_fixed_rounded,
+        iconColor: gpsOk ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+        label: 'GPS ativo',
+        subtitle: gpsOk ? 'Sinal OK' : 'Sem sinal',
+      ),
+      _QuickStatCell(
+        icon: Icons.access_time_rounded,
+        iconColor: const Color(0xFF526684),
+        label: 'Última conexão',
+        subtitle: snapshot.lastConnectionLabel,
+      ),
+      _QuickStatCell(
+        icon: Icons.speed_rounded,
+        iconColor: const Color(0xFF526684),
+        label: 'Odômetro',
+        subtitle: odometerLabel,
+      ),
+    ];
+
+    if (isMobile) {
+      // 2 por linha -- os 5 cells em Row com textos longos ("Equipamento
+      // conectado") estouravam a largura da tela (2026-09-10).
+      final cellW = (MediaQuery.sizeOf(context).width - 56) / 2;
+      return _TranslucentCard(
+        padding: const EdgeInsets.all(8),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final c in cells)
+              SizedBox(
+                width: cellW,
+                child: _QuickStatCell(
+                  icon: c.icon,
+                  iconColor: c.iconColor,
+                  iconSize: c.iconSize,
+                  label: c.label,
+                  subtitle: c.subtitle,
+                  expand: false,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     return _TranslucentCard(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
       child: IntrinsicHeight(
         child: Row(
           children: [
-            _QuickStatCell(
-              icon: Icons.circle,
-              iconColor: isOnline ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
-              iconSize: 10,
-              label: isOnline ? 'Online' : 'Offline',
-              subtitle: isOnline ? 'Equipamento conectado' : 'Sem comunicação',
-            ),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _QuickStatCell(
-              icon: Icons.power_settings_new_rounded,
-              iconColor: _ignitionColor(snapshot.ignition),
-              label: 'Ignição',
-              subtitle: snapshot.ignition == null
-                  ? '--'
-                  : snapshot.ignition!
-                      ? 'Ligada'
-                      : 'Desligada',
-            ),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _QuickStatCell(
-              icon: Icons.gps_fixed_rounded,
-              iconColor: gpsOk ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
-              label: 'GPS ativo',
-              subtitle: gpsOk ? 'Sinal OK' : 'Sem sinal',
-            ),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _QuickStatCell(
-              icon: Icons.access_time_rounded,
-              iconColor: const Color(0xFF526684),
-              label: 'Última conexão',
-              subtitle: snapshot.lastConnectionLabel,
-            ),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _QuickStatCell(
-              icon: Icons.speed_rounded,
-              iconColor: const Color(0xFF526684),
-              label: 'Odômetro',
-              subtitle: odometerLabel,
-            ),
+            for (var i = 0; i < cells.length; i++) ...[
+              if (i > 0)
+                const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
+              cells[i],
+            ],
           ],
         ),
       ),
@@ -590,6 +624,103 @@ class _TelemetrySensorsScreenState
       );
     }
 
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
+
+    // Conteúdo de uma seção (título + lista de sensores). No desktop cada
+    // uma vira uma coluna (Expanded); no mobile empilha uma embaixo da
+    // outra num scroll único -- 4-5 colunas em 360px ficavam ilegíveis
+    // (~70px cada) (2026-09-10).
+    Widget sectionBody(SensorDisplaySection section, {required bool scroll}) {
+      final inner = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int j = 0; j < section.items.length; j++) ...[
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              child: Row(
+                children: [
+                  _BlinkingIcon(
+                    enabled: _sensorShouldBlink(section.items[j]),
+                    child: Icon(
+                      section.items[j].icon,
+                      size: 15,
+                      color: _sensorColor(section.items[j]),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      section.items[j].label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF526684),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    section.items[j].value,
+                    style: TextStyle(
+                      color: _sensorValueColor(section.items[j]),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (j < section.items.length - 1)
+              const Divider(
+                height: 1,
+                color: Color(0xFFF0F4FA),
+                indent: 12,
+                endIndent: 12,
+              ),
+          ],
+        ],
+      );
+      final titled = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Text(
+              section.title,
+              style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE8EFF7)),
+          scroll ? Expanded(child: SingleChildScrollView(child: inner)) : inner,
+        ],
+      );
+      return titled;
+    }
+
+    if (isMobile) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDE5F0)),
+        ),
+        child: ListView.separated(
+          padding: EdgeInsets.zero,
+          itemCount: sections.length,
+          separatorBuilder: (_, __) =>
+              const Divider(height: 1, color: Color(0xFFE8EFF7)),
+          itemBuilder: (_, i) => sectionBody(sections[i], scroll: false),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -600,80 +731,7 @@ class _TelemetrySensorsScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (int i = 0; i < sections.length; i++) ...[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                    child: Text(
-                      sections[i].title,
-                      style: const TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE8EFF7)),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (int j = 0; j < sections[i].items.length; j++) ...[
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                              child: Row(
-                                children: [
-                                  _BlinkingIcon(
-                                    enabled: _sensorShouldBlink(sections[i].items[j]),
-                                    child: Icon(
-                                      sections[i].items[j].icon,
-                                      size: 15,
-                                      color: _sensorColor(sections[i].items[j]),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Expanded(
-                                    child: Text(
-                                      sections[i].items[j].label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF526684),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    sections[i].items[j].value,
-                                    style: TextStyle(
-                                      color: _sensorValueColor(sections[i].items[j]),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (j < sections[i].items.length - 1)
-                              const Divider(
-                                height: 1,
-                                color: Color(0xFFF0F4FA),
-                                indent: 12,
-                                endIndent: 12,
-                              ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            Expanded(child: sectionBody(sections[i], scroll: true)),
             if (i < sections.length - 1)
               const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
           ],
@@ -681,6 +739,7 @@ class _TelemetrySensorsScreenState
       ),
     );
   }
+
 
   Widget _buildSelectedVehicleHeader(_TelemetryDeviceSnapshot snapshot) {
     final statusText = snapshot.device.status.trim().toLowerCase() == 'online'
@@ -1333,6 +1392,7 @@ class _QuickStatCell extends StatelessWidget {
     required this.label,
     required this.subtitle,
     this.iconSize = 18,
+    this.expand = true,
   });
 
   final IconData icon;
@@ -1340,11 +1400,12 @@ class _QuickStatCell extends StatelessWidget {
   final String label;
   final String subtitle;
   final double iconSize;
+  // false quando usado dentro de um Wrap/SizedBox (mobile) em vez de Row.
+  final bool expand;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Padding(
+    final content = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
@@ -1378,8 +1439,8 @@ class _QuickStatCell extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
+    return expand ? Expanded(child: content) : content;
   }
 }
 
