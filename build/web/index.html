@@ -56,6 +56,17 @@
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDX-KnRJNMbZKp_EPiSdYPxo-XE5LvdHiY"></script>
 
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Service worker proprio, so pra satisfazer o criterio de instalabilidade
+    // do Chrome/Android (o SW gerado pelo Flutter 3.41+ e um stub que se
+    // autodesregistra e nao conta). Ver web/pwa-sw.js.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('pwa-sw.js').catch(() => {});
+      });
+    }
+  </script>
 </head>
 
 <body>

@@ -1,7 +1,9 @@
 {
     "name": "SouTracking",
     "short_name": "SouTracking",
-    "start_url": ".",
+    "id": "/",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#F3F6FA",
     "theme_color": "#1F6FEB",
