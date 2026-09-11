@@ -26,6 +26,15 @@ extension ClientPlanLabel on ClientPlan {
         ClientPlan.pro        => 'R\$ 49,90/veículo',
         ClientPlan.enterprise => 'Negociado',
       };
+
+  /// Valor mensal por veículo em reais. Enterprise é negociado caso a caso
+  /// (sem valor fixo) -- retorna null, quem chamar decide o que fazer (ex:
+  /// não criar assinatura automática, deixar pra negociação manual).
+  double? get pricePerVehicle => switch (this) {
+        ClientPlan.basic      => 29.90,
+        ClientPlan.pro        => 49.90,
+        ClientPlan.enterprise => null,
+      };
 }
 
 class ClientRecord {

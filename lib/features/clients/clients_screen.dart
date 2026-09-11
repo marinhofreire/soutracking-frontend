@@ -547,12 +547,17 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
   final _cityCtrl     = TextEditingController();
   final _stateCtrl    = TextEditingController();
   final _zipCtrl      = TextEditingController();
+  final _deviceCountCtrl = TextEditingController(text: '1');
 
   ClientType _clientType    = ClientType.pj;
   ClientPlan _plan          = ClientPlan.basic;
   bool _saving              = false;
   bool _showPassword        = false;
   bool _ativarCobranca      = true;
+  // 'UNDEFINED' = o Asaas deixa o cliente final escolher a forma de
+  // pagamento (boleto/pix/cartão) na tela da fatura, em vez da gente fixar
+  // uma só no cadastro.
+  static const _billingType = 'UNDEFINED';
   String? _error;
 
   @override
@@ -566,6 +571,7 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
     _cityCtrl.dispose();
     _stateCtrl.dispose();
     _zipCtrl.dispose();
+    _deviceCountCtrl.dispose();
     super.dispose();
   }
 
@@ -588,8 +594,22 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
     try {
       // 1 — Create Asaas customer if configured and billing enabled
       String asaasCustomerId = '';
+      String asaasSubscriptionId = '';
       if (asaas.isConfigured && _ativarCobranca) {
         asaasCustomerId = await _createAsaasCustomer(asaas);
+
+        // Assinatura recorrente -- só cria automático pra planos com valor
+        // fixo (Basic/Pro). Enterprise é "Negociado", sem preço/veículo pra
+        // calcular, fica pra cobrança manual.
+        final pricePerVehicle = _plan.pricePerVehicle;
+        final deviceCount = int.tryParse(_deviceCountCtrl.text.trim()) ?? 0;
+        if (pricePerVehicle != null && deviceCount > 0) {
+          asaasSubscriptionId = await _createAsaasSubscription(
+            asaas,
+            customerId: asaasCustomerId,
+            value: pricePerVehicle * deviceCount,
+          );
+        }
       }
 
       // 2 — Build attributes
@@ -603,7 +623,10 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
         'state':            _stateCtrl.text.trim().toUpperCase(),
         'zip':              _zipCtrl.text.trim(),
         'plan':             _plan.name,
+        'device_count':     _deviceCountCtrl.text.trim(),
         if (asaasCustomerId.isNotEmpty) 'asaas_customer_id': asaasCustomerId,
+        if (asaasSubscriptionId.isNotEmpty)
+          'asaas_subscription_id': asaasSubscriptionId,
       };
 
       // 3 — Create Traccar user
@@ -625,9 +648,11 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(asaasCustomerId.isNotEmpty
-              ? 'Cliente criado e vinculado ao Asaas.'
-              : 'Cliente criado. Configure Asaas em Configurações para cobrança.'),
+          content: Text(asaasSubscriptionId.isNotEmpty
+              ? 'Cliente criado e assinatura recorrente ativada no Asaas.'
+              : asaasCustomerId.isNotEmpty
+                  ? 'Cliente criado e vinculado ao Asaas (sem assinatura automática — plano negociado ou qtd. de veículos não informada).'
+                  : 'Cliente criado. Configure Asaas em Configurações para cobrança.'),
           backgroundColor: const Color(0xFF10B981),
         ),
       );
@@ -667,6 +692,45 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
       return data['id']?.toString() ?? '';
     }
     throw Exception('Asaas ${resp.statusCode}: ${resp.body}');
+  }
+
+  /// Cria a assinatura recorrente no Asaas -- é o Asaas quem gera a fatura
+  /// todo mês e cobra sozinho, o SouTracking não reimplementa recorrência.
+  /// billingType 'UNDEFINED' deixa o cliente final escolher boleto/pix/
+  /// cartão na tela da fatura, em vez da gente fixar a forma de pagamento.
+  Future<String> _createAsaasSubscription(
+    AsaasConfig asaas, {
+    required String customerId,
+    required double value,
+  }) async {
+    if (customerId.isEmpty) return '';
+
+    final firstDueDate = DateTime.now().add(const Duration(days: 5));
+    final body = <String, dynamic>{
+      'customer':     customerId,
+      'billingType':  _billingType,
+      'value':        value,
+      'nextDueDate':  firstDueDate.toIso8601String().split('T').first,
+      'cycle':        'MONTHLY',
+      'description':  'Mensalidade SouTracking — plano ${_plan.label}',
+    };
+
+    final resp = await http
+        .post(
+          Uri.parse('${asaas.baseUrl}/subscriptions'),
+          headers: {
+            'access_token': asaas.apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (resp.statusCode == 200 || resp.statusCode == 201) {
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      return data['id']?.toString() ?? '';
+    }
+    throw Exception('Asaas (assinatura) ${resp.statusCode}: ${resp.body}');
   }
 
   @override
@@ -807,6 +871,22 @@ class _NewClientDialogState extends ConsumerState<_NewClientDialog> {
                               const SizedBox(width: 8),
                           ],
                         ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Qtd. veículos -- multiplica o preço/veículo do plano
+                      // pra definir o valor da assinatura recorrente Asaas.
+                      const _SectionLabel('Quantidade de veículos'),
+                      SizedBox(
+                        width: 160,
+                        child: TextField(
+                          controller: _deviceCountCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            hintText: 'Ex: 12',
+                            suffixText: 'veículos',
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 14),
 
