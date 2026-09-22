@@ -680,10 +680,18 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     for (final entry in filteredEntries) {
       protocolColumnsSet.addAll(entry.protocolValues.keys);
     }
+    // So mostra na tabela as colunas do preset ativo (definido por
+    // protocolo detectado) que realmente vieram com dado -- sem isso a
+    // tabela cai para "toda chave presente nos dados", incluindo campos
+    // de posicao crus (lat/lng/etc) que bagunçam a leitura das colunas.
     final protocolColumns = <String>[
-      ..._priorityProtocolKeys.where(protocolColumnsSet.contains),
+      ..._priorityProtocolKeys
+          .where((key) => _activeProtocolKeys.contains(key))
+          .where(protocolColumnsSet.contains),
       ...protocolColumnsSet
-          .where((key) => !_priorityProtocolKeys.contains(key))
+          .where((key) =>
+              _activeProtocolKeys.contains(key) &&
+              !_priorityProtocolKeys.contains(key))
           .toList(growable: false)
         ..sort(),
     ];
