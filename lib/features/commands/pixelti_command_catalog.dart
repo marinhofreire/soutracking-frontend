@@ -58,6 +58,13 @@ const List<String> pixelTiCommandCategories = [
   'Velocidade',
   'Bloqueio de config',
   'Info do terminal',
+  'E/S (GPIO, rele, buzzer)',
+  'Imobilizador',
+  'Cerca eletronica',
+  'Jammer',
+  'Movimento indevido',
+  'RS232',
+  'Seguranca',
 ];
 
 final List<PixelTiCommand> pixelTiCommands = [
@@ -293,5 +300,183 @@ final List<PixelTiCommand> pixelTiCommands = [
     category: 'Info do terminal',
     fields: const [],
     readOnly: true,
+  ),
+
+  // ── E/S (GPIO, rele, buzzer) ─────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'SDIO',
+    label: 'Acionar saida digital (DOUT1/DOUT2)',
+    category: 'E/S (GPIO, rele, buzzer)',
+    fields: [
+      PixelTiCommandField(
+          key: 'gpio5Write', label: 'DOUT1 (0=Aberto, 1=Ativado)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'gpio6Write', label: 'DOUT2 (0=Aberto, 1=Ativado)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+  const PixelTiCommand(
+    name: 'RELY',
+    label: 'Acionar rele',
+    category: 'E/S (GPIO, rele, buzzer)',
+    fields: [
+      PixelTiCommandField(
+          key: 'relaySet', label: 'Rele (0=Aberto, 1=Ativado)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+  const PixelTiCommand(
+    name: 'BUZR',
+    label: 'Acionar buzzer',
+    category: 'E/S (GPIO, rele, buzzer)',
+    fields: [
+      PixelTiCommandField(
+          key: 'buzzerSet', label: 'Buzzer (0=Aberto, 1=Ativado)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+  PixelTiCommand(
+    name: 'RDIO',
+    label: 'Ler status de todas as E/S',
+    category: 'E/S (GPIO, rele, buzzer)',
+    fields: const [],
+    readOnly: true,
+  ),
+
+  // ── Imobilizador ──────────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'IMMB',
+    label: 'Configurar imobilizador',
+    category: 'Imobilizador',
+    fields: [
+      PixelTiCommandField(
+          key: 'imbType',
+          label: 'Tipo (0=Imediato,1=Pulsado,2=Baixa vel.,3=Ignicao off)',
+          hint: '0',
+          defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'trigLog', label: 'Logica (0=Normal, 1=Invertida)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'tmPlsOn', label: 'Duracao pulso ligado (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'tmPlsOff', label: 'Duracao pulso desligado (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'totPlsTm', label: 'Duracao total do pulso (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'lwSpdThres', label: 'Limite de velocidade p/ bloqueio (km/h)', hint: '5', defaultValue: '5'),
+      PixelTiCommandField(
+          key: 'lwSpdBounce', label: 'Tempo min. abaixo do limite (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'buzAct', label: 'Buzzer antes do bloqueio (s, 255=junto)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+
+  // ── Cerca eletronica ──────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'CGFS',
+    label: 'Configurar cerca eletronica (circulo/retangulo)',
+    category: 'Cerca eletronica',
+    fields: [
+      PixelTiCommandField(
+          key: 'idxCoord', label: 'Indice da cerca (0-3, ex: 0:0)', hint: '0:0'),
+      PixelTiCommandField(
+          key: 'latLst', label: 'Latitude (ex: -23.550520)', hint: '-23.550520'),
+      PixelTiCommandField(
+          key: 'longLst', label: 'Longitude (ex: -46.633308)', hint: '-46.633308'),
+      PixelTiCommandField(key: 'rdsLst', label: 'Raio em metros', hint: '300'),
+      PixelTiCommandField(
+          key: 'evtTrigLst',
+          label: 'Gatilho (0=Off,1=Entrar,2=Sair,3=Ambos)',
+          hint: '3',
+          defaultValue: '3'),
+      PixelTiCommandField(
+          key: 'ioActLst', label: 'Acao E/S (0-3)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+
+  // ── Jammer ────────────────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'JAMM',
+    label: 'Configurar deteccao de jammer',
+    category: 'Jammer',
+    fields: [
+      PixelTiCommandField(
+          key: 'jamSense',
+          label: 'Sensibilidade (0=Off,1=Alta,2=Baixa)',
+          hint: '1',
+          defaultValue: '1'),
+      PixelTiCommandField(
+          key: 'atkTm', label: 'Tempo p/ confirmar ataque (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'gsenFlag',
+          label: 'Ativo quando (0=Movimento,1=Parado,2=Ambos)',
+          hint: '2',
+          defaultValue: '2'),
+      PixelTiCommandField(
+          key: 'blkTm', label: 'Duracao do bloqueio (s)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'jamEvt', label: 'Eventos a enviar (0-3)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'jamIoAct', label: 'Acao E/S durante ataque (0-3)', hint: '0', defaultValue: '0'),
+    ],
+  ),
+
+  // ── Movimento indevido ────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'IPMA',
+    label: 'Configurar chacoalhada e reboque',
+    category: 'Movimento indevido',
+    fields: [
+      PixelTiCommandField(
+          key: 'shkTm', label: 'Tempo p/ confirmar chacoalhada (s)', hint: '3', defaultValue: '3'),
+      PixelTiCommandField(
+          key: 'shkIoAct', label: 'Acao E/S chacoalhada (0-3)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'shkRecTm', label: 'Duracao apos parar (s)', hint: '5', defaultValue: '5'),
+      PixelTiCommandField(
+          key: 'twgRds', label: 'Raio p/ considerar reboque (m)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'twgIoAct', label: 'Acao E/S reboque (0-3)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'twgRecTm', label: 'Duracao apos parar (s)', hint: '30', defaultValue: '30'),
+    ],
+  ),
+
+  // ── RS232 ─────────────────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'S232',
+    label: 'Configurar porta RS232',
+    category: 'RS232',
+    fields: [
+      PixelTiCommandField(
+          key: 'baud232', label: 'Baud rate (6=115200)', hint: '6', defaultValue: '6'),
+      PixelTiCommandField(
+          key: 'data232', label: 'Bits de dados (1=8 bits)', hint: '1', defaultValue: '1'),
+      PixelTiCommandField(
+          key: 'parit232', label: 'Paridade (0=Nenhum)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'stop232', label: 'Bit de parada (1=1 bit)', hint: '1', defaultValue: '1'),
+      PixelTiCommandField(
+          key: 'flw232', label: 'Controle de fluxo (0=Nenhum)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'sndCond232', label: 'Condicao de envio (0=Timeout)', hint: '0', defaultValue: '0'),
+      PixelTiCommandField(
+          key: 'sndConf232', label: 'Valor da condicao (s ou char)', hint: '0'),
+    ],
+  ),
+
+  // ── Seguranca ─────────────────────────────────────────────────────────
+  const PixelTiCommand(
+    name: 'SCRT',
+    label: 'Trocar senha de bloqueio',
+    category: 'Seguranca',
+    fields: [
+      PixelTiCommandField(
+          key: 'curPwLk', label: 'Senha atual (8 ultimos digitos do IMEI)', hint: '62623655'),
+      PixelTiCommandField(key: 'newPwLk', label: 'Nova senha (8 caracteres)', hint: ''),
+      PixelTiCommandField(key: 'simPin1', label: 'PIN do SIM 1 (opcional)', hint: ''),
+      PixelTiCommandField(key: 'simPin2', label: 'PIN do SIM 2 (opcional)', hint: ''),
+      PixelTiCommandField(key: 'whtListSms', label: 'Lista branca SMS (opcional)', hint: ''),
+      PixelTiCommandField(key: 'indListSms', label: 'Indice da lista (ex: 0:0)', hint: ''),
+      PixelTiCommandField(
+          key: 'smsMod', label: 'Modo SMS (0=Qualquer,1=Somente lista)', hint: '0', defaultValue: '0'),
+    ],
   ),
 ];
