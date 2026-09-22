@@ -435,6 +435,11 @@ class SessionController extends StateNotifier<SessionState> {
         session.user,
         tenantConfig: mergedTenantConfig,
       );
+      // ignore: avoid_print
+      print('[DEBUG-LOGIN] profileCode=$profileCode '
+          'usingLocalTenantFallback=$usingLocalTenantFallback '
+          'modules=${mergedTenantConfig.modules} '
+          'userAttrs=${session.user['attributes']}');
       state = state.copyWith(
         status: SessionStatus.authenticated,
         cookie: session.cookie,
