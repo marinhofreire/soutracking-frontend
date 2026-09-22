@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/session_state.dart';
+import 'pixelti_command_catalog.dart';
 
 final savedCommandsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
@@ -217,6 +218,142 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
       if (!mounted) return;
       _snack('Falha ao remover: $e');
     }
+  }
+
+  // ── Catalogo Pixel TI ────────────────────────────────────────────────────
+
+  void _openPixelTiCatalog() {
+    String? selectedCategory = pixelTiCommandCategories.first;
+    PixelTiCommand? selectedCommand;
+    final fieldControllers = <String, TextEditingController>{};
+
+    void resetFieldControllers(PixelTiCommand command) {
+      for (final c in fieldControllers.values) {
+        c.dispose();
+      }
+      fieldControllers.clear();
+      for (final field in command.fields) {
+        fieldControllers[field.key] =
+            TextEditingController(text: field.defaultValue);
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final commandsInCategory = pixelTiCommands
+              .where((c) => c.category == selectedCategory)
+              .toList(growable: false);
+
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: const Text('Comandos Pixel TI'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      dropdownColor: Colors.white,
+                      decoration: _inputDecoration('Categoria'),
+                      items: pixelTiCommandCategories
+                          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                          .toList(),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          selectedCategory = v;
+                          selectedCommand = null;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<PixelTiCommand>(
+                      value: selectedCommand,
+                      dropdownColor: Colors.white,
+                      isExpanded: true,
+                      decoration: _inputDecoration('Comando'),
+                      items: commandsInCategory
+                          .map((c) => DropdownMenuItem(
+                              value: c, child: Text(c.label)))
+                          .toList(),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          selectedCommand = v;
+                          if (v != null) resetFieldControllers(v);
+                        });
+                      },
+                    ),
+                    if (selectedCommand != null &&
+                        selectedCommand!.fields.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      ...selectedCommand!.fields.map((field) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: TextField(
+                              controller: fieldControllers[field.key],
+                              style:
+                                  const TextStyle(color: Color(0xFF25344A)),
+                              decoration: _inputDecoration(field.label,
+                                  hintText: field.hint),
+                            ),
+                          )),
+                    ],
+                    if (selectedCommand != null && selectedCommand!.readOnly)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Comando de consulta -- retorna o valor atual configurado no equipamento.',
+                          style: TextStyle(
+                              color: Color(0xFF5F738F), fontSize: 12),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  for (final c in fieldControllers.values) {
+                    c.dispose();
+                  }
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: selectedCommand == null
+                    ? null
+                    : () {
+                        final values = <String, String>{
+                          for (final entry in fieldControllers.entries)
+                            entry.key: entry.value.text,
+                        };
+                        final payload = selectedCommand!.readOnly
+                            ? selectedCommand!.buildQueryPayload()
+                            : selectedCommand!.buildPayload(values);
+                        setState(() {
+                          _sendType = 'custom';
+                          _sendCustomCtrl.text = payload;
+                        });
+                        for (final c in fieldControllers.values) {
+                          c.dispose();
+                        }
+                        Navigator.of(ctx).pop();
+                      },
+                child: const Text('Usar este comando'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -626,6 +763,12 @@ class _CommandsScreenState extends ConsumerState<CommandsScreen> {
                         decoration:
                             _inputDecoration('Payload', hintText: 'AT+RST'),
                       ),
+                    ),
+                  if (_sendType == 'custom')
+                    OutlinedButton.icon(
+                      onPressed: _openPixelTiCatalog,
+                      icon: const Icon(Icons.list_alt_outlined, size: 16),
+                      label: const Text('Comandos Pixel TI'),
                     ),
                   FilledButton.icon(
                     onPressed: _sending ? null : _sendCommand,
