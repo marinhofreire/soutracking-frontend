@@ -2544,6 +2544,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final isPixeltiSession = _isPixeltiUser(currentSession);
     final profileName = _resolveProfileName(currentSession, sessionUsers);
     final profileDetail = _resolveProfileDetail(currentSession, sessionUsers);
+    final profileEmail = (currentSession.email ?? '').trim().toLowerCase();
+    final profilePhotoUrl = sessionUsers
+        .cast<TraccarUser?>()
+        .firstWhere(
+          (u) => u?.email.trim().toLowerCase() == profileEmail,
+          orElse: () => null,
+        )
+        ?.photoUrl;
     final menuItems = _menuWithRealtimeBadges(
       session: currentSession,
       alertCount: realAlertCount,
@@ -2671,6 +2679,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   },
                   profileName: profileName,
                   profileDetail: profileDetail,
+                  profilePhotoUrl: profilePhotoUrl,
                   compactProfileMenu: isPixeltiSession,
                   noCommunicationCount: noCommunicationCount,
                   showMapQuickActions: showMapQuickActions,
@@ -6284,6 +6293,7 @@ class _TopSearchBar extends StatelessWidget {
     required this.hideLogoOnFullMap,
     required this.profileName,
     required this.profileDetail,
+    this.profilePhotoUrl,
     required this.compactProfileMenu,
     required this.kpis,
     required this.activeFilter,
@@ -6326,6 +6336,7 @@ class _TopSearchBar extends StatelessWidget {
   final bool hideLogoOnFullMap;
   final String profileName;
   final String profileDetail;
+  final String? profilePhotoUrl;
   final bool compactProfileMenu;
   final _FleetKpis kpis;
   final _KpiFilter? activeFilter;
@@ -6600,6 +6611,7 @@ class _TopSearchBar extends StatelessWidget {
                     onLogout: onLogout,
                     profileName: profileName,
                     profileDetail: profileDetail,
+                    photoUrl: profilePhotoUrl,
                     compactMenu: compactProfileMenu,
                     avatarOnly: true,
                     onOpenQuickSettings: onOpenSettingsPanel,
@@ -6843,6 +6855,7 @@ class _ProfileMenuButton extends StatelessWidget {
     required this.profileName,
     required this.profileDetail,
     required this.compactMenu,
+    this.photoUrl,
     this.avatarOnly = false,
     this.showQuickActions = false,
     this.onFilterSelected,
@@ -6863,6 +6876,7 @@ class _ProfileMenuButton extends StatelessWidget {
   final String profileName;
   final String profileDetail;
   final bool compactMenu;
+  final String? photoUrl;
   final bool avatarOnly;
   final bool showQuickActions;
   final ValueChanged<_KpiFilter>? onFilterSelected;
@@ -7142,15 +7156,26 @@ class _ProfileMenuButton extends StatelessWidget {
               child: Container(
                 width: 40,
                 height: 40,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   color: const Color(0xFF176EEB),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.person_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                child: (photoUrl?.isNotEmpty ?? false)
+                    ? Image.network(
+                        photoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
               ),
             ),
             if (!avatarOnly) ...[

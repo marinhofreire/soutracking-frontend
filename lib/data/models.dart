@@ -133,6 +133,11 @@ class TraccarUser {
   String get soutrackingRole =>
       (attributes?['soutracking_role'] ?? '').toString().trim().toLowerCase();
 
+  // Foto de perfil, mesmo padrao do souVehiclePhoto (upload, data URL
+  // base64 salva em attributes) -- sem campo nativo de avatar no Traccar.
+  String get photoUrl =>
+      (attributes?['souUserPhoto'] ?? '').toString().trim();
+
   factory TraccarUser.fromJson(Map<String, dynamic> json) {
     return TraccarUser(
       id: json['id'] as int,

@@ -84,6 +84,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   // ── Integrações tab state ─────────────────────────────────────────────────
   String _selectedIntegration = 'bridge';
 
+  bool _uploadingProfilePhoto = false;
+
   late final TabController _tabController;
 
   @override
@@ -604,6 +606,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
+  Future<void> _pickProfilePhoto(TraccarUser me) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+
+    setState(() => _uploadingProfilePhoto = true);
+    final session = ref.read(sessionProvider);
+    final client = ref.read(traccarClientProvider);
+    try {
+      final base64Data = base64Encode(file.bytes!);
+      final ext = (file.extension ?? 'jpg').toLowerCase();
+      final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+      final photoDataUrl = 'data:$mime;base64,$base64Data';
+      final updatedAttrs = {
+        ...?me.attributes,
+        'souUserPhoto': photoDataUrl,
+      };
+      await client.updateEntityById(
+        path: '/users',
+        id: me.id,
+        cookie: session.cookie,
+        authHeader: session.authHeader,
+        body: {
+          'id': me.id,
+          'name': me.name,
+          'email': me.email,
+          'administrator': me.administrator,
+          'readonly': me.readonly,
+          'disabled': me.disabled,
+          'attributes': updatedAttrs,
+        },
+      );
+      ref.invalidate(usersProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto de perfil atualizada.'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao atualizar foto: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingProfilePhoto = false);
+    }
+  }
+
   Widget _buildPerfilTab() {
     final session = ref.watch(sessionProvider);
     final users = ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
@@ -612,6 +667,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     int? userId;
     var disabled = false;
     var readonly = false;
+    TraccarUser? me;
     final normalizedEmail = email.toLowerCase();
     for (final user in users) {
       if (user.email.trim().toLowerCase() == normalizedEmail) {
@@ -620,6 +676,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         userId = user.id;
         disabled = user.disabled;
         readonly = user.readonly;
+        me = user;
         break;
       }
     }
@@ -650,18 +707,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor:
-                        _accessLevelColorFor(role).withValues(alpha: 0.16),
-                    child: Text(
-                      initial,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: _accessLevelColorFor(role),
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundColor:
+                            _accessLevelColorFor(role).withValues(alpha: 0.16),
+                        backgroundImage: (me?.photoUrl.isNotEmpty ?? false)
+                            ? NetworkImage(me!.photoUrl)
+                            : null,
+                        child: (me?.photoUrl.isNotEmpty ?? false)
+                            ? null
+                            : Text(
+                                initial,
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  color: _accessLevelColorFor(role),
+                                ),
+                              ),
                       ),
-                    ),
+                      if (me != null)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: GestureDetector(
+                            onTap: _uploadingProfilePhoto
+                                ? null
+                                : () => _pickProfilePhoto(me!),
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF176EEB),
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.fromBorderSide(BorderSide(
+                                        color: Colors.white, width: 2)),
+                              ),
+                              child: _uploadingProfilePhoto
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(5),
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white),
+                                    )
+                                  : const Icon(Icons.camera_alt_rounded,
+                                      size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(
