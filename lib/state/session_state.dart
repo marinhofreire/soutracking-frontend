@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -435,11 +436,13 @@ class SessionController extends StateNotifier<SessionState> {
         session.user,
         tenantConfig: mergedTenantConfig,
       );
-      // ignore: avoid_print
-      print('[DEBUG-LOGIN] profileCode=$profileCode '
-          'usingLocalTenantFallback=$usingLocalTenantFallback '
-          'modules=${mergedTenantConfig.modules} '
-          'userAttrs=${session.user['attributes']}');
+      developer.log(
+        '[DEBUG-LOGIN] profileCode=$profileCode '
+        'usingLocalTenantFallback=$usingLocalTenantFallback '
+        'modules=${mergedTenantConfig.modules} '
+        'userAttrs=${session.user['attributes']}',
+        name: 'session_state',
+      );
       state = state.copyWith(
         status: SessionStatus.authenticated,
         cookie: session.cookie,
