@@ -7134,13 +7134,22 @@ class _ProfileMenuButton extends StatelessWidget {
           children: [
             Tooltip(
               message: '$displayName\n$displayDetail',
-              child: const CircleAvatar(
-                radius: 15,
-                backgroundColor: Color(0xFFF7F9FD),
-                child: Icon(
-                  Icons.person_outline_rounded,
-                  color: Color(0xFF52627C),
-                  size: 17,
+              // Mesmo contorno quadrado arredondado do botão de camadas ao
+              // lado (era CircleAvatar — a forma redonda destoava do resto
+              // dos botões do grupo, que são todos quadrados com radius 12).
+              // Fundo de marca (azul) com ícone branco diferencia do botão de
+              // camadas, que fica neutro/branco.
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF176EEB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.person_rounded,
+                  color: Colors.white,
+                  size: 20,
                 ),
               ),
             ),
@@ -7248,7 +7257,14 @@ class _SideMenu extends StatelessWidget {
                       children: [
                         Expanded(
                           child: hasLogo
-                              ? _brandLogoImage(logoAsset, height: 22)
+                              // Align com largura intrínseca -- dentro de Expanded,
+                              // um Image só com height (sem width) herda a largura
+                              // infinita do Row e estica a imagem horizontalmente.
+                              ? Align(
+                                  alignment: Alignment.centerLeft,
+                                  child:
+                                      _brandLogoImage(logoAsset, height: 22),
+                                )
                               : Text(
                                   brandName ?? 'SouTracking',
                                   style: const TextStyle(
@@ -12237,27 +12253,34 @@ class _VehicleBottomEventsPanel extends StatelessWidget {
                 ),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Lista completa ainda depende da integracao deste painel com o modulo detalhado.',
+                  // Altura fixa curta (em vez de deixar o TextButton definir sua
+                  // própria altura mínima) — o padding interno do Material
+                  // sobrava alguns pixels e estourava a Column pai (aviso
+                  // "BOTTOM OVERFLOWED" visível no card compacto do veículo).
+                  child: SizedBox(
+                    height: 22,
+                    child: TextButton(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Lista completa ainda depende da integracao deste painel com o modulo detalhado.',
+                            ),
                           ),
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Ver todos',
+                        style: TextStyle(
+                          color: Color(0xFF176EEB),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
                         ),
-                      );
-                    },
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Ver todos',
-                      style: TextStyle(
-                        color: Color(0xFF176EEB),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
                       ),
                     ),
                   ),

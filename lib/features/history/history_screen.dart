@@ -43,6 +43,31 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     'alarm',
   ];
 
+  // Campos do protocolo Track Hex Air (Pixel TI) que o decoder ja expoe --
+  // odometro/horimetro/bateria vem sempre (Gen1-4), os demais so aparecem
+  // quando o pacote realmente trouxer o campo (Gen3/4).
+  static const List<String> _pixelTiPresetKeys = [
+    'event',
+    'ignition',
+    'blocked',
+    'charge',
+    'rssi',
+    'power',
+    'battery',
+    'odometer',
+    'hours',
+    'networktechnology',
+    'driveridtype',
+    'driveruniqueid',
+    'tripodometer',
+    'rpm',
+    'fuellevelraw',
+    'adbluelevel',
+    'engineoiltemp',
+    'coolanttemp',
+    'alarm',
+  ];
+
   static const List<String> _priorityProtocolKeys = [
     'protocol',
     'event',
@@ -83,6 +108,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final normalized = protocolId?.trim().toLowerCase() ?? '';
     if (normalized.contains('easytrack') || normalized.contains('e3')) {
       return _easyTrackE3PresetKeys;
+    }
+    if (normalized.contains('pixelti')) {
+      return _pixelTiPresetKeys;
     }
     return _protocolCoreKeys;
   }
@@ -330,6 +358,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       origin: 'Evento',
       attributesSummary: _attributesSummary(attributes),
       protocolValues: _extractProtocolValues(raw: raw, attributes: attributes),
+      rawEventType: eventType.isEmpty ? null : eventType,
     );
   }
 
@@ -485,6 +514,92 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return entries;
   }
 
+  // Detecta o padrao de "radio caindo e reconectando": pares consecutivos
+  // deviceUnknown -> deviceOnline com intervalo curto (<= 5 min) entre eles.
+  // Um sinal de rede normal oscila sem regularidade; esse ciclo aparecendo
+  // dezenas de vezes com intervalo parecido é sintoma de instabilidade real
+  // no modulo de radio, nao ruido esporadico -- ver relato Pixel TI 2026-09.
+  _RadioCycleStats? _detectRadioReconnectCycles(List<_HistoryLogRow> rows) {
+    final sorted = rows
+        .where((r) => r.timestamp != null && r.rawEventType != null)
+        .toList(growable: false)
+      ..sort((a, b) => a.timestamp!.compareTo(b.timestamp!));
+
+    final gaps = <Duration>[];
+    for (var i = 0; i < sorted.length - 1; i++) {
+      final current = sorted[i];
+      final next = sorted[i + 1];
+      if (current.rawEventType == 'deviceUnknown' &&
+          next.rawEventType == 'deviceOnline') {
+        final gap = next.timestamp!.difference(current.timestamp!);
+        if (gap.inMinutes <= 5 && gap.inSeconds > 0) {
+          gaps.add(gap);
+        }
+      }
+    }
+
+    if (gaps.length < 3) {
+      return null;
+    }
+
+    final totalSeconds =
+        gaps.fold<int>(0, (sum, g) => sum + g.inSeconds);
+    final avgSeconds = totalSeconds / gaps.length;
+
+    return _RadioCycleStats(
+      cycleCount: gaps.length,
+      averageGapSeconds: avgSeconds,
+    );
+  }
+
+  Widget _radioCycleCard(_RadioCycleStats stats) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0x33FFB84D),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFB84D)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.wifi_tethering_error_rounded,
+              color: Color(0xFFB2670A), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reconexão de rádio detectada',
+                  style: TextStyle(
+                    color: const Color(0xFF6B4200),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${stats.cycleCount} ciclos de queda/reconexão no período, '
+                  'intervalo médio de ${stats.averageGapSeconds.round()}s '
+                  'entre a queda e a reconexão — padrão consistente com '
+                  'instabilidade no módulo de rádio do equipamento.',
+                  style: const TextStyle(
+                    color: Color(0xFF6B4200),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _severityBadge(String severity) {
     Color background;
     Color foreground;
@@ -539,6 +654,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       rows: visibleRows,
       equipmentName: equipmentName,
     );
+    final radioCycleStats = _detectRadioReconnectCycles(_rows);
     final search = _searchController.text.trim().toLowerCase();
     final filteredEntries = baseEntries.where((entry) {
       if (_severityFilter != 'Todos' && entry.severity != _severityFilter) {
@@ -664,6 +780,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        if (radioCycleStats != null) _radioCycleCard(radioCycleStats),
         Expanded(
           child: Container(
             width: double.infinity,
@@ -768,6 +885,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
+class _RadioCycleStats {
+  const _RadioCycleStats({
+    required this.cycleCount,
+    required this.averageGapSeconds,
+  });
+
+  final int cycleCount;
+  final double averageGapSeconds;
+}
+
 class _DataLogEntry {
   const _DataLogEntry({
     required this.timestamp,
@@ -810,6 +937,7 @@ class _HistoryLogRow {
     required this.origin,
     required this.attributesSummary,
     required this.protocolValues,
+    this.rawEventType,
   });
 
   final String source;
@@ -824,6 +952,10 @@ class _HistoryLogRow {
   final String origin;
   final String attributesSummary;
   final Map<String, String> protocolValues;
+  // Tipo cru do evento Traccar (ex.: "deviceOnline"/"deviceUnknown"), antes
+  // de humanizar -- usado so para detectar o padrao de reconexao de radio,
+  // sem depender do texto ja traduzido para exibicao.
+  final String? rawEventType;
 
   String get dateTimeLabel => _formatDateTime(timestamp);
 
