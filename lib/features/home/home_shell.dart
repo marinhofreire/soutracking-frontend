@@ -22049,10 +22049,14 @@ class _VehicleSnapshot {
   }
 
   String get batteryLabel {
-    final value = position?.attributes?['battery'] ??
-        position?.attributes?['power'] ??
-        device.attributes?['battery'] ??
-        device.attributes?['power'];
+    // 'power' (tensao externa/do veiculo) tem prioridade sobre 'battery'
+    // (bateria interna de backup do rastreador) -- o card de status mostra
+    // "Bateria" como a alimentacao do veiculo, nao a bateria interna do
+    // equipamento, que e um dado tecnico separado.
+    final value = position?.attributes?['power'] ??
+        position?.attributes?['battery'] ??
+        device.attributes?['power'] ??
+        device.attributes?['battery'];
     if (value is num) {
       return value > 30
           ? '${value.toStringAsFixed(0)}%'
