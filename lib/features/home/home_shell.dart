@@ -10758,8 +10758,16 @@ class _VehicleBottomContent extends StatelessWidget {
                         Expanded(
                             child: _VehicleMapMetricCell(
                                 icon: Icons.battery_charging_full_rounded,
-                                label: 'Bateria',
-                                value: snapshot.batteryLabel,
+                                label: 'Bat. externa',
+                                value: snapshot.externalBatteryLabel,
+                                accent: const Color(0xFF16A34A))),
+                        const VerticalDivider(
+                            width: 18, color: Color(0xFFE2E8F0)),
+                        Expanded(
+                            child: _VehicleMapMetricCell(
+                                icon: Icons.battery_std_rounded,
+                                label: 'Bat. interna',
+                                value: snapshot.internalBatteryLabel,
                                 accent: const Color(0xFF16A34A))),
                         const VerticalDivider(
                             width: 18, color: Color(0xFFE2E8F0)),
@@ -22064,6 +22072,31 @@ class _VehicleSnapshot {
     }
     final text = value?.toString().trim();
     return text?.isNotEmpty == true ? text! : 'Não informado';
+  }
+
+  String _voltageLabelFrom(dynamic value) {
+    if (value is num) {
+      return value > 30
+          ? '${value.toStringAsFixed(0)}%'
+          : '${value.toStringAsFixed(1)} V';
+    }
+    final text = value?.toString().trim();
+    return text?.isNotEmpty == true ? text! : 'Não informado';
+  }
+
+  // Tensao externa -- alimentacao do veiculo/instalacao fixa.
+  String get externalBatteryLabel {
+    final value =
+        position?.attributes?['power'] ?? device.attributes?['power'];
+    return _voltageLabelFrom(value);
+  }
+
+  // Tensao interna -- bateria de backup do proprio rastreador (relevante
+  // sobretudo quando o equipamento roda portatil, sem instalacao fixa).
+  String get internalBatteryLabel {
+    final value =
+        position?.attributes?['battery'] ?? device.attributes?['battery'];
+    return _voltageLabelFrom(value);
   }
 
   String get gsmSignalLabel {
