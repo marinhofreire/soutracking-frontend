@@ -7651,9 +7651,26 @@ class _SideMenuFooter extends StatelessWidget {
                       fontSize: 10,
                       fontWeight: FontWeight.w700)),
               const Spacer(),
-              Tooltip(
-                message: debugProfileInfo ?? 'sem dados de diagnostico',
-                triggerMode: TooltipTriggerMode.tap,
+              GestureDetector(
+                onTap: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: Colors.white,
+                      title: const Text('Diagnostico de sessao'),
+                      content: SelectableText(
+                        debugProfileInfo ?? 'sem dados de diagnostico',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('Fechar'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
                 child: const Text('v1.0.1',
                     style: TextStyle(
                         color: Color(0xFF9DB1CC),
