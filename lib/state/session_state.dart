@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +24,7 @@ class SessionState {
     this.isAdministrator = false,
     this.usingLocalTenantFallback = false,
     this.tenantConfigWarning,
+    this.debugProfileInfo,
   });
 
   final SessionStatus status;
@@ -37,6 +37,11 @@ class SessionState {
   final bool isAdministrator;
   final bool usingLocalTenantFallback;
   final String? tenantConfigWarning;
+  // Diagnostico temporario (menu Monitoramento nao aparecendo pro perfil
+  // 'SO') -- print()/developer.log() sao removidos pelo tree-shaking do
+  // dart2js em build release, entao a unica forma confiavel de inspecionar
+  // em producao e guardar no state e mostrar na propria UI.
+  final String? debugProfileInfo;
 
   bool get isAuthenticated =>
       status == SessionStatus.authenticated &&
@@ -53,6 +58,7 @@ class SessionState {
     bool? isAdministrator,
     bool? usingLocalTenantFallback,
     String? tenantConfigWarning,
+    String? debugProfileInfo,
   }) {
     return SessionState(
       status: status ?? this.status,
@@ -66,6 +72,7 @@ class SessionState {
       usingLocalTenantFallback:
           usingLocalTenantFallback ?? this.usingLocalTenantFallback,
       tenantConfigWarning: tenantConfigWarning ?? this.tenantConfigWarning,
+      debugProfileInfo: debugProfileInfo ?? this.debugProfileInfo,
     );
   }
 }
@@ -436,13 +443,9 @@ class SessionController extends StateNotifier<SessionState> {
         session.user,
         tenantConfig: mergedTenantConfig,
       );
-      developer.log(
-        '[DEBUG-LOGIN] profileCode=$profileCode '
-        'usingLocalTenantFallback=$usingLocalTenantFallback '
-        'modules=${mergedTenantConfig.modules} '
-        'userAttrs=${session.user['attributes']}',
-        name: 'session_state',
-      );
+      final debugInfo = 'profile=$profileCode fallback=$usingLocalTenantFallback '
+          'modules=${mergedTenantConfig.modules} '
+          'attrs=${session.user['attributes']}';
       state = state.copyWith(
         status: SessionStatus.authenticated,
         cookie: session.cookie,
@@ -452,6 +455,7 @@ class SessionController extends StateNotifier<SessionState> {
         profileCode: profileCode,
         isAdministrator: session.user['administrator'] == true,
         usingLocalTenantFallback: usingLocalTenantFallback,
+        debugProfileInfo: debugInfo,
         tenantConfigWarning: tenantConfigWarning,
       );
       await _persistSession(state);

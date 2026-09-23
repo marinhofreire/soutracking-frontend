@@ -2709,6 +2709,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onSelect: _openPanel,
                   userEmail: ref.watch(sessionProvider).email ?? '',
                   isAdmin: ref.watch(sessionProvider).isAdministrator,
+                  debugProfileInfo:
+                      ref.watch(sessionProvider).debugProfileInfo,
                   onLogout: () {
                     _handleLogout();
                   },
@@ -7234,6 +7236,7 @@ class _SideMenu extends StatelessWidget {
     this.onToggle,
     this.userEmail = '',
     this.isAdmin = false,
+    this.debugProfileInfo,
   });
 
   final bool open;
@@ -7247,6 +7250,7 @@ class _SideMenu extends StatelessWidget {
   final VoidCallback? onToggle;
   final String userEmail;
   final bool isAdmin;
+  final String? debugProfileInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -7367,6 +7371,7 @@ class _SideMenu extends StatelessWidget {
                       userEmail: userEmail,
                       isAdmin: isAdmin,
                       onLogout: onLogout,
+                      debugProfileInfo: debugProfileInfo,
                     ),
                   ] else ...[
                     const SizedBox(height: 6),
@@ -7548,11 +7553,19 @@ class _MobileMenuTile extends StatelessWidget {
 // ── Sidebar footer widgets ─────────────────────────────────────────────────────
 
 class _SideMenuFooter extends StatelessWidget {
-  const _SideMenuFooter(
-      {required this.userEmail, required this.isAdmin, required this.onLogout});
+  const _SideMenuFooter({
+    required this.userEmail,
+    required this.isAdmin,
+    required this.onLogout,
+    this.debugProfileInfo,
+  });
   final String userEmail;
   final bool isAdmin;
   final VoidCallback onLogout;
+  // Diagnostico temporario -- toque longo/hover no "v1.0.1" mostra o
+  // profileCode/modules calculados no login, pra investigar por que a aba
+  // Monitoramento nao aparece pra alguns perfis. Remover apos diagnostico.
+  final String? debugProfileInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -7638,11 +7651,15 @@ class _SideMenuFooter extends StatelessWidget {
                       fontSize: 10,
                       fontWeight: FontWeight.w700)),
               const Spacer(),
-              const Text('v1.0.1',
-                  style: TextStyle(
-                      color: Color(0xFF9DB1CC),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600)),
+              Tooltip(
+                message: debugProfileInfo ?? 'sem dados de diagnostico',
+                triggerMode: TooltipTriggerMode.tap,
+                child: const Text('v1.0.1',
+                    style: TextStyle(
+                        color: Color(0xFF9DB1CC),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
         ],
