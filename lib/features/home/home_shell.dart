@@ -22,6 +22,7 @@ import '../../state/session_state.dart';
 import '../../widgets/dial_gauge.dart';
 import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
+import '../assist/assist_requests_screen.dart';
 import '../calls/calls_screen.dart';
 import '../communication/communication_screen.dart';
 import '../common/placeholder_screen.dart';
@@ -3585,9 +3586,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         );
       case 'support':
         return _HubTabScreen(
-          tabs: const ['Chamados', 'Comunica\u00E7\u00E3o', 'IA Operacional'],
+          tabs: const ['Chamados', 'Demandas', 'Comunica\u00E7\u00E3o', 'IA Operacional'],
           builders: [
             () => _buildTicketsPanel(),
+            () => _buildDemandsPanel(),
             () => _buildCommunicationPanel(),
             () => _buildAiOperationsPanel(),
           ],
@@ -3757,6 +3759,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _buildTicketsPanel() {
     return CallsScreen(onClose: _closePanel);
+  }
+
+  // Demandas (instalação/manutenção/retirada/vistoria) -- reaproveita a tela
+  // real já existente (AssistRequestsScreen, dado real via AssistDemandApiService),
+  // que até 2026-09-24 só era alcançável digitando a rota manualmente. Ligada
+  // aqui como 4ª aba do hub Atendimento (2026-09-24).
+  Widget _buildDemandsPanel() {
+    return AssistRequestsScreen();
   }
 
   Widget _buildCommunicationPanel() {
@@ -7659,7 +7669,8 @@ class _SideMenuFooter extends StatelessWidget {
                       backgroundColor: Colors.white,
                       title: const Text('Diagnostico de sessao'),
                       content: SelectableText(
-                        debugProfileInfo ?? 'sem dados de diagnostico',
+                        'Build: $kAppVersionLabel\n\n'
+                        '${debugProfileInfo ?? 'sem dados de diagnostico'}',
                         style: const TextStyle(fontSize: 12),
                       ),
                       actions: [
@@ -7671,8 +7682,8 @@ class _SideMenuFooter extends StatelessWidget {
                     ),
                   );
                 },
-                child: const Text('v1.0.1',
-                    style: TextStyle(
+                child: Text(kAppVersionLabel,
+                    style: const TextStyle(
                         color: Color(0xFF9DB1CC),
                         fontSize: 10,
                         fontWeight: FontWeight.w600)),
@@ -22403,6 +22414,14 @@ class _HubTabScreenState extends State<_HubTabScreen>
     super.dispose();
   }
 
+  // Constrói cada aba só na primeira vez que ela é selecionada (lazy) --
+  // evita que uma exceção/travamento numa aba nunca vista (ex: Demandas)
+  // derrube a renderização das abas que já funcionavam (ex: Chamados).
+  // Achado real 2026-09-24: TabBarView com children fixos constrói TODOS
+  // os builders de uma vez no primeiro build do hub, mesmo sem o usuário
+  // clicar na aba.
+  final Set<int> _builtTabs = {0};
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -22424,12 +22443,22 @@ class _HubTabScreenState extends State<_HubTabScreen>
             unselectedLabelStyle:
                 const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
             tabs: [for (final t in widget.tabs) Tab(text: t)],
+            onTap: (index) {
+              if (_builtTabs.add(index)) {
+                setState(() {});
+              }
+            },
           ),
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: [for (final build in widget.builders) build()],
+            children: [
+              for (var i = 0; i < widget.builders.length; i++)
+                _builtTabs.contains(i)
+                    ? widget.builders[i]()
+                    : const SizedBox.shrink(),
+            ],
           ),
         ),
       ],

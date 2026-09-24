@@ -2,6 +2,22 @@ import 'package:flutter/foundation.dart';
 
 const String kAppName = 'SouTracking';
 
+// Assinatura de build: commit + data/hora, injetados via --dart-define no
+// momento do build (ver scripts/build_and_deploy.sh). Sem --dart-define
+// (ex: `flutter run` local no dia a dia), cai em "dev local" -- deixa claro
+// na tela que aquele build específico não passou pelo pipeline de deploy.
+const String kBuildCommit = String.fromEnvironment(
+  'BUILD_COMMIT',
+  defaultValue: 'dev-local',
+);
+const String kBuildTimestamp = String.fromEnvironment(
+  'BUILD_TIMESTAMP',
+  defaultValue: '',
+);
+const String kAppVersionLabel = kBuildTimestamp.isEmpty
+    ? 'v$kBuildCommit'
+    : 'v$kBuildCommit · $kBuildTimestamp';
+
 const String _kDefaultTraccarHttpOrigin = 'http://api.soutracking.com.br';
 const String _kTraccarBaseUrlFromEnv = String.fromEnvironment(
   'API_ORIGIN',
