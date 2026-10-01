@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:http/http.dart' as http;
+import '../../core/teltonika_obd_fields.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import 'models/report_models.dart';
@@ -4539,7 +4540,10 @@ class _RouteDetailPoint {
   final String? address;
 
   static _RouteDetailPoint? fromMap(Map<String, dynamic> raw) {
-    final attributes = _asMap(raw['attributes']);
+    // Traduz io<N> do Teltonika (rpm/coolantTemp/fuelLevel/etc) pra nomes
+    // conhecidos antes de resolver os campos abaixo -- ver
+    // core/teltonika_obd_fields.dart.
+    final attributes = withTeltonikaObdFields(_asMap(raw['attributes']));
     final latitude =
         _asDouble(raw['latitude']) ?? _asDouble(attributes['latitude']);
     final longitude =

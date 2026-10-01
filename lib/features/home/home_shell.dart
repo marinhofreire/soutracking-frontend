@@ -14,6 +14,7 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/app_constants.dart';
 import '../../core/display_text_formatter.dart';
+import '../../core/teltonika_obd_fields.dart';
 import '../../core/white_label.dart';
 import '../../data/bridge_client.dart';
 import '../../data/models.dart';
@@ -30,6 +31,8 @@ import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../devices/devices_screen.dart';
+import '../master_panel/master_panel_screen.dart';
+import '../master_panel/superadmin_empresas_screen.dart';
 import '../drivers/drivers_screen.dart';
 import '../finance/finance_screen.dart';
 import '../geofences/geofences_screen.dart';
@@ -83,6 +86,8 @@ class _ReplayPoint {
     required this.speedKph,
     required this.course,
     required this.address,
+    required this.valid,
+    required this.attributes,
   });
 
   final double latitude;
@@ -92,6 +97,17 @@ class _ReplayPoint {
   final double? speedKph;
   final double? course;
   final String address;
+  // Traccar ja marca fixes ruins (perda de sinal durante queda de energia,
+  // reconexao apos powerCut/lowPower) como valid=false -- desenhar essas
+  // posicoes no replay gera saltos de centenas/milhares de km/h na rota
+  // (visto real em PIXEL-MARINHO-TESTE 2026-09-22). O Data Log continua
+  // mostrando tudo (inclusive invalidas, e diagnostico tecnico); so o
+  // replay visual filtra por valid==true.
+  final bool valid;
+  // Attributes crus da posicao (ja com os campos io<N> do Teltonika
+  // traduzidos via withTeltonikaObdFields) -- usado pro replay mostrar
+  // RPM/combustivel/temperatura junto com a rota, nao so lat/lng/velocidade.
+  final Map<String, dynamic> attributes;
 
   gmaps.LatLng get latLng => gmaps.LatLng(latitude, longitude);
 
@@ -140,6 +156,13 @@ class _ReplayPoint {
     );
     final address =
         (row['address'] ?? row['formattedAddress'] ?? '').toString().trim();
+    final valid = row['valid'];
+    final rawAttributes = row['attributes'];
+    final attributes = withTeltonikaObdFields(
+      rawAttributes is Map
+          ? Map<String, dynamic>.from(rawAttributes)
+          : const <String, dynamic>{},
+    );
 
     return _ReplayPoint(
       latitude: latitude,
@@ -149,6 +172,10 @@ class _ReplayPoint {
       speedKph: speedKnots == null ? null : speedKnots * 1.852,
       course: course,
       address: address.isEmpty ? 'Nao informado' : address,
+      // Campo ausente (ex: fonte sem essa informacao) -> assume valido, pra
+      // nao esconder rota de fontes que nunca mandam esse campo.
+      valid: valid == null ? true : valid == true,
+      attributes: attributes,
     );
   }
 }
@@ -357,6 +384,11 @@ final vehicleReplayProvider =
   final points = rows
       .map(_ReplayPoint.fromReportRow)
       .whereType<_ReplayPoint>()
+      // Posicoes invalidas (Traccar valid=false) ficam de fora do replay
+      // visual -- normalmente sao fixes ruins durante queda de energia
+      // (lowPower/powerCut) que geram saltos impossiveis na rota. O Data
+      // Log continua mostrando o dado bruto completo, sem filtrar nada.
+      .where((point) => point.valid)
       .toList(growable: false);
   points.sort((a, b) {
     final at = a.effectiveTime;
@@ -3025,6 +3057,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   String _panelSubtitle(String? id) {
     switch (id) {
+      case 'master-panel':
+        return 'Visão consolidada de todas as empresas';
       case 'dashboard':
         return 'Visão geral da Operação';
       case 'map':
@@ -3504,6 +3538,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _panelFor(String? id) {
     switch (id) {
+      case 'master-panel':
+        return _HubTabScreen(
+          tabs: const ['Visão geral', 'Empresas'],
+          builders: [
+            () => _buildMasterPanel(),
+            () => _buildSuperadminEmpresasPanel(),
+          ],
+        );
       // Dashboard virou hub (2026-09-03): Visão geral + Telemetria + TPMS
       // juntos -- as 3 são "visão de dado ao vivo da frota", diferente de
       // Frota (cadastro) ou Monitoramento (evento que exige ação). Não
@@ -3649,6 +3691,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _buildDashboardPanel() {
     return const DashboardScreen();
+  }
+
+  Widget _buildMasterPanel() {
+    return const MasterPanelScreen();
+  }
+
+  Widget _buildSuperadminEmpresasPanel() {
+    return const SuperadminEmpresasScreen();
   }
 
   Widget _buildMapPanel() {
@@ -21684,10 +21734,10 @@ class _VehicleSnapshot {
   String get normalizedStatus => device.status.toLowerCase().trim();
 
   bool get hasPosition => position != null;
-  Map<String, dynamic> get _mergedAttributes => {
+  Map<String, dynamic> get _mergedAttributes => withTeltonikaObdFields({
         ...?device.attributes,
         ...?position?.attributes,
-      };
+      });
 
   bool get hasValidGps {
     final lat = position?.latitude;
@@ -22498,6 +22548,16 @@ class _OperationalMenuItem {
 }
 
 const List<_OperationalMenuItem> _operationalMenu = [
+  // Visão consolidada pro dono da plataforma (todas as empresas/tenants de
+  // uma vez) -- só aparece pra sessão admin, filtrado em
+  // _filterMenuForSession. Fica antes do Dashboard operacional (que é
+  // por-empresa) porque é "zoom out" da operação inteira.
+  _OperationalMenuItem(
+    id: 'master-panel',
+    label: 'Painel Master',
+    icon: Icons.dashboard_customize_outlined,
+    color: Color(0xFF176EEB),
+  ),
   _OperationalMenuItem(
     id: 'dashboard',
     label: 'Dashboard',

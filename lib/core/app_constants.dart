@@ -14,9 +14,9 @@ const String kBuildTimestamp = String.fromEnvironment(
   'BUILD_TIMESTAMP',
   defaultValue: '',
 );
-const String kAppVersionLabel = kBuildTimestamp.isEmpty
+String get kAppVersionLabel => kBuildTimestamp.isEmpty
     ? 'v$kBuildCommit'
-    : 'v$kBuildCommit · $kBuildTimestamp';
+    : 'v$kBuildCommit ($kBuildTimestamp)';
 
 const String _kDefaultTraccarHttpOrigin = 'http://api.soutracking.com.br';
 const String _kTraccarBaseUrlFromEnv = String.fromEnvironment(

@@ -119,6 +119,8 @@ class TraccarUser {
     required this.administrator,
     required this.readonly,
     required this.disabled,
+    this.userLimit = 0,
+    this.deviceLimit = 0,
     this.attributes,
   });
 
@@ -128,6 +130,10 @@ class TraccarUser {
   final bool administrator;
   final bool readonly;
   final bool disabled;
+  // 0 = sem limite (padrão do Traccar). >0 = teto de sub-usuários/devices
+  // que esse usuário (como Manager) pode criar por baixo dele.
+  final int userLimit;
+  final int deviceLimit;
   final Map<String, dynamic>? attributes;
 
   String get soutrackingRole =>
@@ -138,6 +144,34 @@ class TraccarUser {
   String get photoUrl =>
       (attributes?['souUserPhoto'] ?? '').toString().trim();
 
+  // Manager = "empresa" no modelo de multi-tenant do Painel Master: um
+  // usuário comum (não administrator) mas com limite configurado, que cria
+  // e isola os próprios sub-usuários/dispositivos por baixo dele -- suporte
+  // nativo do Traccar, não é conceito novo nosso.
+  bool get isManager =>
+      !administrator && (userLimit > 0 || deviceLimit > 0);
+
+  // Módulos internos (SouTracking/SouCall/SouFind) habilitados pro Manager
+  // dessa empresa -- guardado em attributes.sou_modules, formato
+  // "soutracking,soucall" (lista separada por vírgula, texto simples pra
+  // não depender de parser JSON aninhado nos attributes do Traccar).
+  Set<String> get enabledModules => (attributes?['sou_modules'] ?? '')
+      .toString()
+      .split(',')
+      .map((m) => m.trim().toLowerCase())
+      .where((m) => m.isNotEmpty)
+      .toSet();
+
+  // Chaves/credenciais isoladas por empresa (cada Manager tem as próprias,
+  // nunca compartilha com outra empresa) -- mesmo motivo já registrado em
+  // memória: canal WhatsApp compartilhado entre clientes já causou ban de
+  // número antes. Guardadas em attributes com prefixo "sou_key_" pra não
+  // colidir com outros atributos custom do Traccar.
+  String get iaApiKey => (attributes?['sou_key_ia'] ?? '').toString();
+  String get souCallToken => (attributes?['sou_key_soucall'] ?? '').toString();
+  String get bridgeSouFindKey =>
+      (attributes?['sou_key_bridge_soufind'] ?? '').toString();
+
   factory TraccarUser.fromJson(Map<String, dynamic> json) {
     return TraccarUser(
       id: json['id'] as int,
@@ -146,6 +180,8 @@ class TraccarUser {
       administrator: json['administrator'] == true,
       readonly: json['readonly'] == true,
       disabled: json['disabled'] == true,
+      userLimit: (json['userLimit'] as num?)?.toInt() ?? 0,
+      deviceLimit: (json['deviceLimit'] as num?)?.toInt() ?? 0,
       attributes: json['attributes'] is Map
           ? (json['attributes'] as Map).cast<String, dynamic>()
           : null,
