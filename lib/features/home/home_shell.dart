@@ -1224,19 +1224,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return _lastResolvedReplayBearing;
   }
 
-  // Veiculo "parado em repouso": ignicao desligada, sem movimento, e a
-  // posicao atual ja tem pelo menos 10min desde o fixTime. Enquanto nisso,
-  // o bearing fica travado na ultima direcao real resolvida -- sem isso,
-  // qualquer ruido de GPS de poucos metros com o carro parado gera "giro
-  // fantasma" no icone (o carro nao andou, mas o ponto oscilou).
-  static const Duration _liveBearingParkedThreshold = Duration(minutes: 10);
+  // Veiculo "parado em repouso": sem movimento (course/speed), e a posicao
+  // atual ja tem pelo menos 1min desde o fixTime. Enquanto nisso, tanto o
+  // bearing quanto a posicao do marker ficam travados no ultimo valor real
+  // resolvido -- sem isso, qualquer ruido de GPS de poucos metros com o
+  // carro parado (ex: farol vermelho, ignicao ainda ligada) gera "giro
+  // fantasma"/"marker dancando" no icone (o carro nao andou, mas o ponto
+  // oscilou). Antes exigia tambem ignicao desligada e 10min parado -- não
+  // cobria o caso comum de parar num farol com o motor ligado por poucos
+  // minutos, que e exatamente quando o ruido de GPS parado fica mais visivel.
+  static const Duration _liveBearingParkedThreshold = Duration(minutes: 1);
 
   bool _isVehicleParkedAtRest({
-    required bool? ignitionOn,
     required bool isMoving,
     required TraccarPosition? position,
   }) {
-    if (ignitionOn == true) return false;
     if (isMoving) return false;
     final fixTime = DateTime.tryParse(position?.fixTime ?? '');
     if (fixTime == null) return false;
@@ -1262,7 +1264,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
 
     if (_isVehicleParkedAtRest(
-      ignitionOn: ignitionOn,
       isMoving: isMoving,
       position: position,
     )) {
@@ -1304,10 +1305,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // device a cada rebuild da lista de snapshots (mesmo padrão de
   // _resolveLiveBearing) -- assim o registro do alvo fica em sincronia com
   // a chegada de dado novo, e o próprio addVehicleMarker só lê o resultado.
+  //
+  // Parado em repouso (mesmo critério de _isVehicleParkedAtRest): ignora o
+  // novo alvo e mantém o marker na última posição estável -- sem isso, o
+  // ruído de GPS de poucos metros com o carro parado fazia o marker
+  // "dançar"/derivar entre micro-posições vizinhas mesmo sem movimento real.
   gmaps.LatLng _resolveAnimatedLivePosition(
     int deviceId,
-    gmaps.LatLng target,
-  ) {
+    gmaps.LatLng target, {
+    bool parkedAtRest = false,
+  }) {
+    if (parkedAtRest) {
+      return _resolveAnimatedLivePositionNow(deviceId) ??
+          _liveMarkerAnimToByDevice[deviceId] ??
+          target;
+    }
     final currentTarget = _liveMarkerAnimToByDevice[deviceId];
     if (currentTarget == null) {
       // Primeira vez que vemos esse device -- sem "de onde" animar, começa
@@ -2855,6 +2867,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onClose: _closeLiveGauges,
                   latitude: liveGaugesSnapshot?.latLngOrNull?.latitude,
                   longitude: liveGaugesSnapshot?.latLngOrNull?.longitude,
+                  heading: liveGaugesSnapshot?.liveBearing,
                 ),
               if (!pixelTelemetryMode)
                 _KpiVehicleList(
@@ -3178,7 +3191,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
         animatedLatLng: rawLatLng == null
             ? null
-            : _resolveAnimatedLivePosition(base.device.id, rawLatLng),
+            : _resolveAnimatedLivePosition(
+                base.device.id,
+                rawLatLng,
+                parkedAtRest: _isVehicleParkedAtRest(
+                  isMoving: base.isMoving,
+                  position: base.position,
+                ),
+              ),
       ));
     }
     return result;
@@ -5468,6 +5488,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
     this.onClose,
     this.latitude,
     this.longitude,
+    this.heading,
   });
 
   final bool visible;
@@ -5487,6 +5508,11 @@ class _RouteReplayStatusCard extends StatelessWidget {
   // status (Street View Static API, mesma chave do mapa).
   final double? latitude;
   final double? longitude;
+  // Direção da câmera do Street View (graus, 0=norte) -- quando o veículo
+  // está em movimento, usa o bearing real dele em vez do heading automático
+  // do Google (que aponta pro prédio mais próximo), dando a sensação de
+  // "câmera ao vivo" olhando a via à frente, no mesmo sentido do trajeto.
+  final double? heading;
 
   @override
   Widget build(BuildContext context) {
@@ -5519,6 +5545,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
                           _StreetViewCard(
                             latitude: latitude!,
                             longitude: longitude!,
+                            heading: heading,
                           ),
                         ],
                       ],
@@ -5533,6 +5560,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
                         _StreetViewCard(
                           latitude: latitude!,
                           longitude: longitude!,
+                          heading: heading,
                         ),
                       ],
                     ],
@@ -5665,16 +5693,27 @@ class _RouteReplayStatusCard extends StatelessWidget {
 }
 
 class _StreetViewCard extends StatelessWidget {
-  const _StreetViewCard({required this.latitude, required this.longitude});
+  const _StreetViewCard({
+    required this.latitude,
+    required this.longitude,
+    this.heading,
+  });
 
   final double latitude;
   final double longitude;
+  // Direção real do veículo (bearing, 0-360) -- quando presente, a câmera
+  // do Street View aponta no mesmo sentido do movimento, dando efeito de
+  // "câmera ao vivo" olhando a via à frente em vez de uma foto genérica do
+  // local. Sem heading (parado/sem bearing resolvido), a Street View API usa
+  // o padrão dela (aponta pro ponto da via mais próximo da coordenada).
+  final double? heading;
 
   @override
   Widget build(BuildContext context) {
+    final headingParam = heading == null ? '' : '&heading=$heading';
     final imageUrl = 'https://maps.googleapis.com/maps/api/streetview'
         '?size=380x220&location=$latitude,$longitude&fov=80&pitch=0'
-        '&key=$kGoogleMapsApiKey';
+        '$headingParam&key=$kGoogleMapsApiKey';
     // Sem título "Street View" e com padding bem fino -- mesmo ajuste já
     // feito em _VehicleBottomStreetViewPanel (2026-09-06, pedido do
     // usuário): a imagem ocupa quase todo o card.
@@ -11162,6 +11201,7 @@ class _VehicleBottomContent extends StatelessWidget {
                       child: _VehicleBottomStreetViewPanel(
                         latitude: snapshot.latLngOrNull!.latitude,
                         longitude: snapshot.latLngOrNull!.longitude,
+                        heading: snapshot.liveBearing,
                       ),
                     ),
                   ],
@@ -11194,6 +11234,7 @@ class _VehicleBottomContent extends StatelessWidget {
                       child: _VehicleBottomStreetViewPanel(
                         latitude: snapshot.latLngOrNull!.latitude,
                         longitude: snapshot.latLngOrNull!.longitude,
+                        heading: snapshot.liveBearing,
                       ),
                     ),
                   ],
@@ -12426,16 +12467,20 @@ class _VehicleBottomStreetViewPanel extends StatelessWidget {
   const _VehicleBottomStreetViewPanel({
     required this.latitude,
     required this.longitude,
+    this.heading,
   });
 
   final double latitude;
   final double longitude;
+  // Mesmo efeito de câmera direcional do _StreetViewCard -- ver comentário lá.
+  final double? heading;
 
   @override
   Widget build(BuildContext context) {
+    final headingParam = heading == null ? '' : '&heading=$heading';
     final imageUrl = 'https://maps.googleapis.com/maps/api/streetview'
         '?size=440x220&location=$latitude,$longitude&fov=80&pitch=0'
-        '&key=$kGoogleMapsApiKey';
+        '$headingParam&key=$kGoogleMapsApiKey';
     return Container(
       // Sem título "Street View" e com padding bem fino -- a imagem ocupa
       // quase todo o card (pedido do usuário, 2026-09-05): a moldura branca
