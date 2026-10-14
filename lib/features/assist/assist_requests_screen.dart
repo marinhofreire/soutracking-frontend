@@ -1,14 +1,20 @@
+import '../../core/operational_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_router.dart';
 import 'assist_dispatch_state.dart';
+import 'assist_request_list_card.dart';
 
 class AssistRequestsScreen extends ConsumerWidget {
   const AssistRequestsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => OperationalPanel(
+        child: Builder(builder: (context) => _buildContents(context, ref)),
+      );
+
+  Widget _buildContents(BuildContext context, WidgetRef ref) {
     final dispatchState = ref.watch(assistDispatchProvider);
     final requests = dispatchState.requests;
     final activeCount = requests
@@ -18,37 +24,62 @@ class AssistRequestsScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Text(
-              'Demandas',
-              style: Theme.of(context).textTheme.headlineSmall,
+        Row(children: [
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Demandas',
+                    style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 7),
+                Wrap(
+                    spacing: 9,
+                    runSpacing: 5,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFFEDF4FF),
+                              borderRadius: BorderRadius.circular(5)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Container(
+                                width: 5,
+                                height: 5,
+                                decoration: const BoxDecoration(
+                                    color: Color(0xFF176EEB),
+                                    shape: BoxShape.circle)),
+                            const SizedBox(width: 5),
+                            Text('$activeCount ativos agora',
+                                style: const TextStyle(
+                                    fontSize: 10, color: Color(0xFF176EEB))),
+                          ])),
+                      const Text('Despacho por parceiro mais próximo',
+                          style: TextStyle(
+                              fontSize: 10, color: Color(0xFF71849F))),
+                    ]),
+              ])),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              fixedSize: const Size.fromHeight(33),
+              visualDensity: VisualDensity.standard,
             ),
-            const Spacer(),
-            FilledButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pushNamed(AppRoutes.assistCreate),
-              icon: const Icon(Icons.add),
-              label: const Text('Criar chamado'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Ativos agora: $activeCount • Despacho por parceiro mais próximo',
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: Colors.white70),
-        ),
-        const SizedBox(height: 12),
+            onPressed: () =>
+                Navigator.of(context).pushNamed(AppRoutes.assistCreate),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Criar chamado'),
+          ),
+        ]),
+        const SizedBox(height: 14),
         Expanded(
-          child: Card(
             child: requests.isEmpty
                 ? const Center(child: Text('Nenhum chamado criado ainda.'))
                 : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(1, 1, 2, 8),
                     itemCount: requests.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final request = requests[index];
                       final partner = ref
@@ -81,23 +112,21 @@ class AssistRequestsScreen extends ConsumerWidget {
                           ? '\nRodada ativa: ${request.currentOfferPartnerIds.length} parceiro(s) • líder ${offeredPartner?.name ?? request.currentOfferPartnerId ?? 'parceiro'} • expira em ${request.offerExpiresAt == null ? '--' : request.offerExpiresAt!.difference(DateTime.now()).inSeconds.clamp(0, 9999)}s${offeredNames.isEmpty ? '' : '\nOfertados: ${offeredNames.join(', ')}'}'
                           : '';
 
-                      return ListTile(
-                        leading: const Icon(Icons.support_agent_outlined),
-                        title: Text('#${request.id} - ${request.service}'),
-                        subtitle: Text(
-                          'Status: $status • Canal: $channel • Perfil: $dispatchMode\n${request.customer}\n${partner?.name ?? 'Aguardando parceiro'} • $distanceText • $etaText$offerText\nRota: ${request.routeDistanceKm.toStringAsFixed(1)} km • Serviço: R\$ ${request.serviceAmount.toStringAsFixed(2)} • Plataforma: R\$ ${request.platformFeeAmount.toStringAsFixed(2)} • $split',
-                        ),
-                        isThreeLine: true,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.assistRequest(request.id));
-                        },
+                      return AssistRequestListCard(
+                        request: request,
+                        partnerName: partner?.name ?? 'Aguardando parceiro',
+                        status: status,
+                        channel: channel,
+                        profile: dispatchMode,
+                        split: split,
+                        distance: distanceText,
+                        eta: etaText,
+                        offerText: offerText,
+                        onTap: () => Navigator.of(context)
+                            .pushNamed(AppRoutes.assistRequest(request.id)),
                       );
                     },
-                  ),
-          ),
-        ),
+                  )),
       ],
     );
   }

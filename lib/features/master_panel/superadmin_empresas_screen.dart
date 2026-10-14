@@ -18,6 +18,127 @@ const _kBlue = Color(0xFF176EEB);
 const _kGreen = Color(0xFF19A875);
 const _kRed = Color(0xFFDC5662);
 
+class _CompanySurface extends StatelessWidget {
+  const _CompanySurface({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const text = TextStyle(fontFamily: 'DeviceEditorSegoe', fontSize: 11);
+    return Theme(
+      data: theme.copyWith(
+        textTheme: theme.textTheme.apply(fontFamily: 'DeviceEditorSegoe'),
+        visualDensity: VisualDensity.compact,
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Color(0xFFF7F9FC),
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          labelStyle: TextStyle(color: _kMuted, fontSize: 11),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              borderSide: BorderSide(color: _kLine)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              borderSide: BorderSide(color: _kLine)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              borderSide: BorderSide(color: _kBlue)),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+          backgroundColor: _kBlue,
+          minimumSize: const Size(96, 33),
+          textStyle: text.copyWith(fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        )),
+        textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+          foregroundColor: _kMuted,
+          textStyle: text,
+          minimumSize: const Size(88, 33),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          side: const BorderSide(color: _kLine),
+        )),
+      ),
+      child: DefaultTextStyle.merge(
+          style: text.copyWith(color: _kInk), child: child),
+    );
+  }
+}
+
+class _CompanySectionTitle extends StatelessWidget {
+  const _CompanySectionTitle(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: const TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w600, color: _kMuted));
+}
+
+class _CompanyDialogFrame extends StatelessWidget {
+  const _CompanyDialogFrame(
+      {required this.title,
+      required this.subtitle,
+      required this.width,
+      required this.height,
+      required this.body,
+      required this.actions});
+  final String title;
+  final String subtitle;
+  final double width;
+  final double height;
+  final Widget body;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: _CompanySurface(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _kLine))),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: _kBlue)),
+                      const SizedBox(height: 5),
+                      Text(subtitle,
+                          style: const TextStyle(fontSize: 11, color: _kMuted)),
+                    ]),
+              ),
+              Expanded(
+                  child:
+                      Padding(padding: const EdgeInsets.all(16), child: body)),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: _kLine))),
+                child: actions,
+              ),
+            ],
+          )),
+        ),
+      );
+}
+
 const _kAllModules = <String, String>{
   'soutracking': 'SouTracking',
   'soucall': 'Comunicação (SouCall)',
@@ -34,7 +155,8 @@ class SuperadminEmpresasScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final usersAsync = ref.watch(usersProvider);
 
-    return Padding(
+    return _CompanySurface(
+        child: Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,10 +171,10 @@ class SuperadminEmpresasScreen extends ConsumerWidget {
                         style: TextStyle(
                             color: _kInk,
                             fontSize: 18,
-                            fontWeight: FontWeight.w800)),
+                            fontWeight: FontWeight.w600)),
                     SizedBox(height: 2),
                     Text(
-                        'Cria empresas isoladas (usuário Manager do Traccar) e decide quais módulos cada uma enxerga',
+                        'Gerencie empresas, limites de acesso e módulos habilitados.',
                         style: TextStyle(
                             color: _kMuted,
                             fontSize: 12,
@@ -90,15 +212,14 @@ class SuperadminEmpresasScreen extends ConsumerWidget {
                 return ListView.separated(
                   itemCount: empresas.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) =>
-                      _EmpresaCard(user: empresas[i]),
+                  itemBuilder: (context, i) => _EmpresaCard(user: empresas[i]),
                 );
               },
             ),
           ),
         ],
       ),
-    );
+    ));
   }
 
   static void _openCreateDialog(BuildContext context, WidgetRef ref) {
@@ -117,7 +238,7 @@ class _EmpresaCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final modules = user.enabledModules;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -151,14 +272,12 @@ class _EmpresaCard extends ConsumerWidget {
                         style: const TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w700)),
                     Text(user.email,
-                        style: const TextStyle(
-                            color: _kMuted, fontSize: 11)),
+                        style: const TextStyle(color: _kMuted, fontSize: 11)),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: user.disabled
                       ? const Color(0xFFFFF0F1)
@@ -326,80 +445,63 @@ class _KeysDialogState extends ConsumerState<_KeysDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Chaves · ${widget.user.name}',
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: _kInk)),
-              const SizedBox(height: 4),
-              const Text(
-                  'Credenciais isoladas dessa empresa -- nunca compartilhadas com outras.',
-                  style: TextStyle(fontSize: 11, color: _kMuted)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _iaCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'Chave de IA', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _souCallCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'Token SouCall', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _bridgeCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'Chave Bridge SouFind', isDense: true),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!,
-                    style: const TextStyle(color: _kRed, fontSize: 11)),
-              ],
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(backgroundColor: _kBlue),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Salvar'),
-                  ),
-                ],
-              ),
-            ],
+    return _CompanyDialogFrame(
+      title: 'Chaves · ${widget.user.name}',
+      subtitle: 'Gerencie as credenciais desta empresa.',
+      width: 600,
+      height: 390,
+      actions: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
           ),
-        ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            style: FilledButton.styleFrom(backgroundColor: _kBlue),
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Salvar'),
+          ),
+        ],
       ),
+      body: SingleChildScrollView(
+          child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _iaCtrl,
+            obscureText: true,
+            decoration:
+                const InputDecoration(labelText: 'Chave de IA', isDense: true),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _souCallCtrl,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'Token SouCall', isDense: true),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _bridgeCtrl,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'Chave de integração SouFind', isDense: true),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: _kRed, fontSize: 11)),
+          ],
+        ],
+      )),
     );
   }
 
@@ -461,7 +563,8 @@ class _ModuleChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         decoration: BoxDecoration(
-          color: enabled ? _kBlue.withValues(alpha: 0.1) : const Color(0xFFF3F5F9),
+          color:
+              enabled ? _kBlue.withValues(alpha: 0.1) : const Color(0xFFF3F5F9),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
               color: enabled ? _kBlue.withValues(alpha: 0.3) : _kLine),
@@ -523,153 +626,155 @@ class _CreateEmpresaDialogState extends ConsumerState<_CreateEmpresaDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final maxDialogHeight = MediaQuery.of(context).size.height * 0.85;
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 440, maxHeight: maxDialogHeight),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Criar empresa',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: _kInk)),
-              const SizedBox(height: 4),
-              const Text(
-                  'Cria um usuário Manager isolado no Traccar (cria e vê só os próprios veículos/usuários).',
-                  style: TextStyle(fontSize: 11, color: _kMuted)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'Nome da empresa', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _emailCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'E-mail de login', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _passwordCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'Senha', isDense: true),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _userLimitCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                          labelText: 'Máx. usuários', isDense: true),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _deviceLimitCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                          labelText: 'Máx. veículos', isDense: true),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Text('Módulos habilitados',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _kInk)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final entry in _kAllModules.entries)
-                    _ModuleChip(
-                      label: entry.value,
-                      enabled: _selectedModules.contains(entry.key),
-                      onTap: () => setState(() {
-                        if (_selectedModules.contains(entry.key)) {
-                          _selectedModules.remove(entry.key);
-                        } else {
-                          _selectedModules.add(entry.key);
-                        }
-                      }),
-                    ),
-                ],
-              ),
-              if (_selectedModules.contains('soutracking')) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _iaKeyCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                      labelText: 'Chave de IA', isDense: true),
-                ),
-              ],
-              if (_selectedModules.contains('soucall')) ...[
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _souCallKeyCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                      labelText: 'Token SouCall', isDense: true),
-                ),
-              ],
-              if (_selectedModules.contains('demand')) ...[
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _bridgeKeyCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                      labelText: 'Chave Bridge SouFind', isDense: true),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!,
-                    style: const TextStyle(color: _kRed, fontSize: 11)),
-              ],
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: _saving ? null : _create,
-                    style: FilledButton.styleFrom(backgroundColor: _kBlue),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Criar'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+    final identity =
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const _CompanySectionTitle('DADOS DA EMPRESA'),
+      const SizedBox(height: 16),
+      TextField(
+        controller: _nameCtrl,
+        decoration:
+            const InputDecoration(labelText: 'Nome da empresa', isDense: true),
       ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _emailCtrl,
+        decoration:
+            const InputDecoration(labelText: 'E-mail de login', isDense: true),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _passwordCtrl,
+        obscureText: true,
+        decoration: const InputDecoration(labelText: 'Senha', isDense: true),
+      ),
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _userLimitCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Máx. usuários', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _deviceLimitCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Máx. veículos', isDense: true),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+    ]);
+    final access =
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Módulos habilitados',
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700, color: _kInk)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final entry in _kAllModules.entries)
+            _ModuleChip(
+              label: entry.value,
+              enabled: _selectedModules.contains(entry.key),
+              onTap: () => setState(() {
+                if (_selectedModules.contains(entry.key)) {
+                  _selectedModules.remove(entry.key);
+                } else {
+                  _selectedModules.add(entry.key);
+                }
+              }),
+            ),
+        ],
+      ),
+      if (_selectedModules.contains('soutracking')) ...[
+        const SizedBox(height: 12),
+        TextField(
+          controller: _iaKeyCtrl,
+          obscureText: true,
+          decoration:
+              const InputDecoration(labelText: 'Chave de IA', isDense: true),
+        ),
+      ],
+      if (_selectedModules.contains('soucall')) ...[
+        const SizedBox(height: 10),
+        TextField(
+          controller: _souCallKeyCtrl,
+          obscureText: true,
+          decoration:
+              const InputDecoration(labelText: 'Token SouCall', isDense: true),
+        ),
+      ],
+      if (_selectedModules.contains('demand')) ...[
+        const SizedBox(height: 10),
+        TextField(
+          controller: _bridgeKeyCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(
+              labelText: 'Chave de integração SouFind', isDense: true),
+        ),
+      ],
+      if (_error != null) ...[
+        const SizedBox(height: 12),
+        Text(_error!, style: const TextStyle(color: _kRed, fontSize: 11)),
+      ],
+    ]);
+    return _CompanyDialogFrame(
+      title: 'Criar empresa',
+      subtitle:
+          'Defina os dados de acesso, os limites e os módulos da empresa.',
+      width: 860,
+      height: 490,
+      actions: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: _saving ? null : _create,
+            style: FilledButton.styleFrom(backgroundColor: _kBlue),
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Criar'),
+          ),
+        ],
+      ),
+      body: LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth >= 650) {
+          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: SingleChildScrollView(child: identity)),
+            const SizedBox(width: 20),
+            const VerticalDivider(width: 1, color: _kLine),
+            const SizedBox(width: 20),
+            Expanded(child: SingleChildScrollView(child: access)),
+          ]);
+        }
+        return SingleChildScrollView(
+            child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            identity,
+            const Divider(height: 28, color: _kLine),
+            access
+          ],
+        ));
+      }),
     );
   }
 

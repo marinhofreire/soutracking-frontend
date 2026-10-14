@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/device_status.dart';
 import '../../core/display_text_formatter.dart';
 import '../../data/bridge_client.dart';
 import '../../data/models.dart';
@@ -28,14 +29,14 @@ class DashboardScreen extends ConsumerWidget {
     };
 
     final total = devices.length;
-    final online = devices.where((d) => _isOnline(d.status)).length;
-    final offline = devices.where((d) => _isOffline(d.status)).length;
+    final online = devices.where((d) => isDeviceOnline(d.status)).length;
+    final offline = devices.where((d) => isDeviceOffline(d.status)).length;
     final moving = positions.where((p) => (p.speed ?? 0) > 1).length;
     final noCommunication =
         devices.where((d) => !positionByDeviceId.containsKey(d.id)).length;
     final alerts = latestEvents.isNotEmpty
         ? latestEvents.length
-        : devices.where((d) => !_isOnline(d.status)).length;
+        : devices.where((d) => isDeviceOffline(d.status)).length;
     final avgSpeed = _averageSpeed(positions);
 
     final onlineStopped = math.max(0, online - moving);
@@ -501,16 +502,6 @@ class DashboardScreen extends ConsumerWidget {
       ],
     );
   }
-}
-
-bool _isOnline(String status) {
-  final value = status.toLowerCase().trim();
-  return value == 'online';
-}
-
-bool _isOffline(String status) {
-  final value = status.toLowerCase().trim();
-  return value == 'offline';
 }
 
 double _averageSpeed(List<TraccarPosition> positions) {

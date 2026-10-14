@@ -44,6 +44,7 @@ dependencies:
   file_picker: ^8.1.7
   pointer_interceptor: ^0.10.1+2
   crypto: ^3.0.5
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -66,6 +67,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  fonts:
+    - family: DeviceEditorSegoe
+      fonts:
+        - asset: assets/fonts/device-editor/segoeui.ttf
+        - asset: assets/fonts/device-editor/seguisb.ttf
+          weight: 600
 
   # To add assets to your application, add an assets section, like this:
   assets:

@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import '../../core/operational_panel.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,7 +25,11 @@ class MdvrDeviceDetailScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => OperationalPanel(
+        child: Builder(builder: (context) => _buildContents(context, ref)),
+      );
+
+  Widget _buildContents(BuildContext context, WidgetRef ref) {
     final devicesAsync = ref.watch(devicesProvider);
     final positionsAsync = ref.watch(positionsProvider);
 

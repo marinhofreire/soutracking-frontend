@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -47,6 +45,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   String _displayNumber(double value, {int decimals = 2}) {
     return value.toStringAsFixed(decimals).replaceAll('.', ',');
   }
+
   String _formatThousands(double value) {
     if (value != value.roundToDouble()) {
       return _displayNumber(value);
@@ -123,6 +122,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
         return 'Fórmula: próxima manutenção = $start + $period.';
     }
   }
+
   void _applyTemplate(_MaintenanceTemplate template) {
     _nameController.text = template.name;
     _periodController.text = _compactNumber(template.period);
@@ -267,7 +267,10 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             'Modelos prontos de manutenção',
             style: Theme.of(
               context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                fontFamily: 'DeviceEditorSegoe'),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -276,33 +279,21 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             style: TextStyle(color: Color(0xFF51607A)),
           ),
           const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final maxWidth = constraints.maxWidth;
-              const spacing = 8.0;
-              const minCardWidth = 150.0;
-              final columns = math.max(
-                  1, (maxWidth + spacing) ~/ (minCardWidth + spacing));
-              final cardWidth =
-                  (maxWidth - spacing * (columns - 1)) / columns;
-
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: [
-                  for (final template in _maintenanceTemplates)
-                    SizedBox(
-                      width: cardWidth,
-                      child: _MaintenanceTemplateCard(
-                        template: template,
-                        selected: _selectedTemplate?.id == template.id,
-                        metricLabel: _templateMetricLabel(template.type, template.period),
-                        onUse: () => _applyTemplate(template),
-                      ),
-                    ),
-                ],
-              );
-            },
+          Expanded(
+            child: ListView.separated(
+              itemCount: _maintenanceTemplates.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final template = _maintenanceTemplates[index];
+                return _MaintenanceTemplateCard(
+                  template: template,
+                  selected: _selectedTemplate?.id == template.id,
+                  metricLabel:
+                      _templateMetricLabel(template.type, template.period),
+                  onUse: () => _applyTemplate(template),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -415,20 +406,19 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Manutenção',
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(color: const Color(0xFF25344A)),
+            'Configurar plano',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: const Color(0xFF25344A),
+                fontSize: 18,
+                fontFamily: 'DeviceEditorSegoe',
+                fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 10),
-          _buildTemplateCatalog(),
           const SizedBox(height: 10),
           TextField(
             controller: _nameController,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'Nome do plano'),
-            style: const TextStyle(color: Color(0xFF25344A)),
+            style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
@@ -445,7 +435,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             },
             decoration: const InputDecoration(labelText: 'Tipo'),
             dropdownColor: Colors.white,
-            style: const TextStyle(color: Color(0xFF25344A)),
+            style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
           ),
           const SizedBox(height: 10),
           devicesAsync.when(
@@ -464,13 +454,13 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                 onChanged: (value) => setState(() => _deviceId = value),
                 decoration: const InputDecoration(labelText: 'Dispositivo'),
                 dropdownColor: Colors.white,
-                style: const TextStyle(color: Color(0xFF25344A)),
+                style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
               );
             },
             loading: () => const LinearProgressIndicator(),
             error: (error, _) => Text(
               'Erro: $error',
-              style: const TextStyle(color: Color(0xFF25344A)),
+              style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
             ),
           ),
           const SizedBox(height: 10),
@@ -482,7 +472,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               helperText: 'Preencha com o valor atual do veículo.',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(color: Color(0xFF25344A)),
+            style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -493,7 +483,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               helperText: 'Intervalo entre manutenções.',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(color: Color(0xFF25344A)),
+            style: const TextStyle(color: Color(0xFF25344A), fontSize: 12),
           ),
           const SizedBox(height: 6),
           Text(
@@ -505,59 +495,110 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _saving ? null : _createMaintenance,
-            child: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Criar plano'),
-          ),
         ],
       ),
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 1200;
-        if (isWide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12, right: 16, top: 16),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 540),
-                      child: SingleChildScrollView(child: form),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 6,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 16, right: 12),
-                  child: list,
-                ),
-              ),
-            ],
-          );
-        }
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            form,
+    final formPanel = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: SingleChildScrollView(child: form)),
+        const SizedBox(height: 8),
+        FilledButton(
+          style: FilledButton.styleFrom(
+              textStyle: const TextStyle(
+                  fontSize: 12, fontFamily: 'DeviceEditorSegoe')),
+          onPressed: _saving ? null : _createMaintenance,
+          child: _saving
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Criar plano'),
+        ),
+      ],
+    );
+    final plansPanel = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE6F2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Planos ativos',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Expanded(child: list),
+        ],
+      ),
+    );
+    return Theme(
+      data: Theme.of(context).copyWith(
+        textTheme:
+            Theme.of(context).textTheme.apply(fontFamily: 'DeviceEditorSegoe'),
+        visualDensity: VisualDensity.compact,
+        inputDecorationTheme: const InputDecorationTheme(
+          isDense: true,
+          filled: true,
+          fillColor: Color(0xFFF7F9FC),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          labelStyle: TextStyle(fontSize: 11, color: Color(0xFF5F738F)),
+          helperStyle: TextStyle(fontSize: 10, color: Color(0xFF5F738F)),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              borderSide: BorderSide(color: Color(0xFFDDE6F2))),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              borderSide: BorderSide(color: Color(0xFFDDE6F2))),
+        ),
+      ),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: 'DeviceEditorSegoe', fontSize: 12),
+        child: LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= 1000) {
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: 240, child: _buildTemplateCatalog()),
+                    const SizedBox(width: 12),
+                    Expanded(child: formPanel),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 220, child: plansPanel),
+                  ]),
+            );
+          }
+          if (constraints.maxWidth >= 700) {
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: 230, child: _buildTemplateCatalog()),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Column(children: [
+                      Expanded(child: formPanel),
+                      const SizedBox(height: 12),
+                      SizedBox(height: 130, child: plansPanel),
+                    ])),
+                  ]),
+            );
+          }
+          return ListView(padding: const EdgeInsets.all(12), children: [
+            SizedBox(height: 320, child: _buildTemplateCatalog()),
             const SizedBox(height: 12),
-            SizedBox(height: 460, child: list),
-          ],
-        );
-      },
+            SizedBox(height: 460, child: formPanel),
+            const SizedBox(height: 12),
+            SizedBox(height: 240, child: plansPanel),
+          ]);
+        }),
+      ),
     );
   }
 }
@@ -624,12 +665,10 @@ class _MaintenanceTemplateCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(7),
       decoration: BoxDecoration(
-        color: selected
-            ? const Color(0xFFEAF3FF)
-            : Colors.white,
+        color: selected ? const Color(0xFFEAF3FF) : Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: selected ? const Color(0xFFBBD7FF) : const Color(0xFFDDE6F2),
+          color: selected ? const Color(0xFF176EEB) : const Color(0xFFDDE6F2),
         ),
       ),
       child: Column(
@@ -683,7 +722,8 @@ class _MaintenanceTemplateCard extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 28),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                textStyle: const TextStyle(fontSize: 11),
+                textStyle: const TextStyle(
+                    fontSize: 11, fontFamily: 'DeviceEditorSegoe'),
               ),
               child: const Text('Usar'),
             ),

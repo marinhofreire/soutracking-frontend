@@ -2,10 +2,8 @@ import 'package:flutter/foundation.dart';
 
 const String kAppName = 'SouTracking';
 
-// Assinatura de build: commit + data/hora, injetados via --dart-define no
-// momento do build (ver scripts/build_and_deploy.sh). Sem --dart-define
-// (ex: `flutter run` local no dia a dia), cai em "dev local" -- deixa claro
-// na tela que aquele build específico não passou pelo pipeline de deploy.
+// Assinatura técnica do build, mantida no diagnóstico de sessão.
+// A versão pública é um número separado, sem commit ou data no rodapé.
 const String kBuildCommit = String.fromEnvironment(
   'BUILD_COMMIT',
   defaultValue: 'dev-local',
@@ -14,7 +12,12 @@ const String kBuildTimestamp = String.fromEnvironment(
   'BUILD_TIMESTAMP',
   defaultValue: '',
 );
-String get kAppVersionLabel => kBuildTimestamp.isEmpty
+const String kAppVersion = String.fromEnvironment(
+  'APP_VERSION',
+  defaultValue: '4.5',
+);
+String get kAppVersionLabel => 'v$kAppVersion';
+String get kBuildDiagnosticLabel => kBuildTimestamp.isEmpty
     ? 'v$kBuildCommit'
     : 'v$kBuildCommit ($kBuildTimestamp)';
 

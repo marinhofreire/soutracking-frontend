@@ -74,7 +74,7 @@ class _AiChatFloatingWidgetState extends ConsumerState<AiChatFloatingWidget> {
         _messages.add(const _ChatMessage(
           fromAssistant: true,
           text: 'IA ainda não está configurada. Vá em Configurações → '
-              'Integrações → Bridge / IA e salve a URL e a chave.',
+              'Integrações → IA e salve a URL e a chave.',
         ));
       });
       _scrollToEnd();

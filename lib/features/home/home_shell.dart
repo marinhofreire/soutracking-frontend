@@ -595,6 +595,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         return 'fleet';
       case 'alertas':
       case 'alerts':
+      case 'eventos':
+      case 'events':
+        return 'alerts';
       case 'cercas':
       case 'fences':
       case 'geofences':
@@ -3087,7 +3090,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'routes':
         return 'Hist\u00F3rico, replay e quilometragem';
       case 'alerts':
-        return 'Eventos, regras e notificações';
+        return 'Histórico completo de eventos do rastreador';
       case 'maintenance':
         return 'Planos e hist\u00F3rico de manuten\u00E7\u00E3o';
       case 'geofences':
@@ -3638,10 +3641,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         );
       case 'monitoring':
         // Telemetria mudou pro hub Dashboard (2026-09-03) -- n\u00E3o duplicado aqui.
+        // Alertas saiu daqui (2026-10-12) -- j\u00E1 e item proprio do menu
+        // principal ("Eventos", id 'alerts'), ter as duas rotas pra mesma
+        // tela confundia (P1-3 do plano de auditoria).
         return _HubTabScreen(
-          tabs: const ['Alertas', 'Cercas', 'Data Log'],
+          tabs: const ['Cercas', 'Data Log'],
           builders: [
-            () => _buildAlertsPanel(),
             () => _buildGeofencesPanel(),
             () => _buildLogsPanel(),
           ],
@@ -4079,12 +4084,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ),
         _PanelToolEntry(
-          label: 'Integração MackFlow/Bridge',
+          label: 'Integração da IA',
           icon: Icons.link_outlined,
           detail: 'Registro ativo de integração',
           child: _AutomationWorkbenchScreen(
-            title: 'Integração MackFlow/Bridge',
-            description: 'Registra payloads de integração para uso do Bridge.',
+            title: 'Integração da IA',
+            description: 'Registra informações para integração com a IA.',
             scope: 'bridge',
             actionType: 'evento',
           ),
@@ -7758,7 +7763,7 @@ class _SideMenuFooter extends StatelessWidget {
                       backgroundColor: Colors.white,
                       title: const Text('Diagnostico de sessao'),
                       content: SelectableText(
-                        'Build: $kAppVersionLabel\n\n'
+                        'Versão: $kAppVersionLabel\nBuild: $kBuildDiagnosticLabel\n\n'
                         '${debugProfileInfo ?? 'sem dados de diagnostico'}',
                         style: const TextStyle(fontSize: 12),
                       ),
@@ -16487,7 +16492,7 @@ class _InventoryDemoScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 6),
                 Text(
-                  'Futura integracao com Google Sheets via MackFlow/Bridge.',
+                  'Futura integração com Google Sheets via IA.',
                   style: TextStyle(
                     color: Color(0xFFBFDBFE),
                     fontWeight: FontWeight.w600,
@@ -16650,7 +16655,7 @@ class _InventoryDemoScreen extends StatelessWidget {
               ),
               SizedBox(height: 8),
               _InventoryFlowLine(text: 'SouTracking'),
-              _InventoryFlowLine(text: 'Bridge'),
+              _InventoryFlowLine(text: 'IA'),
               _InventoryFlowLine(text: 'Google Sheets'),
               _InventoryFlowLine(text: 'Aba Itens atualiza status'),
               _InventoryFlowLine(text: 'Aba Movimentações registra Histórico'),
@@ -17056,7 +17061,7 @@ class _MdvrDemoScreen extends StatelessWidget {
               _MdvrFlowLine(text: 'Alerta no rastreamento'),
               _MdvrFlowLine(text: 'abre camera relacionada'),
               _MdvrFlowLine(text: 'salva evidencia'),
-              _MdvrFlowLine(text: 'cria chamado via Bridge futuramente'),
+              _MdvrFlowLine(text: 'cria chamado via IA futuramente'),
               _MdvrFlowLine(text: 'envia WhatsApp via SouCall futuramente'),
             ],
           ),
@@ -22629,9 +22634,9 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ),
   _OperationalMenuItem(
     id: 'alerts',
-    label: 'Alertas',
-    icon: Icons.warning_amber_outlined,
-    color: Color(0xFFEF4444),
+    label: 'Eventos',
+    icon: Icons.history_outlined,
+    color: Color(0xFF64748B),
   ),
   // Hub "Monitoramento" -- Alertas/Cercas/Data Log/Telemetria.
   _OperationalMenuItem(

@@ -153,7 +153,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Alertas',
+                    'Eventos',
                     style: TextStyle(
                       color: Color(0xFF1F2A44),
                       fontWeight: FontWeight.w800,
@@ -162,7 +162,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   ),
                   SizedBox(height: 2),
                   Text(
-                    'Gerencie regras de notificação e visualize eventos.',
+                    'Histórico completo de eventos do rastreador.',
                     style: TextStyle(color: Color(0xFF5A6B84), fontSize: 13),
                   ),
                 ],
@@ -171,7 +171,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
             FilledButton.icon(
               onPressed: () => _openCreateAlertDialog(devices),
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Criar Alerta'),
+              label: const Text('Criar Regra'),
             ),
           ],
         ),
@@ -258,7 +258,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Criar Alerta',
+                              'Criar Regra',
                               style: TextStyle(
                                 color: Color(0xFF1F2A44),
                                 fontWeight: FontWeight.w800,
@@ -685,17 +685,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       );
     }
 
-    if (normalized == 'alarm' ||
-        alarm.contains('alarm') ||
-        alarm.contains('vibration') ||
-        alarm.contains('shock')) {
-      return const _ResolvedAlertMeaning(
-        typeLabel: 'Alarme do veículo',
-        severity: AlertSeverity.high,
-        descriptionFallback: 'Alarme disparado pelo rastreador.',
-      );
-    }
-
     if (normalized.contains('jammer') || alarm.contains('jammer')) {
       return const _ResolvedAlertMeaning(
         typeLabel: 'Possível bloqueador de sinal',
@@ -704,15 +693,28 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       );
     }
 
+    // Corte de energia = alerta nº 1 de antifurto (bateria principal
+    // desconectada, possivel sabotagem/furto do equipamento) -- critico.
     if (normalized.contains('powercut') ||
         normalized.contains('power cut') ||
         alarm.contains('powercut') ||
         alarm.contains('power')) {
       return const _ResolvedAlertMeaning(
         typeLabel: 'Corte de energia',
-        severity: AlertSeverity.high,
+        severity: AlertSeverity.critical,
         descriptionFallback:
             'Alimentação principal do rastreador interrompida.',
+      );
+    }
+
+    if (normalized == 'alarm' ||
+        alarm.contains('alarm') ||
+        alarm.contains('vibration') ||
+        alarm.contains('shock')) {
+      return const _ResolvedAlertMeaning(
+        typeLabel: 'Alarme do veículo',
+        severity: AlertSeverity.high,
+        descriptionFallback: 'Alarme disparado pelo rastreador.',
       );
     }
 

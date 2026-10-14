@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../admin/admin_reference_ui.dart';
+import '../../core/device_status.dart';
 import '../../state/session_state.dart';
 
 class GeneralPanelScreen extends ConsumerWidget {
@@ -15,12 +16,11 @@ class GeneralPanelScreen extends ConsumerWidget {
     final positions = ref.watch(positionsProvider).valueOrNull ?? const [];
     final events = ref.watch(latestEventsProvider).valueOrNull ?? const [];
     final orders = ref.watch(ordersProvider).valueOrNull ?? const [];
-    final online =
-        devices.where((it) => it.status.toLowerCase() == 'online').length;
+    final online = devices.where((it) => isDeviceOnline(it.status)).length;
     final stopped = positions.where((it) => (it.speed ?? 0) <= 1).length;
     final alertCount = events.isNotEmpty
         ? events.length
-        : devices.where((it) => it.status.toLowerCase() != 'online').length;
+        : devices.where((it) => isDeviceOffline(it.status)).length;
 
     return AdminReferenceScaffold(
       title: 'Painel Geral',

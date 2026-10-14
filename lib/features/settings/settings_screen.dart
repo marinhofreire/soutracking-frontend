@@ -1063,7 +1063,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               children: [
                 _SidebarListCard(
-                  label: 'Bridge / IA',
+                  label: 'IA',
                   subtitle: config.isConfigured ? 'Configurado' : 'Não configurado',
                   dotColor: config.isConfigured
                       ? const Color(0xFF10B981)
@@ -1122,7 +1122,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     ),
                     const SizedBox(width: 6),
                     _ModeChip(
-                      label: 'Bridge',
+                      label: 'IA',
                       selected: config.aiMode == AiMode.bridge,
                       color: const Color(0xFF176EEB),
                       onTap: () => ref
@@ -1135,14 +1135,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
           ),
           _SettingsCard(
-            title: 'Endpoint do Bridge',
+            title: 'Conexão da IA',
             child: Column(
               children: [
                 TextField(
                   controller: _bridgeUrlCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'URL do Bridge',
-                    hintText: 'https://bridge.seudominio.com',
+                    labelText: 'URL da IA',
+                    hintText: 'https://ia.seudominio.com',
                     prefixIcon: Icon(Icons.link_rounded, size: 18),
                   ),
                 ),
@@ -1151,7 +1151,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   controller: _bridgeApiKeyCtrl,
                   obscureText: !_showBridgeKey,
                   decoration: InputDecoration(
-                    labelText: 'Chave de API do Bridge',
+                    labelText: 'Chave de acesso da IA',
                     prefixIcon: const Icon(Icons.vpn_key_rounded, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -1330,7 +1330,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         ? const Color(0xFF10B981)
                         : const Color(0xFF9DB1CC),
                     label: 'Modo',
-                    value: config.aiMode == AiMode.bridge ? 'Bridge' : 'Mock',
+                    value: config.aiMode == AiMode.bridge ? 'IA' : 'Demonstração',
                     valueColor: config.isConfigured
                         ? const Color(0xFF10B981)
                         : const Color(0xFF9DB1CC),
@@ -1521,7 +1521,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _testBridgeConnection() async {
     final url = _bridgeUrlCtrl.text.trim();
     if (url.isEmpty) {
-      setState(() => _bridgeTestResult = '✕ URL do Bridge não preenchida.');
+      setState(() => _bridgeTestResult = '✕ URL da IA não preenchida.');
       return;
     }
     setState(() { _bridgeSaving = true; _bridgeTestResult = null; });
@@ -1531,7 +1531,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final resp = await _httpGet(uri);
       setState(() {
         _bridgeSaving = false;
-        _bridgeTestResult = resp ? '✓ Bridge respondeu com sucesso.' : '✕ Bridge não respondeu (verifique URL e chave).';
+        _bridgeTestResult = resp ? '✓ IA respondeu com sucesso.' : '✕ IA não respondeu (verifique URL e chave).';
       });
     } catch (e) {
       setState(() {

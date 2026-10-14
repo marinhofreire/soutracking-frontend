@@ -1,3 +1,4 @@
+import '../../core/operational_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,7 +16,11 @@ class AssistRequestDetailScreen extends ConsumerWidget {
   final String requestId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => OperationalPanel(
+        child: Builder(builder: (context) => _buildContents(context, ref)),
+      );
+
+  Widget _buildContents(BuildContext context, WidgetRef ref) {
     final state = ref.watch(assistDispatchProvider);
     AssistRequest? request;
     for (final item in state.requests) {
@@ -55,48 +60,45 @@ class AssistRequestDetailScreen extends ConsumerWidget {
         .inSeconds
         .clamp(0, 9999);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header ──────────────────────────────────────────────────
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: _kBlue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.assignment_outlined,
-                    color: _kBlue, size: 20),
+    return OperationalPage(
+      header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // ── Header ──────────────────────────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _kBlue.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text('Chamado #$requestId',
-                    style: const TextStyle(
-                        color: _kInk,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _statusChip(statusLabel, _statusColor(requestData.status)),
-              _infoChip('Prioridade: $priorityLabel'),
-              _infoChip('Serviço: ${requestData.service}'),
-              _infoChip('Canal: $channelLabel'),
-              _infoChip('Perfil: $dispatchModeLabel'),
-            ],
-          ),
-          const SizedBox(height: 12),
-
+              child: const Icon(Icons.assignment_outlined,
+                  color: _kBlue, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Chamado #$requestId',
+                  style: const TextStyle(
+                      color: _kInk, fontWeight: FontWeight.w600, fontSize: 18)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _statusChip(statusLabel, _statusColor(requestData.status)),
+            _infoChip('Prioridade: $priorityLabel'),
+            _infoChip('Serviço: ${requestData.service}'),
+            _infoChip('Canal: $channelLabel'),
+            _infoChip('Perfil: $dispatchModeLabel'),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ]),
+      body: OperationalColumns(
+        left: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           // ── Parceiro alocado ────────────────────────────────────────
           _Section(
             child: Padding(
@@ -121,7 +123,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                         Text(partner?.name ?? 'Sem parceiro alocado',
                             style: const TextStyle(
                                 color: _kInk,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 13)),
                         const SizedBox(height: 2),
                         Text(
@@ -152,8 +154,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _SectionTitle('Oferta em andamento',
-                        icon: Icons.timer_outlined,
-                        color: Color(0xFFF59E0B)),
+                        icon: Icons.timer_outlined, color: Color(0xFFF59E0B)),
                     const SizedBox(height: 8),
                     Text(
                       offeredPartners.isEmpty
@@ -170,7 +171,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                           style: const TextStyle(
                               color: Color(0xFFF59E0B),
                               fontSize: 11.5,
-                              fontWeight: FontWeight.w800)),
+                              fontWeight: FontWeight.w600)),
                     ],
                     const SizedBox(height: 10),
                     ...requestData.currentOfferPartnerIds.map((partnerId) {
@@ -232,8 +233,8 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                                   style: TextStyle(fontSize: 12)),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFEF4444),
-                                side: const BorderSide(
-                                    color: Color(0xFFEF4444)),
+                                side:
+                                    const BorderSide(color: Color(0xFFEF4444)),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 8),
                               ),
@@ -293,7 +294,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                           'Serviço: R\$ ${requestData.serviceAmount.toStringAsFixed(2)} • Plataforma: R\$ ${requestData.platformFeeAmount.toStringAsFixed(2)}',
                           style: const TextStyle(
                               color: _kInk,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               fontSize: 13),
                         ),
                         const SizedBox(height: 2),
@@ -312,7 +313,9 @@ class AssistRequestDetailScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 10),
-
+        ]),
+        right:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           // ── Dados do chamado ────────────────────────────────────────
           _Section(
             child: Padding(
@@ -370,7 +373,8 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                       'Oferta por rodada para parceiro mais próximo (com janela)'),
                   _step(3,
                       'Aceite/recusa/timeout avança para próximo parceiro elegível'),
-                  _step(4, 'Com aceite, inicia execução e avança até finalização'),
+                  _step(4,
+                      'Com aceite, inicia execução e avança até finalização'),
                   _step(5,
                       'Se necessário, redespacha para nova esteira de ofertas'),
                 ],
@@ -418,8 +422,10 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      _kv('Foto local',
-                          requestData.installationChecklist!.fotoLocalInstalacao),
+                      _kv(
+                          'Foto local',
+                          requestData
+                              .installationChecklist!.fotoLocalInstalacao),
                       _kv('Foto chicote',
                           requestData.installationChecklist!.fotoChicote),
                       _kv('Foto acabamento',
@@ -451,8 +457,8 @@ class AssistRequestDetailScreen extends ConsumerWidget {
                           children: [
                             const Padding(
                               padding: EdgeInsets.only(top: 2),
-                              child: Icon(Icons.circle,
-                                  size: 5, color: _kMuted),
+                              child:
+                                  Icon(Icons.circle, size: 5, color: _kMuted),
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -475,50 +481,46 @@ class AssistRequestDetailScreen extends ConsumerWidget {
           ],
 
           const SizedBox(height: 14),
-
-          // ── Ações ───────────────────────────────────────────────────
+        ]),
+      ),
+      footer: // ── Ações ───────────────────────────────────────────────────
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: requestData.status == AssistRequestStatus.finalizado ||
-                        requestData.waitingAcceptance
-                    ? null
-                    : () {
-                        final result = notifier.advanceStatus(requestData.id);
-                        if (!result.advanced && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(result.message ??
-                                  'Não foi possível avançar o status.'),
-                            ),
-                          );
-                        }
-                      },
-                icon: const Icon(Icons.playlist_add_check_circle_outlined,
-                    size: 16),
-                label: const Text('Avançar status',
-                    style: TextStyle(fontSize: 12)),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _kBlue,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => notifier.redispatchNearest(requestData.id),
-                icon: const Icon(Icons.radar_outlined, size: 16),
-                label: const Text('Redespachar mais próximo',
-                    style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _kMuted,
-                  side: const BorderSide(color: _kLine),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                ),
-              ),
-            ],
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          FilledButton.icon(
+            onPressed: requestData.status == AssistRequestStatus.finalizado ||
+                    requestData.waitingAcceptance
+                ? null
+                : () {
+                    final result = notifier.advanceStatus(requestData.id);
+                    if (!result.advanced && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(result.message ??
+                              'Não foi possível avançar o status.'),
+                        ),
+                      );
+                    }
+                  },
+            icon:
+                const Icon(Icons.playlist_add_check_circle_outlined, size: 16),
+            label: const Text('Avançar status', style: TextStyle(fontSize: 12)),
+            style: FilledButton.styleFrom(
+              backgroundColor: _kBlue,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => notifier.redispatchNearest(requestData.id),
+            icon: const Icon(Icons.radar_outlined, size: 16),
+            label: const Text('Redespachar mais próximo',
+                style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _kMuted,
+              side: const BorderSide(color: _kLine),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            ),
           ),
         ],
       ),
@@ -530,6 +532,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: RichText(
         text: TextSpan(
+          style: const TextStyle(fontFamily: 'DeviceEditorSegoe'),
           children: [
             TextSpan(
               text: '$label: ',
@@ -563,7 +566,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
             ),
             child: Text('$number',
                 style: const TextStyle(
-                    color: _kBlue, fontSize: 10, fontWeight: FontWeight.w800)),
+                    color: _kBlue, fontSize: 10, fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -593,7 +596,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
           const SizedBox(width: 4),
           Text('$label: ${ok ? 'OK' : 'Pendente'}',
               style: TextStyle(
-                  color: color, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                  color: color, fontSize: 10.5, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -623,7 +626,7 @@ class AssistRequestDetailScreen extends ConsumerWidget {
       ),
       child: Text(label,
           style: TextStyle(
-              color: color, fontSize: 11, fontWeight: FontWeight.w800)),
+              color: color, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -649,7 +652,7 @@ class _Section extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(9),
         border: Border.all(color: borderColor ?? _kLine),
       ),
       child: child,
@@ -671,7 +674,7 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 6),
         Text(text,
             style: const TextStyle(
-                color: _kInk, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                color: _kInk, fontWeight: FontWeight.w600, fontSize: 12.5)),
       ],
     );
   }

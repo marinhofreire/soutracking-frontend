@@ -1,3 +1,4 @@
+import '../../core/operational_panel.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,11 @@ class MasterPanelScreen extends ConsumerWidget {
   const MasterPanelScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => OperationalPanel(
+        child: Builder(builder: (context) => _buildContents(context, ref)),
+      );
+
+  Widget _buildContents(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
     final devices =
         ref.watch(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
@@ -40,7 +45,7 @@ class MasterPanelScreen extends ConsumerWidget {
     final chamadosAbertos = stats?.total ?? 0;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -72,7 +77,7 @@ class MasterPanelScreen extends ConsumerWidget {
                 return Column(
                   children: [
                     for (final c in children) ...[
-                      c,
+                      SizedBox(height: 290, child: c),
                       const SizedBox(height: 13),
                     ],
                   ],
@@ -112,15 +117,13 @@ class MasterPanelScreen extends ConsumerWidget {
                   ],
                 );
               }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: companiesCard),
-                    const SizedBox(width: 13),
-                    const SizedBox(width: 265, child: reference),
-                  ],
-                ),
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: companiesCard),
+                  const SizedBox(width: 13),
+                  const SizedBox(width: 265, child: reference),
+                ],
               );
             },
           ),
@@ -155,8 +158,8 @@ class _NoticeBanner extends StatelessWidget {
         Container(
           width: 6,
           height: 6,
-          decoration:
-              const BoxDecoration(color: Color(0xFFC69D48), shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+              color: Color(0xFFC69D48), shape: BoxShape.circle),
         ),
         const SizedBox(width: 7),
         Expanded(
@@ -195,7 +198,7 @@ class _Heading extends StatelessWidget {
               Text('Sua operação, em um só lugar.',
                   style: TextStyle(
                       color: _kInk,
-                      fontSize: 24,
+                      fontSize: 18,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.6)),
               SizedBox(height: 5),
@@ -221,9 +224,7 @@ class _Heading extends StatelessWidget {
               const SizedBox(width: 8),
               Text(_todayLabel(),
                   style: const TextStyle(
-                      color: _kInk,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
+                      color: _kInk, fontSize: 11, fontWeight: FontWeight.w600)),
               const Text('  ·  Visão do dia',
                   style: TextStyle(
                       color: Color(0xFFA2AEC0),
@@ -238,8 +239,18 @@ class _Heading extends StatelessWidget {
 
   static String _todayLabel() {
     const meses = [
-      'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
-      'jul', 'ago', 'set', 'out', 'nov', 'dez',
+      'jan',
+      'fev',
+      'mar',
+      'abr',
+      'mai',
+      'jun',
+      'jul',
+      'ago',
+      'set',
+      'out',
+      'nov',
+      'dez',
     ];
     final now = DateTime.now();
     return '${now.day} ${meses[now.month - 1]} ${now.year}';
@@ -276,21 +287,24 @@ class _KpiGrid extends StatelessWidget {
           chamadosAbertos > 0 ? 'Verificar SLA' : 'Nenhum chamado aberto',
           Icons.headset_mic_outlined,
           chamadosAbertos > 0 ? _kRed : _kGreen),
-      _KpiData('Veículos na frota', '$totalVeiculos',
-          '$online online · $offline offline', Icons.directions_car_outlined, _kMuted),
+      _KpiData(
+          'Veículos na frota',
+          '$totalVeiculos',
+          '$online online · $offline offline',
+          Icons.directions_car_outlined,
+          _kMuted),
       _KpiData('Demandas pendentes', '—', 'Instalações e manutenções',
           Icons.calendar_today_outlined, _kAmber),
     ];
 
     return LayoutBuilder(builder: (context, constraints) {
-      final perRow = constraints.maxWidth > 1100
+      final perRow = constraints.maxWidth >= 1040
           ? 6
           : constraints.maxWidth > 760
               ? 3
               : 2;
       final gap = 10.0;
-      final cardWidth =
-          (constraints.maxWidth - gap * (perRow - 1)) / perRow;
+      final cardWidth = (constraints.maxWidth - gap * (perRow - 1)) / perRow;
       return Wrap(
         spacing: gap,
         runSpacing: gap,
@@ -403,7 +417,8 @@ class _CardHead extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: pillRed ? const Color(0xFFFFF0F1) : const Color(0xFFEDF4FF),
+              color:
+                  pillRed ? const Color(0xFFFFF0F1) : const Color(0xFFEDF4FF),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(pillText!,
@@ -461,8 +476,8 @@ class _AttentionCard extends StatelessWidget {
                 return ListView.separated(
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(
-                      height: 1, color: Color(0xFFEFF3F8)),
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: Color(0xFFEFF3F8)),
                   itemBuilder: (context, i) {
                     final c = items[i];
                     final urgent = c.status == 'aguardando';
@@ -494,11 +509,15 @@ class _AttentionCard extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(c.tipo.isNotEmpty ? c.tipo : 'Chamado #${c.id}',
+                                Text(
+                                    c.tipo.isNotEmpty
+                                        ? c.tipo
+                                        : 'Chamado #${c.id}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                        fontSize: 11, fontWeight: FontWeight.w600)),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 2),
                                 Text(c.status,
                                     style: const TextStyle(
@@ -532,7 +551,9 @@ class _EmptyMini extends StatelessWidget {
       child: Text(text,
           textAlign: TextAlign.center,
           style: const TextStyle(
-              color: Color(0xFF9DAAC0), fontSize: 10, fontWeight: FontWeight.w600)),
+              color: Color(0xFF9DAAC0),
+              fontSize: 10,
+              fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -585,8 +606,7 @@ class _FleetHealthCard extends StatelessWidget {
                                 color: _kInk)),
                         const Text('veículos',
                             style: TextStyle(
-                                fontSize: 9,
-                                color: Color(0xFF8390A4))),
+                                fontSize: 9, color: Color(0xFF8390A4))),
                       ],
                     ),
                   ],
@@ -642,7 +662,8 @@ class _FleetHealthCard extends StatelessWidget {
         Container(
           width: 7,
           height: 7,
-          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(width: 6),
         Text(label,
@@ -686,7 +707,8 @@ class _RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) => oldDelegate.pct != pct;
+  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
+      oldDelegate.pct != pct;
 }
 
 class _PipelineCard extends StatelessWidget {
@@ -706,7 +728,10 @@ class _PipelineCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardHead(title: 'Funil comercial', pillText: 'Sem CRM ligado', pillRed: true),
+          const _CardHead(
+              title: 'Funil comercial',
+              pillText: 'Sem CRM ligado',
+              pillRed: true),
           const SizedBox(height: 2),
           const Text('Oportunidades por etapa',
               style: TextStyle(
@@ -733,7 +758,8 @@ class _PipelineCard extends StatelessWidget {
 }
 
 class _StageRow extends StatelessWidget {
-  const _StageRow({required this.label, required this.value, required this.color});
+  const _StageRow(
+      {required this.label, required this.value, required this.color});
   final String label;
   final int value;
   final Color color;
@@ -746,7 +772,9 @@ class _StageRow extends StatelessWidget {
           width: 58,
           child: Text(label,
               style: const TextStyle(
-                  color: Color(0xFF75849B), fontSize: 10, fontWeight: FontWeight.w500)),
+                  color: Color(0xFF75849B),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500)),
         ),
         Expanded(
           child: Container(
@@ -759,7 +787,8 @@ class _StageRow extends StatelessWidget {
               alignment: Alignment.centerLeft,
               widthFactor: value <= 0 ? 0.001 : (value / 4).clamp(0.0, 1.0),
               child: Container(
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(3)),
               ),
             ),
           ),
@@ -769,7 +798,8 @@ class _StageRow extends StatelessWidget {
           width: 14,
           child: Text('$value',
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+              style:
+                  const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
         ),
       ],
     );
@@ -801,7 +831,9 @@ class _CompaniesCard extends StatelessWidget {
               const Expanded(
                 child: Text('Empresas sob sua gestão',
                     style: TextStyle(
-                        color: _kInk, fontSize: 12, fontWeight: FontWeight.w700)),
+                        color: _kInk,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
               ),
               const Text('1 empresa · dado real da sessão',
                   style: TextStyle(
@@ -811,39 +843,47 @@ class _CompaniesCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Table(
-            columnWidths: const {
-              0: FlexColumnWidth(2.2),
-              1: FlexColumnWidth(1.2),
-              2: FlexColumnWidth(1),
-              3: FlexColumnWidth(1),
-              4: FlexColumnWidth(1),
-            },
-            children: [
-              const TableRow(
-                decoration: BoxDecoration(color: Color(0xFFF9FBFE)),
-                children: [
-                  _TableHeadCell('Empresa'),
-                  _TableHeadCell('Frota'),
-                  _TableHeadCell('Chamados'),
-                  _TableHeadCell('Demandas'),
-                  _TableHeadCell('Situação'),
-                ],
-              ),
-              TableRow(
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: Color(0xFFEEF2F8))),
-                ),
-                children: [
-                  _TableCompanyCell(companyName),
-                  _TableCell('$totalVeiculos / $online online'),
-                  _TableCell('$chamadosAbertos abertos'),
-                  const _TableCell('—'),
-                  const _TableStatusCell(),
-                ],
-              ),
-            ],
-          ),
+          LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                        width: math.max(640, constraints.maxWidth),
+                        child: Table(
+                          columnWidths: const {
+                            0: FlexColumnWidth(2.2),
+                            1: FlexColumnWidth(1.2),
+                            2: FlexColumnWidth(1),
+                            3: FlexColumnWidth(1),
+                            4: FlexColumnWidth(1),
+                          },
+                          children: [
+                            const TableRow(
+                              decoration:
+                                  BoxDecoration(color: Color(0xFFF9FBFE)),
+                              children: [
+                                _TableHeadCell('Empresa'),
+                                _TableHeadCell('Frota'),
+                                _TableHeadCell('Chamados'),
+                                _TableHeadCell('Demandas'),
+                                _TableHeadCell('Situação'),
+                              ],
+                            ),
+                            TableRow(
+                              decoration: const BoxDecoration(
+                                border: Border(
+                                    top: BorderSide(color: Color(0xFFEEF2F8))),
+                              ),
+                              children: [
+                                _TableCompanyCell(companyName),
+                                _TableCell('$totalVeiculos / $online online'),
+                                _TableCell('$chamadosAbertos abertos'),
+                                const _TableCell('—'),
+                                const _TableStatusCell(),
+                              ],
+                            ),
+                          ],
+                        )),
+                  )),
         ],
       ),
     );
@@ -860,7 +900,9 @@ class _TableHeadCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
       child: Text(text,
           style: const TextStyle(
-              color: Color(0xFF8895A9), fontSize: 9, fontWeight: FontWeight.w500)),
+              color: Color(0xFF8895A9),
+              fontSize: 9,
+              fontWeight: FontWeight.w500)),
     );
   }
 }
@@ -886,7 +928,13 @@ class _TableCompanyCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final abbr = name.trim().isEmpty
         ? '?'
-        : name.trim().split(RegExp(r'\s+')).take(2).map((w) => w[0]).join().toUpperCase();
+        : name
+            .trim()
+            .split(RegExp(r'\s+'))
+            .take(2)
+            .map((w) => w[0])
+            .join()
+            .toUpperCase();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
       child: Row(
@@ -901,14 +949,17 @@ class _TableCompanyCell extends StatelessWidget {
             ),
             child: Text(abbr,
                 style: const TextStyle(
-                    color: Color(0xFF7393C5), fontSize: 8, fontWeight: FontWeight.w700)),
+                    color: Color(0xFF7393C5),
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700)),
           ),
           const SizedBox(width: 7),
           Expanded(
             child: Text(name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -963,14 +1014,17 @@ class _ReferenceCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.6)),
               ),
-              const Icon(Icons.history_rounded, size: 13, color: Color(0xFF5E7EAC)),
+              const Icon(Icons.history_rounded,
+                  size: 13, color: Color(0xFF5E7EAC)),
             ],
           ),
           const SizedBox(height: 8),
           const Text('Operação SouFind',
-              style: TextStyle(color: _kInk, fontSize: 12, fontWeight: FontWeight.w700)),
+              style: TextStyle(
+                  color: _kInk, fontSize: 12, fontWeight: FontWeight.w700)),
           const SizedBox(height: 2),
-          const Text('Retrato de 23/09/2026 · números fixos, não consultam produção',
+          const Text(
+              'Retrato de 23/09/2026 · números fixos, não consultam produção',
               style: TextStyle(
                   color: Color(0xFF8B98AE),
                   fontSize: 8.5,
@@ -988,7 +1042,8 @@ class _ReferenceCard extends StatelessWidget {
           const SizedBox(height: 10),
           const Text(
             'Retrato pontual, não é MRR e não acompanha filtro de empresa.',
-            style: TextStyle(color: Color(0xFF7D8BA1), fontSize: 9, height: 1.5),
+            style:
+                TextStyle(color: Color(0xFF7D8BA1), fontSize: 9, height: 1.5),
           ),
         ],
       ),
@@ -1009,7 +1064,9 @@ class _RefValue extends StatelessWidget {
         children: [
           Text(value,
               style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.6)),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.6)),
           const SizedBox(height: 2),
           Text(label,
               style: const TextStyle(color: Color(0xFF7E8CA3), fontSize: 9)),
