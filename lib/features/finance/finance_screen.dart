@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/asaas_config.dart';
-import '../admin/admin_reference_ui.dart';
 import 'models/finance_models.dart';
 import 'repositories/asaas_finance_repository.dart';
 import 'repositories/finance_repository.dart';
 import 'repositories/mock_finance_repository.dart';
 import 'services/finance_api_service.dart';
-import 'widgets/finance_filters_bar.dart';
-import 'widgets/finance_kpi_row.dart';
-import 'widgets/finance_summary_cards.dart';
-import 'widgets/finance_table.dart';
 
 final financeApiServiceProvider = Provider<FinanceApiService?>((ref) {
   final config = ref.watch(asaasConfigProvider);
@@ -50,10 +46,9 @@ class FinanceScreen extends ConsumerStatefulWidget {
 }
 
 class _FinanceScreenState extends ConsumerState<FinanceScreen> {
-  static const String _financeImplementationMessage =
-      'Modulo em implantacao: indicadores, cobrancas e exportacoes seguem em demonstracao com repositorio mock e nao representam financeiro produtivo.';
   final _searchController = TextEditingController();
 
+  String? _selectedId;
   String _search = '';
   String _status = 'Todos';
   String _period = '30 dias';
@@ -68,117 +63,116 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final kpiAsync = ref.watch(financeKpiProvider);
-    final summaryAsync = ref.watch(financeSummaryCardsProvider);
-    final chargesAsync = ref.watch(financeChargesProvider);
-
-    return AdminReferenceScaffold(
-      title: 'Financeiro',
-      breadcrumbs: const ['Operação', 'Financeiro'],
-      selectedMenu: 'finance',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _ImplementationBanner(
-            message: _financeImplementationMessage,
-          ),
-          const SizedBox(height: 12),
-          kpiAsync.when(
-            data: (summary) => FinanceKpiRow(summary: summary),
-            loading: () => const _LoadingPanel(),
-            error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar indicadores: $error',
-            ),
-          ),
-          const SizedBox(height: 12),
-          summaryAsync.when(
-            data: (cards) => FinanceSummaryCards(cards: cards),
-            loading: () => const _LoadingPanel(),
-            error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar resumo financeiro: $error',
-            ),
-          ),
-          const SizedBox(height: 12),
-          chargesAsync.when(
-            data: (records) {
-              final statusOptions = <String>[
-                'Todos',
-                ...{for (final item in records) item.status.label},
-              ];
-              const periodOptions = ['Hoje', '7 dias', '30 dias', '90 dias'];
-              final methodOptions = <String>[
-                'Todos',
-                ...{for (final item in records) item.paymentMethod.label},
-              ];
-              final clientOptions = <String>[
-                'Todos',
-                ...{for (final item in records) item.client},
-              ];
-
-              final filtered = _applyFilters(records);
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FinanceFiltersBar(
-                    searchController: _searchController,
-                    status: _status,
-                    period: _period,
-                    paymentMethod: _paymentMethod,
-                    client: _client,
-                    statusOptions: statusOptions,
-                    periodOptions: periodOptions,
-                    paymentMethodOptions: methodOptions,
-                    clientOptions: clientOptions,
-                    onSearchChanged: (value) => setState(() => _search = value),
-                    onStatusChanged: (value) => setState(() => _status = value),
-                    onPeriodChanged: (value) => setState(() => _period = value),
-                    onPaymentMethodChanged: (value) =>
-                        setState(() => _paymentMethod = value),
-                    onClientChanged: (value) => setState(() => _client = value),
-                    onMoreFilters: () => _showMockAction(
-                        'Mais filtros ainda nao consultam backend financeiro real.'),
-                    onNewCharge: () => _showMockAction(
-                        'Criacao de cobranca permanece bloqueada em modo demonstrativo.'),
-                    onPaymentLink: () => _showMockAction(
-                        'Link de pagamento permanece bloqueado em modo demonstrativo.'),
-                    onRecurrence: () => _showMockAction(
-                        'Recorrencia permanece bloqueada em modo demonstrativo.'),
-                    onExport: () => _showMockAction(
-                        'Exportacao financeira permanece bloqueada sem backend dedicado.'),
-                  ),
-                  const SizedBox(height: 12),
-                  _mockDataNotice(
-                    filteredCount: filtered.length,
-                    totalCount: records.length,
-                  ),
-                  const SizedBox(height: 12),
-                  FinanceTable(
-                    records: filtered,
-                    onView: (record) {
-                      _showMockAction(
-                          'Visualizacao detalhada da cobranca ${record.id} permanece bloqueada em modo demonstrativo.');
-                    },
-                    onMarkPaid: (record) {
-                      _showMockAction(
-                          'Baixa financeira da cobranca ${record.id} nao executa operacao real.');
-                    },
-                    onCancel: (record) {
-                      _showMockAction(
-                          'Cancelamento da cobranca ${record.id} nao executa operacao real.');
-                    },
-                  ),
-                ],
-              );
-            },
-            loading: () => const _LoadingPanel(),
-            error: (error, _) => _ErrorPanel(
-              message: 'Falha ao carregar cobrancas: $error',
-            ),
-          ),
-        ],
-      ),
-    );
+    final configured = ref.watch(financeApiServiceProvider) != null;
+    // Presentation gate: the production view never renders fallback fixtures.
+    final list = configured
+        ? ref.watch(financeChargesProvider)
+        : const AsyncData<List<FinanceChargeRecord>>([]);
+    final records = list.valueOrNull ?? <FinanceChargeRecord>[],
+        filtered = _applyFilters(records);
+    final selected = filtered.where((r) => r.id == _selectedId).firstOrNull;
+    Widget filter(String label, String value, List<String> options,
+            ValueChanged<String> change) =>
+        Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DropdownButtonFormField<String>(
+                key: ValueKey('$label-$value'),
+                isExpanded: true,
+                initialValue: options.contains(value) ? value : options.first,
+                decoration: InputDecoration(labelText: label),
+                items: options
+                    .map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(v, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => change(v));
+                }));
+    return ModuleScaffold(
+        title: 'Cobranças',
+        subtitle: 'Acompanhe os recebimentos e vencimentos.',
+        navigation:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Filtros'),
+          filter(
+              'Status',
+              _status,
+              {'Todos', ...records.map((r) => r.status.label)}.toList(),
+              (v) => _status = v),
+          filter('Período', _period, ['Hoje', '7 dias', '30 dias', '90 dias'],
+              (v) => _period = v),
+          filter(
+              'Forma de pagamento',
+              _paymentMethod,
+              {'Todos', ...records.map((r) => r.paymentMethod.label)}.toList(),
+              (v) => _paymentMethod = v),
+          filter(
+              'Cliente',
+              _client,
+              {'Todos', ...records.map((r) => r.client)}.toList(),
+              (v) => _client = v)
+        ]),
+        content:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _search = v),
+              decoration: const InputDecoration(
+                  hintText: 'Buscar cobrança ou cliente',
+                  prefixIcon: Icon(Icons.search))),
+          const SizedBox(height: 14),
+          list.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) =>
+                  const ModuleEmpty('Não foi possível carregar as cobranças',
+                      'Tente novamente em instantes.'),
+              data: (_) => filtered.isEmpty
+                  ? ModuleEmpty(
+                      configured
+                          ? 'Nenhuma cobrança encontrada'
+                          : 'Cobranças indisponíveis',
+                      configured
+                          ? 'Revise os filtros ou aguarde novos registros.'
+                          : 'As cobranças aparecerão quando o serviço estiver disponível.',
+                      icon: Icons.receipt_long_outlined)
+                  : Column(children: [
+                      for (final r in filtered)
+                        ModuleListItem(
+                            title: r.client,
+                            subtitle:
+                                '${r.description} · ${r.dueDate.day}/${r.dueDate.month}/${r.dueDate.year}',
+                            icon: Icons.receipt_long_outlined,
+                            selected: r.id == _selectedId,
+                            onTap: () => setState(() => _selectedId = r.id),
+                            trailing: ModuleStatusChip(r.status.label,
+                                tone: r.status == FinanceStatus.paid
+                                    ? ModuleTone.success
+                                    : r.status == FinanceStatus.overdue
+                                        ? ModuleTone.critical
+                                        : ModuleTone.neutral))
+                    ]))
+        ]),
+        detail: selected == null
+            ? const ModuleEmpty('Selecione uma cobrança',
+                'O valor, o vencimento e o status aparecem aqui.')
+            : ModuleCard(
+                title: 'Resumo da cobrança',
+                child: Column(children: [
+                  ModuleDetailRow('Cliente', selected.client),
+                  ModuleDetailRow('Descrição', selected.description),
+                  ModuleDetailRow('Valor',
+                      'R\$ ${selected.amount.toStringAsFixed(2).replaceAll(".", ",")}'),
+                  ModuleDetailRow('Vencimento',
+                      '${selected.dueDate.day}/${selected.dueDate.month}/${selected.dueDate.year}'),
+                  ModuleDetailRow('Pagamento', selected.paymentMethod.label),
+                  ModuleDetailRow('Status', selected.status.label)
+                ])),
+        actions: const [
+          OutlinedButton(onPressed: null, child: Text('Exportar')),
+          OutlinedButton(onPressed: null, child: Text('Link de pagamento')),
+          OutlinedButton(onPressed: null, child: Text('Recorrência')),
+          FilledButton(onPressed: null, child: Text('Nova cobrança'))
+        ]);
   }
 
   List<FinanceChargeRecord> _applyFilters(List<FinanceChargeRecord> records) {
@@ -212,123 +206,5 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen> {
 
       return true;
     }).toList();
-  }
-
-  void _showMockAction(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Financeiro depende de backend dedicado. Operacao nao executada: $message',
-        ),
-      ),
-    );
-  }
-
-  Widget _mockDataNotice({
-    required int filteredCount,
-    required int totalCount,
-  }) {
-    return AdminGlassPanel(
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFBEB),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: const Text(
-              'VALORES MOCK',
-              style: TextStyle(
-                color: Color(0xFF92400E),
-                fontWeight: FontWeight.w800,
-                fontSize: 11.5,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Resumo demonstrativo: $filteredCount de $totalCount cobrancas visiveis com dados ficticios, sem baixa, emissao ou exportacao real.',
-              style: const TextStyle(
-                color: Color(0xFF5D728E),
-                fontWeight: FontWeight.w600,
-                fontSize: 12.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ImplementationBanner extends StatelessWidget {
-  const _ImplementationBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFBEB),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFFDE68A)),
-        ),
-        child: Text(
-          message,
-          style: const TextStyle(
-            color: Color(0xFF92400E),
-            fontWeight: FontWeight.w700,
-            fontSize: 12.2,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LoadingPanel extends StatelessWidget {
-  const _LoadingPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    return const AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator()),
-      ),
-    );
-  }
-}
-
-class _ErrorPanel extends StatelessWidget {
-  const _ErrorPanel({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return AdminGlassPanel(
-      child: SizedBox(
-        height: 120,
-        child: Center(
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFDDE5F0),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
