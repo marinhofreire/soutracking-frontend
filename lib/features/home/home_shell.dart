@@ -6674,6 +6674,7 @@ class _TopSearchBar extends StatelessWidget {
                     icon: Icons.auto_awesome_rounded,
                     count: null,
                     tooltip: 'Copiloto IA',
+                    backgroundColor: Colors.white,
                     selected: aiPanelOpen,
                     onTap: onAiTap,
                   ),
@@ -11329,27 +11330,19 @@ class _AiAssistButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF176EEB), Color(0xFF5B4EFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFE2E8F0)),
           borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-                color: const Color(0xFF176EEB).withValues(alpha: 0.30),
-                blurRadius: 8,
-                offset: const Offset(0, 3)),
-          ],
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 14),
+            Icon(Icons.auto_awesome_rounded,
+                color: Color(0xFF0F69E8), size: 14),
             SizedBox(width: 6),
             Text('IA',
                 style: TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF0F69E8),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                     letterSpacing: 0.5)),
@@ -14289,6 +14282,7 @@ class _TopIcon extends StatelessWidget {
     this.onTap,
     this.tooltip,
     this.selected = false,
+    this.backgroundColor,
   });
 
   final IconData icon;
@@ -14296,6 +14290,7 @@ class _TopIcon extends StatelessWidget {
   final VoidCallback? onTap;
   final String? tooltip;
   final bool selected;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -14312,9 +14307,10 @@ class _TopIcon extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFFEAF3FF)
-                    : Colors.white.withValues(alpha: 0.82),
+                color: backgroundColor ??
+                    (selected
+                        ? const Color(0xFFEAF3FF)
+                        : Colors.white.withValues(alpha: 0.82)),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: selected
