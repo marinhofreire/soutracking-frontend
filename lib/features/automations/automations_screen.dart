@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
@@ -11,8 +12,19 @@ import '../../state/session_state.dart';
 
 // ── Data model ─────────────────────────────────────────────────────────────────
 
-enum _TriggerType { speed, geofence, ignition, noComm, odometer, temperature, battery, harshBrake, scheduled }
-enum _ActionType  { whatsapp, alert, createTicket, notify, block, report }
+enum _TriggerType {
+  speed,
+  geofence,
+  ignition,
+  noComm,
+  odometer,
+  temperature,
+  battery,
+  harshBrake,
+  scheduled
+}
+
+enum _ActionType { whatsapp, alert, createTicket, notify, block, report }
 
 class _AutoRule {
   _AutoRule({
@@ -40,7 +52,12 @@ class _AutoRule {
 }
 
 class _ExecLog {
-  const _ExecLog({required this.ruleId, required this.ruleName, required this.timestamp, required this.result, required this.detail});
+  const _ExecLog(
+      {required this.ruleId,
+      required this.ruleName,
+      required this.timestamp,
+      required this.result,
+      required this.detail});
   final String ruleId;
   final String ruleName;
   final DateTime timestamp;
@@ -101,11 +118,13 @@ _AutoRule _autoRuleFromBridgeRule(BridgeRule r) {
 
 // ── Providers ──────────────────────────────────────────────────────────────────
 
-final _logProvider    = StateProvider<List<_ExecLog>>((ref) => const []);
-final _tabProvider    = StateProvider<int>((ref) => 0);
-final _builderOpen    = StateProvider<bool>((ref) => false);
+final _logProvider = StateProvider<List<_ExecLog>>((ref) => const []);
+final _tabProvider = StateProvider<int>((ref) => 0);
+final _builderOpen = StateProvider<bool>((ref) => false);
 
 // ── Screen ─────────────────────────────────────────────────────────────────────
+
+final _selectedRuleForLayout = StateProvider<String?>((ref) => null);
 
 class AutomationsScreen extends ConsumerWidget {
   const AutomationsScreen({super.key, this.onClose});
@@ -114,107 +133,107 @@ class AutomationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rulesAsync = ref.watch(bridgeRulesProvider);
-    final rules = rulesAsync.valueOrNull?.map(_autoRuleFromBridgeRule).toList() ?? const <_AutoRule>[];
-    final log     = ref.watch(_logProvider);
-    final tab     = ref.watch(_tabProvider);
+    final rules =
+        rulesAsync.valueOrNull?.map(_autoRuleFromBridgeRule).toList() ??
+            const <_AutoRule>[];
+    final log = ref.watch(_logProvider);
+    final tab = ref.watch(_tabProvider);
     final builder = ref.watch(_builderOpen);
 
-    final active   = rules.where((r) => r.active).length;
-    final errors   = rules.where((r) => r.hasError).length;
-    final todayExec = log.where((l) => DateTime.now().difference(l.timestamp).inHours < 24).length;
+    final active = rules.where((r) => r.active).length;
+    final errors = rules.where((r) => r.hasError).length;
+    final todayExec = log
+        .where((l) => DateTime.now().difference(l.timestamp).inHours < 24)
+        .length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Header ──────────────────────────────────────────────────────────
-        Row(children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(color: const Color(0xFF176EEB).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-            child: const Icon(Icons.bolt_rounded, color: Color(0xFF176EEB), size: 20),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Automações', style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 18)),
-              SizedBox(height: 1),
-              Text('Regras, gatilhos e ações automáticas', style: TextStyle(color: Color(0xFF60718D), fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          )),
-          if (errors > 0)
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.30)),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.error_outline_rounded, size: 13, color: Color(0xFFEF4444)),
-                const SizedBox(width: 5),
-                Text('$errors erro${errors != 1 ? 's' : ''}', style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w800, fontSize: 11)),
-              ]),
-            ),
+    if (builder)
+      return _RuleBuilder(
+        onClose: () => ref.read(_builderOpen.notifier).state = false,
+        onSaved: () {
+          ref.read(_builderOpen.notifier).state = false;
+          ref.invalidate(bridgeRulesProvider);
+        },
+      );
+    final selectedId = ref.watch(_selectedRuleForLayout);
+    final selected = rules.where((r) => r.id == selectedId).firstOrNull;
+    return ModuleScaffold(
+        title: 'Automações',
+        subtitle: 'Regras, gatilhos e ações automáticas.',
+        navigation:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Automação'),
+          ModuleListItem(
+              title: 'Regras',
+              icon: Icons.rule_rounded,
+              selected: tab == 0,
+              onTap: () => ref.read(_tabProvider.notifier).state = 0),
+          ModuleListItem(
+              title: 'Histórico',
+              icon: Icons.history_rounded,
+              selected: tab == 1,
+              onTap: () => ref.read(_tabProvider.notifier).state = 1)
+        ]),
+        scrollContent: false,
+        content: tab == 0
+            ? (rules.isEmpty
+                ? const ModuleEmpty('Nenhuma regra cadastrada',
+                    'Use Nova regra para configurar uma automação.',
+                    icon: Icons.rule_rounded)
+                : _RulesList(
+                    rules: rules,
+                    onSelected: (rule) => ref
+                        .read(_selectedRuleForLayout.notifier)
+                        .state = rule.id))
+            : _ExecHistory(log: log),
+        detail:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Detalhes da regra'),
+          if (selected == null)
+            const ModuleCard(
+                title: 'Selecione uma regra',
+                child: ModuleEmpty('Nenhuma regra selecionada',
+                    'Os detalhes do gatilho e das ações aparecem aqui.'))
+          else
+            ModuleCard(
+                title: selected.name,
+                child: Column(children: [
+                  ModuleDetailRow('SE', selected.triggerLabel),
+                  ModuleDetailRow('Condição', selected.condition),
+                  ModuleDetailRow(
+                      'ENTÃO', selected.actions.map((a) => a.name).join(', ')),
+                  ModuleDetailRow(
+                      'Status', selected.active ? 'Ativa' : 'Inativa')
+                ])),
+          ModuleCard(
+              title: 'Resumo',
+              child: Column(children: [
+                ModuleDetailRow('Regras', '${rules.length}'),
+                ModuleDetailRow('Ativas', '$active'),
+                ModuleDetailRow('Execuções hoje', '$todayExec'),
+                ModuleDetailRow('Erros', '$errors')
+              ]))
+        ]),
+        headerActions: [
+          IconButton(
+              tooltip: 'Atualizar',
+              onPressed: () => ref.invalidate(bridgeRulesProvider),
+              icon: const Icon(Icons.refresh_rounded))
+        ],
+        actions: [
           FilledButton.icon(
             onPressed: () => ref.read(_builderOpen.notifier).state = true,
             icon: const Icon(Icons.add_rounded, size: 15),
             label: const Text('Nova regra', style: TextStyle(fontSize: 12)),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF176EEB), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            onPressed: () => ref.invalidate(bridgeRulesProvider),
-            icon: const Icon(Icons.refresh_rounded),
-            style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
-          ),
-          IconButton(
-            onPressed: onClose,
-            icon: const Icon(Icons.close_rounded),
-            style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
-          ),
-        ]),
-        const SizedBox(height: 10),
-
-        // ── KPI bar ──────────────────────────────────────────────────────────
-        _KpiBar(total: rules.length, active: active, todayExec: todayExec, errors: errors),
-        const SizedBox(height: 10),
-
-        // ── Tabs ─────────────────────────────────────────────────────────────
-        Container(
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFDDE5F0))),
-          padding: const EdgeInsets.all(4),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            _tabBtn(ref, 0, 'Regras', Icons.rule_rounded, tab),
-            _tabBtn(ref, 1, 'Histórico', Icons.history_rounded, tab),
-          ]),
-        ),
-        const SizedBox(height: 10),
-
-        // ── Content ───────────────────────────────────────────────────────────
-        Expanded(
-          child: Stack(
-            children: [
-              tab == 0
-                  ? _RulesList(rules: rules)
-                  : _ExecHistory(log: log),
-              if (builder)
-                _RuleBuilder(
-                  onClose: () => ref.read(_builderOpen.notifier).state = false,
-                  onSaved: () {
-                    ref.read(_builderOpen.notifier).state = false;
-                    ref.invalidate(bridgeRulesProvider);
-                  },
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF176EEB),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+          )
+        ]);
   }
 
-  Widget _tabBtn(WidgetRef ref, int index, String label, IconData icon, int current) {
+  Widget _tabBtn(
+      WidgetRef ref, int index, String label, IconData icon, int current) {
     final active = current == index;
     return GestureDetector(
       onTap: () => ref.read(_tabProvider.notifier).state = index,
@@ -226,9 +245,14 @@ class AutomationsScreen extends ConsumerWidget {
           borderRadius: BorderRadius.circular(7),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 13, color: active ? Colors.white : const Color(0xFF60718D)),
+          Icon(icon,
+              size: 13, color: active ? Colors.white : const Color(0xFF60718D)),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: active ? Colors.white : const Color(0xFF60718D), fontWeight: FontWeight.w700, fontSize: 12)),
+          Text(label,
+              style: TextStyle(
+                  color: active ? Colors.white : const Color(0xFF60718D),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12)),
         ]),
       ),
     );
@@ -238,23 +262,39 @@ class AutomationsScreen extends ConsumerWidget {
 // ── KPI bar ────────────────────────────────────────────────────────────────────
 
 class _KpiBar extends StatelessWidget {
-  const _KpiBar({required this.total, required this.active, required this.todayExec, required this.errors});
+  const _KpiBar(
+      {required this.total,
+      required this.active,
+      required this.todayExec,
+      required this.errors});
   final int total, active, todayExec, errors;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDDE5F0))),
-      child: IntrinsicHeight(child: Row(children: [
-        _kpi('Total de regras',  '$total',    const Color(0xFF526684),  Icons.rule_rounded),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDE5F0))),
+      child: IntrinsicHeight(
+          child: Row(children: [
+        _kpi('Total de regras', '$total', const Color(0xFF526684),
+            Icons.rule_rounded),
         const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-        _kpi('Ativas',           '$active',   const Color(0xFF10B981),  Icons.toggle_on_rounded),
+        _kpi('Ativas', '$active', const Color(0xFF10B981),
+            Icons.toggle_on_rounded),
         const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-        _kpi('Pausadas',         '${total - active}', const Color(0xFF9DB1CC), Icons.pause_circle_outline_rounded),
+        _kpi('Pausadas', '${total - active}', const Color(0xFF9DB1CC),
+            Icons.pause_circle_outline_rounded),
         const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-        _kpi('Disparos hoje',    '$todayExec',const Color(0xFF176EEB),  Icons.bolt_rounded),
+        _kpi('Disparos hoje', '$todayExec', const Color(0xFF176EEB),
+            Icons.bolt_rounded),
         const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-        _kpi('Erros',            '$errors',   errors > 0 ? const Color(0xFFEF4444) : const Color(0xFF9DB1CC), Icons.error_outline_rounded),
+        _kpi(
+            'Erros',
+            '$errors',
+            errors > 0 ? const Color(0xFFEF4444) : const Color(0xFF9DB1CC),
+            Icons.error_outline_rounded),
       ])),
     );
   }
@@ -264,14 +304,29 @@ class _KpiBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(children: [
-          Container(width: 30, height: 30,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
-            child: Icon(icon, color: color, size: 15)),
+          Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, color: color, size: 15)),
           const SizedBox(width: 8),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 18)),
-            Text(label, style: const TextStyle(color: Color(0xFF60718D), fontSize: 10.5, fontWeight: FontWeight.w600)),
-          ]),
+          Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(value,
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18)),
+                Text(label,
+                    style: const TextStyle(
+                        color: Color(0xFF60718D),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600)),
+              ]),
         ]),
       ),
     );
@@ -281,7 +336,8 @@ class _KpiBar extends StatelessWidget {
 // ── Rules list ─────────────────────────────────────────────────────────────────
 
 class _RulesList extends ConsumerWidget {
-  const _RulesList({required this.rules});
+  const _RulesList({required this.rules, this.onSelected});
+  final ValueChanged<_AutoRule>? onSelected;
   final List<_AutoRule> rules;
 
   @override
@@ -290,14 +346,17 @@ class _RulesList extends ConsumerWidget {
       padding: EdgeInsets.zero,
       itemCount: rules.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => _RuleCard(
-        rule: rules[i],
-        onToggle: (v) async {
-          final config = ref.read(bridgeConfigProvider);
-          final ok = await setBridgeRuleActive(config: config, ruleId: rules[i].id, ativo: v);
-          if (ok) ref.invalidate(bridgeRulesProvider);
-        },
-      ),
+      itemBuilder: (_, i) => GestureDetector(
+          onTap: () => onSelected?.call(rules[i]),
+          child: _RuleCard(
+            rule: rules[i],
+            onToggle: (v) async {
+              final config = ref.read(bridgeConfigProvider);
+              final ok = await setBridgeRuleActive(
+                  config: config, ruleId: rules[i].id, ativo: v);
+              if (ok) ref.invalidate(bridgeRulesProvider);
+            },
+          )),
     );
   }
 }
@@ -308,53 +367,55 @@ class _RuleCard extends StatelessWidget {
   final ValueChanged<bool> onToggle;
 
   static const _triggerIcons = <_TriggerType, IconData>{
-    _TriggerType.speed:      Icons.speed_rounded,
-    _TriggerType.geofence:   Icons.fence_rounded,
-    _TriggerType.ignition:   Icons.key_rounded,
-    _TriggerType.noComm:     Icons.signal_wifi_off_rounded,
-    _TriggerType.odometer:   Icons.route_rounded,
-    _TriggerType.temperature:Icons.thermostat_rounded,
-    _TriggerType.battery:    Icons.battery_alert_rounded,
+    _TriggerType.speed: Icons.speed_rounded,
+    _TriggerType.geofence: Icons.fence_rounded,
+    _TriggerType.ignition: Icons.key_rounded,
+    _TriggerType.noComm: Icons.signal_wifi_off_rounded,
+    _TriggerType.odometer: Icons.route_rounded,
+    _TriggerType.temperature: Icons.thermostat_rounded,
+    _TriggerType.battery: Icons.battery_alert_rounded,
     _TriggerType.harshBrake: Icons.emergency_share_rounded,
-    _TriggerType.scheduled:  Icons.schedule_rounded,
+    _TriggerType.scheduled: Icons.schedule_rounded,
   };
 
   static const _actionIcons = <_ActionType, (IconData, Color)>{
-    _ActionType.whatsapp:     (Icons.chat_bubble_rounded,        Color(0xFF25D366)),
-    _ActionType.alert:        (Icons.notification_important_rounded, Color(0xFFF59E0B)),
-    _ActionType.createTicket: (Icons.headset_mic_rounded,        Color(0xFF176EEB)),
-    _ActionType.notify:       (Icons.notifications_rounded,      Color(0xFF7C3AED)),
-    _ActionType.block:        (Icons.block_rounded,              Color(0xFFEF4444)),
-    _ActionType.report:       (Icons.analytics_rounded,          Color(0xFF526684)),
+    _ActionType.whatsapp: (Icons.chat_bubble_rounded, Color(0xFF25D366)),
+    _ActionType.alert: (
+      Icons.notification_important_rounded,
+      Color(0xFFF59E0B)
+    ),
+    _ActionType.createTicket: (Icons.headset_mic_rounded, Color(0xFF176EEB)),
+    _ActionType.notify: (Icons.notifications_rounded, Color(0xFF7C3AED)),
+    _ActionType.block: (Icons.block_rounded, Color(0xFFEF4444)),
+    _ActionType.report: (Icons.analytics_rounded, Color(0xFF526684)),
   };
 
   static const _actionLabels = <_ActionType, String>{
-    _ActionType.whatsapp:     'WhatsApp',
-    _ActionType.alert:        'Alerta',
+    _ActionType.whatsapp: 'WhatsApp',
+    _ActionType.alert: 'Alerta',
     _ActionType.createTicket: 'Chamado',
-    _ActionType.notify:       'Notificar',
-    _ActionType.block:        'Bloquear',
-    _ActionType.report:       'Relatório',
+    _ActionType.notify: 'Notificar',
+    _ActionType.block: 'Bloquear',
+    _ActionType.report: 'Relatório',
   };
 
   @override
   Widget build(BuildContext context) {
     final r = rule;
     final trigIcon = _triggerIcons[r.triggerType] ?? Icons.bolt_rounded;
-    final color = r.active
-        ? const Color(0xFF176EEB)
-        : const Color(0xFF9DB1CC);
+    final color = r.active ? const Color(0xFF176EEB) : const Color(0xFF9DB1CC);
     final lastRunStr = r.lastRun == null ? 'Nunca' : _timeAgo(r.lastRun!);
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: r.hasError
-            ? const Color(0xFFEF4444).withValues(alpha: 0.40)
-            : r.active
-                ? const Color(0xFFDDE5F0)
-                : const Color(0xFFEEF0F5)),
+        border: Border.all(
+            color: r.hasError
+                ? const Color(0xFFEF4444).withValues(alpha: 0.40)
+                : r.active
+                    ? const Color(0xFFDDE5F0)
+                    : const Color(0xFFEEF0F5)),
       ),
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       child: Row(
@@ -362,7 +423,8 @@ class _RuleCard extends StatelessWidget {
         children: [
           // Trigger icon
           Container(
-            width: 38, height: 38,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(10),
@@ -374,18 +436,30 @@ class _RuleCard extends StatelessWidget {
           // Name + condition
           Expanded(
             flex: 4,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Text(r.name, style: TextStyle(
-                  color: r.active ? const Color(0xFF1F2A44) : const Color(0xFF9DB1CC),
-                  fontWeight: FontWeight.w800, fontSize: 13,
-                )),
+                Text(r.name,
+                    style: TextStyle(
+                      color: r.active
+                          ? const Color(0xFF1F2A44)
+                          : const Color(0xFF9DB1CC),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    )),
                 if (r.hasError) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.10), borderRadius: BorderRadius.circular(4)),
-                    child: const Text('Erro', style: TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w800)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(4)),
+                    child: const Text('Erro',
+                        style: TextStyle(
+                            color: Color(0xFFEF4444),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800)),
                   ),
                 ],
               ]),
@@ -394,7 +468,10 @@ class _RuleCard extends StatelessWidget {
                 Icon(trigIcon, size: 11, color: const Color(0xFF9DB1CC)),
                 const SizedBox(width: 4),
                 Text('${r.triggerLabel}  ${r.condition}',
-                    style: const TextStyle(color: Color(0xFF60718D), fontSize: 11, fontWeight: FontWeight.w600)),
+                    style: const TextStyle(
+                        color: Color(0xFF60718D),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
               ]),
             ]),
           ),
@@ -402,7 +479,8 @@ class _RuleCard extends StatelessWidget {
           // Arrow
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Icon(Icons.arrow_forward_rounded, size: 14, color: color.withValues(alpha: 0.50)),
+            child: Icon(Icons.arrow_forward_rounded,
+                size: 14, color: color.withValues(alpha: 0.50)),
           ),
 
           // Actions chips
@@ -414,7 +492,8 @@ class _RuleCard extends StatelessWidget {
                   final (icon, aColor) = _actionIcons[a]!;
                   final label = _actionLabels[a]!;
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                       color: aColor.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(6),
@@ -423,7 +502,11 @@ class _RuleCard extends StatelessWidget {
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(icon, size: 10, color: aColor),
                       const SizedBox(width: 4),
-                      Text(label, style: TextStyle(color: aColor, fontWeight: FontWeight.w700, fontSize: 10)),
+                      Text(label,
+                          style: TextStyle(
+                              color: aColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10)),
                     ]),
                   );
                 }),
@@ -433,9 +516,16 @@ class _RuleCard extends StatelessWidget {
           // Stats
           Expanded(
             flex: 2,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('${r.executions}× disparado', style: const TextStyle(color: Color(0xFF526684), fontSize: 11, fontWeight: FontWeight.w700)),
-              Text('Último: $lastRunStr', style: const TextStyle(color: Color(0xFF9DB1CC), fontSize: 10.5)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('${r.executions}× disparado',
+                  style: const TextStyle(
+                      color: Color(0xFF526684),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+              Text('Último: $lastRunStr',
+                  style: const TextStyle(
+                      color: Color(0xFF9DB1CC), fontSize: 10.5)),
             ]),
           ),
 
@@ -456,7 +546,7 @@ class _RuleCard extends StatelessWidget {
   String _timeAgo(DateTime dt) {
     final d = DateTime.now().difference(dt);
     if (d.inMinutes < 60) return '${d.inMinutes}min';
-    if (d.inHours   < 24) return '${d.inHours}h';
+    if (d.inHours < 24) return '${d.inHours}h';
     return '${d.inDays}d';
   }
 }
@@ -470,21 +560,32 @@ class _ExecHistory extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDDE5F0))),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDE5F0))),
       child: Column(children: [
         Container(
           padding: const EdgeInsets.fromLTRB(14, 11, 14, 10),
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7)))),
+          decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7)))),
           child: Row(children: [
-            const Text('Histórico de execuções', style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 13)),
+            const Text('Histórico de execuções',
+                style: TextStyle(
+                    color: Color(0xFF1F2A44),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13)),
             const Spacer(),
-            Text('${log.length} registros', style: const TextStyle(color: Color(0xFF9DB1CC), fontSize: 11)),
+            Text('${log.length} registros',
+                style: const TextStyle(color: Color(0xFF9DB1CC), fontSize: 11)),
           ]),
         ),
-        Expanded(child: ListView.separated(
+        Expanded(
+            child: ListView.separated(
           padding: const EdgeInsets.all(10),
           itemCount: log.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFEEF3FA)),
+          separatorBuilder: (_, __) =>
+              const Divider(height: 1, color: Color(0xFFEEF3FA)),
           itemBuilder: (_, i) {
             final e = log[i];
             final timeAgo = _timeAgo(e.timestamp);
@@ -492,21 +593,41 @@ class _ExecHistory extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
                 Container(
-                  width: 26, height: 26,
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
-                    color: e.result ? const Color(0xFF10B981).withValues(alpha: 0.10) : const Color(0xFFEF4444).withValues(alpha: 0.10),
+                    color: e.result
+                        ? const Color(0xFF10B981).withValues(alpha: 0.10)
+                        : const Color(0xFFEF4444).withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(e.result ? Icons.check_rounded : Icons.close_rounded, size: 14,
-                      color: e.result ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                  child: Icon(
+                      e.result ? Icons.check_rounded : Icons.close_rounded,
+                      size: 14,
+                      color: e.result
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEF4444)),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(e.ruleName, style: const TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w700, fontSize: 12)),
-                  Text(e.detail, style: const TextStyle(color: Color(0xFF60718D), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ])),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(e.ruleName,
+                          style: const TextStyle(
+                              color: Color(0xFF1F2A44),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12)),
+                      Text(e.detail,
+                          style: const TextStyle(
+                              color: Color(0xFF60718D), fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ])),
                 const SizedBox(width: 10),
-                Text(timeAgo, style: const TextStyle(color: Color(0xFF9DB1CC), fontSize: 11)),
+                Text(timeAgo,
+                    style: const TextStyle(
+                        color: Color(0xFF9DB1CC), fontSize: 11)),
               ]),
             );
           },
@@ -518,7 +639,7 @@ class _ExecHistory extends StatelessWidget {
   String _timeAgo(DateTime dt) {
     final d = DateTime.now().difference(dt);
     if (d.inMinutes < 60) return '${d.inMinutes}min';
-    if (d.inHours   < 24) return '${d.inHours}h';
+    if (d.inHours < 24) return '${d.inHours}h';
     return '${d.inDays}d';
   }
 }
@@ -554,23 +675,43 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
   String? _error;
 
   static const _triggerLabels = <_TriggerType, String>{
-    _TriggerType.speed:       'Velocidade',
-    _TriggerType.geofence:    'Cerca geográfica',
-    _TriggerType.ignition:    'Ignição',
-    _TriggerType.noComm:      'Sem comunicação',
-    _TriggerType.odometer:    'Hodômetro',
+    _TriggerType.speed: 'Velocidade',
+    _TriggerType.geofence: 'Cerca geográfica',
+    _TriggerType.ignition: 'Ignição',
+    _TriggerType.noComm: 'Sem comunicação',
+    _TriggerType.odometer: 'Hodômetro',
     _TriggerType.temperature: 'Temperatura',
-    _TriggerType.battery:     'Tensão de bateria',
-    _TriggerType.harshBrake:  'Freio brusco',
-    _TriggerType.scheduled:   'Agendamento',
+    _TriggerType.battery: 'Tensão de bateria',
+    _TriggerType.harshBrake: 'Freio brusco',
+    _TriggerType.scheduled: 'Agendamento',
   };
 
   static const _actionLabels = <_ActionType, (String, IconData, Color)>{
-    _ActionType.whatsapp:     ('WhatsApp',  Icons.chat_bubble_rounded,         Color(0xFF25D366)),
-    _ActionType.alert:        ('Alerta',    Icons.notification_important_rounded,Color(0xFFF59E0B)),
-    _ActionType.createTicket: ('Chamado',   Icons.headset_mic_rounded,          Color(0xFF176EEB)),
-    _ActionType.notify:       ('Notificar', Icons.notifications_rounded,        Color(0xFF7C3AED)),
-    _ActionType.report:       ('Relatório', Icons.analytics_rounded,            Color(0xFF526684)),
+    _ActionType.whatsapp: (
+      'WhatsApp',
+      Icons.chat_bubble_rounded,
+      Color(0xFF25D366)
+    ),
+    _ActionType.alert: (
+      'Alerta',
+      Icons.notification_important_rounded,
+      Color(0xFFF59E0B)
+    ),
+    _ActionType.createTicket: (
+      'Chamado',
+      Icons.headset_mic_rounded,
+      Color(0xFF176EEB)
+    ),
+    _ActionType.notify: (
+      'Notificar',
+      Icons.notifications_rounded,
+      Color(0xFF7C3AED)
+    ),
+    _ActionType.report: (
+      'Relatório',
+      Icons.analytics_rounded,
+      Color(0xFF526684)
+    ),
   };
 
   @override
@@ -584,183 +725,252 @@ class _RuleBuilderState extends ConsumerState<_RuleBuilder> {
     final devicesAsync = ref.watch(devicesProvider);
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
     final screenWidth = MediaQuery.sizeOf(context).width;
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.25),
-        child: Center(
-          child: Container(
-            width: screenWidth < 760 ? screenWidth - 24 : 520,
-            constraints: const BoxConstraints(maxHeight: 560),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 24, offset: const Offset(0, 8))],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
-                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7)))),
-                  child: Row(children: [
-                    Container(width: 30, height: 30,
-                      decoration: BoxDecoration(color: const Color(0xFF176EEB).withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.add_rounded, color: Color(0xFF176EEB), size: 16)),
-                    const SizedBox(width: 10),
-                    const Text('Nova regra', style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 15)),
-                    const Spacer(),
-                    IconButton(onPressed: widget.onClose, icon: const Icon(Icons.close_rounded), style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D))),
-                  ]),
-                ),
-                // Body
-                Flexible(child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    TextField(
-                      controller: _nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Nome da regra',
-                        prefixIcon: Icon(Icons.label_rounded, size: 18),
-                        filled: true, fillColor: Color(0xFFF7F9FD),
-                        border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
-                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+    return AnimatedBuilder(
+        animation: _nameCtrl,
+        builder: (context, _) => ModuleScaffold(
+                title: 'Nova regra',
+                subtitle: 'Configure o evento, o veículo e as ações.',
+                navigation: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ModuleSectionLabel('Identificação'),
+                      TextField(
+                        controller: _nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Nome da regra',
+                          prefixIcon: Icon(Icons.label_rounded, size: 18),
+                          filled: true,
+                          fillColor: Color(0xFFF7F9FD),
+                          border: OutlineInputBorder(
+                              borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                          enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    _sectionLabel('SE — Gatilho'),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(color: const Color(0xFFF7F9FD), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFDDE5F0))),
-                      padding: const EdgeInsets.all(12),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        DropdownButtonFormField<_TriggerType>(
-                          initialValue: _triggerToEventoReal.containsKey(_trigger) ? _trigger : _TriggerType.speed,
-                          decoration: const InputDecoration(labelText: 'Tipo de evento', isDense: true, border: InputBorder.none),
-                          items: _triggerToEventoReal.keys
-                              .map((t) => DropdownMenuItem(value: t, child: Text(_triggerLabels[t]!)))
-                              .toList(),
-                          onChanged: (v) => setState(() => _trigger = v!),
-                        ),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<int>(
-                          initialValue: _selectedDeviceId,
-                          decoration: const InputDecoration(labelText: 'Veículo', isDense: true, border: InputBorder.none),
-                          items: devices
-                              .map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))
-                              .toList(),
-                          onChanged: (v) => setState(() => _selectedDeviceId = v),
-                        ),
-                      ]),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
-                    ],
-                    const SizedBox(height: 16),
-                    _sectionLabel('ENTÃO — Ações'),
-                    const SizedBox(height: 8),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      for (final entry in _actionLabels.entries)
-                        Builder(builder: (_) {
-                          final (label, icon, color) = entry.value;
-                          final selected = _actions.contains(entry.key);
-                          return GestureDetector(
-                            onTap: () => setState(() {
-                              if (selected) { _actions.remove(entry.key); }
-                              else { _actions.add(entry.key); }
-                            }),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: selected ? color.withValues(alpha: 0.12) : const Color(0xFFF7F9FD),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: selected ? color : const Color(0xFFDDE5F0), width: selected ? 1.5 : 1),
+                      const SizedBox(height: 14),
+                      const ModuleSectionLabel('SE — Gatilho'),
+                      Container(
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFF7F9FD),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFDDE5F0))),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              DropdownButtonFormField<_TriggerType>(
+                                isExpanded: true,
+                                initialValue:
+                                    _triggerToEventoReal.containsKey(_trigger)
+                                        ? _trigger
+                                        : _TriggerType.speed,
+                                decoration: const InputDecoration(
+                                    labelText: 'Tipo de evento',
+                                    isDense: true,
+                                    border: InputBorder.none),
+                                items: _triggerToEventoReal.keys
+                                    .map((t) => DropdownMenuItem(
+                                        value: t,
+                                        child: Text(_triggerLabels[t]!)))
+                                    .toList(),
+                                onChanged: (v) => setState(() => _trigger = v!),
                               ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(icon, size: 13, color: selected ? color : const Color(0xFF9DB1CC)),
-                                const SizedBox(width: 6),
-                                Text(label, style: TextStyle(color: selected ? color : const Color(0xFF9DB1CC), fontWeight: FontWeight.w700, fontSize: 12)),
-                              ]),
-                            ),
-                          );
-                        }),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<int>(
+                                isExpanded: true,
+                                initialValue: _selectedDeviceId,
+                                decoration: const InputDecoration(
+                                    labelText: 'Veículo',
+                                    isDense: true,
+                                    border: InputBorder.none),
+                                items: devices
+                                    .map((d) => DropdownMenuItem(
+                                        value: d.id,
+                                        child: Text(d.name,
+                                            overflow: TextOverflow.ellipsis)))
+                                    .toList(),
+                                onChanged: (v) =>
+                                    setState(() => _selectedDeviceId = v),
+                              ),
+                            ]),
+                      )
                     ]),
-                  ]),
-                )),
-                // Footer
-                Container(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFE8EFF7)))),
-                  child: Row(children: [
-                    OutlinedButton(
-                      onPressed: widget.onClose,
-                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF526684), side: const BorderSide(color: Color(0xFFDDE5F0)), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
-                      child: const Text('Cancelar'),
-                    ),
-                    const Spacer(),
-                    FilledButton.icon(
-                      onPressed: (_saving || _actions.isEmpty || _nameCtrl.text.trim().isEmpty || _selectedDeviceId == null)
-                          ? null
-                          : _save,
-                      icon: _saving
-                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.check_rounded, size: 15),
-                      label: const Text('Criar regra'),
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF176EEB), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
-                    ),
-                  ]),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+                content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ModuleSectionLabel('ENTÃO — Ações'),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        for (final entry in _actionLabels.entries)
+                          Builder(builder: (_) {
+                            final (label, icon, color) = entry.value;
+                            final selected = _actions.contains(entry.key);
+                            return GestureDetector(
+                              onTap: () => setState(() {
+                                if (selected) {
+                                  _actions.remove(entry.key);
+                                } else {
+                                  _actions.add(entry.key);
+                                }
+                              }),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? color.withValues(alpha: 0.12)
+                                      : const Color(0xFFF7F9FD),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: selected
+                                          ? color
+                                          : const Color(0xFFDDE5F0),
+                                      width: selected ? 1.5 : 1),
+                                ),
+                                child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(icon,
+                                          size: 13,
+                                          color: selected
+                                              ? color
+                                              : const Color(0xFF9DB1CC)),
+                                      const SizedBox(width: 6),
+                                      Text(label,
+                                          style: TextStyle(
+                                              color: selected
+                                                  ? color
+                                                  : const Color(0xFF9DB1CC),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12)),
+                                    ]),
+                              ),
+                            );
+                          }),
+                      ]),
+                      if (_error != null)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(_error!,
+                                style: const TextStyle(color: Colors.red)))
+                    ]),
+                detail: ModuleCard(
+                    title: 'Resumo da regra',
+                    child: Column(children: [
+                      ModuleDetailRow(
+                          'Nome',
+                          _nameCtrl.text.trim().isEmpty
+                              ? 'Não informado'
+                              : _nameCtrl.text.trim()),
+                      ModuleDetailRow('Gatilho',
+                          _triggerLabels[_trigger] ?? 'Não selecionado'),
+                      ModuleDetailRow(
+                          'Ações',
+                          _actions
+                              .map((a) => _actionLabels[a]?.$1 ?? a.name)
+                              .join(', '))
+                    ])),
+                actions: [
+                  OutlinedButton(
+                    onPressed: widget.onClose,
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF526684),
+                        side: const BorderSide(color: Color(0xFFDDE5F0)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10)),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: (_saving ||
+                            _actions.isEmpty ||
+                            _nameCtrl.text.trim().isEmpty ||
+                            _selectedDeviceId == null)
+                        ? null
+                        : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.check_rounded, size: 15),
+                    label: const Text('Criar regra'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF176EEB),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10)),
+                  )
+                ]));
   }
 
   Widget _sectionLabel(String text) => Row(children: [
-    Container(width: 3, height: 14, decoration: BoxDecoration(color: const Color(0xFF176EEB), borderRadius: BorderRadius.circular(2))),
-    const SizedBox(width: 8),
-    Text(text, style: const TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 12.5)),
-  ]);
+        Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+                color: const Color(0xFF176EEB),
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(width: 8),
+        Text(text,
+            style: const TextStyle(
+                color: Color(0xFF1F2A44),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5)),
+      ]);
 
   Future<void> _save() async {
     final deviceId = _selectedDeviceId;
     if (deviceId == null) return;
-    final devices = ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
-    final deviceName = devices.where((d) => d.id == deviceId).map((d) => d.name).firstOrNull
-        ?? 'Dispositivo $deviceId';
+    final devices =
+        ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+    final deviceName =
+        devices.where((d) => d.id == deviceId).map((d) => d.name).firstOrNull ??
+            'Dispositivo $deviceId';
     final config = ref.read(bridgeConfigProvider);
     if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) {
-      setState(() => _error = 'Bridge não configurado.');
+      setState(() =>
+          _error = 'Configure a conexão em Configurações para salvar a regra.');
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final uri = Uri.parse('${config.bridgeUrl}/rules');
-      final resp = await http.post(
-        uri,
-        headers: {
-          'Authorization': 'Bearer ${config.bridgeApiKey}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'deviceId': deviceId,
-          'deviceName': deviceName,
-          'condicao': {'tipoEvento': _triggerToEventoReal[_trigger]},
-          'acao': {'tipo': _actions.contains(_ActionType.block) ? 'bloquear_motor' : 'notificar'},
-          'descricao': _nameCtrl.text.trim(),
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            uri,
+            headers: {
+              'Authorization': 'Bearer ${config.bridgeApiKey}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'deviceId': deviceId,
+              'deviceName': deviceName,
+              'condicao': {'tipoEvento': _triggerToEventoReal[_trigger]},
+              'acao': {
+                'tipo': _actions.contains(_ActionType.block)
+                    ? 'bloquear_motor'
+                    : 'notificar'
+              },
+              'descricao': _nameCtrl.text.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) {
-        setState(() { _saving = false; _error = 'Falha ao criar regra (HTTP ${resp.statusCode}).'; });
+        setState(() {
+          _saving = false;
+          _error = 'Falha ao criar regra (HTTP ${resp.statusCode}).';
+        });
         return;
       }
       widget.onSaved();
     } catch (err) {
-      setState(() { _saving = false; _error = 'Falha ao criar regra: $err'; });
+      setState(() {
+        _saving = false;
+        _error = 'Falha ao criar regra: $err';
+      });
     }
   }
 }
