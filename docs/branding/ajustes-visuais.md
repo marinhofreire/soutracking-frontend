@@ -1,21 +1,19 @@
-# Ajustes visuais de marca ? 15/10/2026
+# Ajustes visuais da marca — 15/10/2026
 
-Escopo: apresenta??o dos logos existentes em Configura??es, cabe?alho, ?rea de marca da barra lateral e login personalizado. Originais preservados. Nenhuma altera??o em upload, persist?ncia, autentica??o ou contratos de integra??o.
+Apenas apresentação. Originais preservados; upload, persistência e autenticação existentes mantidos. Edição com ferramenta integrada image_gen, sem CLI.
 
-## Assets
+Assets salvos:
 
-- assets/branding/soutracking_logo_transparent.png ? wordmark para fundo claro.
-- assets/branding/soutracking_symbol_transparent.png ? s?mbolo para ?rea compacta.
-- assets/branding/soutracking_logo_dark.png ? wordmark para fundo escuro.
+- assets/branding/soutracking_logo_transparent.png
+- assets/branding/soutracking_symbol_transparent.png
+- assets/branding/soutracking_logo_dark.png
 
-Edi??o realizada com a ferramenta integrada image_gen, sem CLI. Refer?ncias: PNGs originais do projeto com fundo quadriculado incorporado.
+## Especificação dos prompts finais
 
-## Especifica??o dos prompts finais
+1. Remover somente o fundo quadriculado da referência horizontal, preservar texto SOU TRACKING, lâmpada, formas, espaçamento, proporções e preto/amarelo; fundo transparente, sem novos elementos.
+2. Extrair símbolo/lâmpada da referência em fundo transparente, preservar forma, cores e proporções; sem texto adicional.
+3. Na versão horizontal transparente, trocar somente o preto por branco para fundo escuro; preservar amarelo, lâmpada, alinhamento e transparência.
 
-1. Wordmark: remover exclusivamente o fundo quadriculado da refer?ncia horizontal; fundo realmente transparente; manter texto SOU TRACKING, l?mpada, formas, espa?amento, propor??es e cores preto/amarelo; sem novo s?mbolo, slogan ou elementos.
-2. S?mbolo: extrair a l?mpada da refer?ncia existente em fundo transparente, preservando forma, cores e propor??es; sem texto ou fundo adicional.
-3. Fundo escuro: usar a vers?o horizontal transparente como refer?ncia, trocar somente a parte preta do wordmark por branco, preservar amarelo, l?mpada, alinhamento e transpar?ncia.
+## Limites
 
-## Verifica??o e limites
-
-Pr?via de marca clara/escura e fontes asset/data URL verificadas em testes de widgets. Upload e grava??o existentes preservados. N?o inclui favicon por empresa, configura??o global de paleta, novo campo de logo escuro por empresa nem nova integra??o. Revis?o visual final cabe ao cliente.
+Variante escura e símbolo separados são da marca padrão. Logos personalizados são exibidos como recebidos. Não inclui favicon por empresa, seletor de cores, novo campo de logo escuro nem integrações. Revisão visual final pelo cliente.
