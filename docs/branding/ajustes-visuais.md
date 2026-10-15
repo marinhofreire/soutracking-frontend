@@ -17,3 +17,13 @@ Assets salvos:
 ## Limites
 
 Variante escura e símbolo separados são da marca padrão. Logos personalizados são exibidos como recebidos. Não inclui favicon por empresa, seletor de cores, novo campo de logo escuro nem integrações. Revisão visual final pelo cliente.
+
+## Complemento — identidade visual white-label (15/10/2026)
+
+Agora o front oferece logo principal, símbolo e variante para fundo escuro, incluindo SVG; seletor RGB/hexadecimal; cores nos controles; favicon e título da aba. A escolha explícita de cor é preservada na leitura da configuração existente. Meu perfil reutiliza a tela de perfil existente sem apresentar abas administrativas. Layout, ações e regras operacionais foram preservados.
+
+Validação: build release, 72 testes de regressão e quatro testes direcionados de identidade/configuração. Conferência de navegador com sessão e APIs simuladas: logos SVG, título, favicon, salvar/recarregar, perfil e login configurado. Não grava dados de clientes.
+
+Limite: a sessão existente restaura a marca padrão no logout. Persistência por empresa/servidor e manutenção após sair dependem do responsável pela lógica; não foram alteradas. O teste de login preserva a configuração e remove somente a sessão de teste, não comprova retenção após logout real.
+
+Revisão manual: Configurações > Geral, carregar as três variantes e alterar cores; salvar e recarregar; conferir sidebar aberta/recolhida, título/favicon, formulários, menu do perfil e contraste. Usar uma conta de teste; confirmar também que os botões mantêm suas ações.

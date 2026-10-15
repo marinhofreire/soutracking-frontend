@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../../core/app_permissions.dart';
 import '../../core/white_label.dart';
 import '../../ui/brand_logo.dart';
+import '../../ui/brand_color_field.dart';
 import '../../data/asaas_config.dart';
 import '../../data/bridge_config.dart';
 import '../../data/models.dart';
@@ -18,9 +19,15 @@ import '../../state/session_state.dart';
 import '../users/users_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key, required this.onLogout});
+  const SettingsScreen(
+      {super.key,
+      required this.onLogout,
+      this.initialTab = 0,
+      this.profileOnly = false});
 
   final VoidCallback onLogout;
+  final int initialTab;
+  final bool profileOnly;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -38,6 +45,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   // mesmo padrão da imagem de fundo do login logo abaixo (2026-09-05).
   String? _logoImage;
   String? _logoFileName;
+  String? _symbolImage, _darkLogoImage;
+  String? _symbolFileName, _darkLogoFileName;
   // Imagem de fundo do login (white-label) -- data URL (base64) guardada
   // em memória enquanto o usuário não salva; texto vazio = mantém o
   // backdrop padrão desenhado por código (ver login_screen.dart).
@@ -92,7 +101,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController =
+        TabController(length: 7, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
@@ -119,16 +129,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _primaryController.text = _colorToHex(config.primaryColor);
     _secondaryController.text = _colorToHex(config.secondaryColor);
     _logoImage = config.logoAsset;
+    _symbolImage = config.symbolAsset;
+    _darkLogoImage = config.darkLogoAsset;
     _loginBackgroundImage = config.loginBackgroundImage;
   }
 
-  String _colorToHex(Color color) =>
-      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
+  String _colorToHex(Color color) => BrandColorField.hex(color);
 
   Color? _parseColor(String input) {
     var hex = input.trim().replaceAll('#', '');
     if (hex.length == 6) hex = 'FF$hex';
-    if (hex.length == 8) return Color(int.parse(hex, radix: 16));
+    if (hex.length == 8) {
+      final value = int.tryParse(hex, radix: 16);
+      return value == null ? null : Color(value);
+    }
     return null;
   }
 
@@ -144,7 +158,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           tagline: tagline.isEmpty ? current.tagline : tagline,
           primaryColor: primary,
           secondaryColor: secondary,
+          customPalette: true,
           logoAsset: (_logoImage ?? '').trim().isEmpty ? null : _logoImage,
+          symbolAsset:
+              (_symbolImage ?? '').trim().isEmpty ? null : _symbolImage,
+          darkLogoAsset:
+              (_darkLogoImage ?? '').trim().isEmpty ? null : _darkLogoImage,
           loginBackgroundImage: _loginBackgroundImage,
           homeHubId: current.homeHubId,
         ));
@@ -154,19 +173,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  Future<void> _pickLogo() async {
+  Future<void> _pickLogo() => _pickBrandAsset('logo');
+  Future<void> _pickBrandAsset(String slot) async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
+        type: FileType.custom,
+        allowedExtensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'],
+        withData: true);
     final file = result?.files.firstOrNull;
-    if (file == null || file.bytes == null) return;
-    final base64Data = base64Encode(file.bytes!);
+    if (file == null || file.bytes == null || !mounted) return;
     final ext = (file.extension ?? 'png').toLowerCase();
-    final mime = ext == 'jpg' || ext == 'jpeg' ? 'image/jpeg' : 'image/png';
+    final mime = switch (ext) {
+      'svg' => 'image/svg+xml',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      _ => 'image/png'
+    };
+    final source = 'data:' + mime + ';base64,' + base64Encode(file.bytes!);
     setState(() {
-      _logoImage = 'data:$mime;base64,$base64Data';
-      _logoFileName = file.name;
+      switch (slot) {
+        case 'symbol':
+          _symbolImage = source;
+          _symbolFileName = file.name;
+        case 'dark':
+          _darkLogoImage = source;
+          _darkLogoFileName = file.name;
+        default:
+          _logoImage = source;
+          _logoFileName = file.name;
+      }
     });
   }
 
@@ -255,6 +289,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
     return whiteLabelAsync.when(
       data: (config) {
+        if (widget.profileOnly) return _buildPerfilTab();
         if (!_initialized) {
           _syncControllers(config);
           _initialized = true;
@@ -268,9 +303,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: TabBar(
                 controller: _tabController,
                 isScrollable: true,
-                labelColor: const Color(0xFF0F69E8),
+                labelColor: Theme.of(context).colorScheme.primary,
                 unselectedLabelColor: const Color(0xFF60718D),
-                indicatorColor: const Color(0xFF0F69E8),
+                indicatorColor: Theme.of(context).colorScheme.primary,
                 indicatorWeight: 2,
                 labelStyle: const TextStyle(
                     fontSize: 12.5, fontWeight: FontWeight.w700),
@@ -346,6 +381,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         children: [
                           BrandLogo(
                               source: _logoImage,
+                              symbolSource: _symbolImage,
+                              darkSource: _darkLogoImage,
                               name: _nameController.text.trim().isEmpty
                                   ? config.appName
                                   : _nameController.text.trim(),
@@ -381,167 +418,143 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   ),
                 ],
               ),
-              center: _SettingsTabView(children: [
-                _SettingsCard(
-                  title: 'Identidade visual',
-                  child: Column(children: [
-                    TextField(
-                      controller: _nameController,
-                      decoration:
-                          const InputDecoration(labelText: 'Nome da empresa'),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _taglineController,
-                      decoration: const InputDecoration(
-                          labelText: 'Descrição da marca'),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _primaryController,
-                      decoration: const InputDecoration(
-                          labelText: 'Cor primária',
-                          helperText: 'Ex.: #1F6FEB'),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _secondaryController,
-                      decoration: const InputDecoration(
-                          labelText: 'Cor secundária',
-                          helperText: 'Ex.: #1F6FEB'),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Logo',
-                      style: TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
+              center: Column(children: [
+                Expanded(
+                    child: _SettingsTabView(children: [
+                  _SettingsCard(
+                    title: 'Identidade visual',
+                    child: Column(children: [
+                      TextField(
+                        controller: _nameController,
+                        decoration:
+                            const InputDecoration(labelText: 'Nome da empresa'),
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Aparece no topo da barra lateral e no menu (mobile). Sem logo, mostra o nome da empresa em texto.',
-                      style:
-                          TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
-                    ),
-                    const SizedBox(height: 8),
-                    if ((_logoImage ?? '').isNotEmpty)
-                      Container(
-                        height: 72,
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        alignment: Alignment.centerLeft,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F9FD),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFDDE5F0)),
-                        ),
-                        child: BrandLogo(
-                            source: _logoImage,
-                            name: _nameController.text,
-                            height: 40,
-                            width: 180),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _taglineController,
+                        decoration: const InputDecoration(
+                            labelText: 'Descrição da marca'),
+                        onChanged: (_) => setState(() {}),
                       ),
-                    Row(
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _pickLogo,
-                          icon: const Icon(Icons.image_outlined, size: 16),
-                          label: Text((_logoImage ?? '').isEmpty
-                              ? 'Escolher logo'
-                              : 'Trocar logo'),
+                      const SizedBox(height: 8),
+                      BrandColorField(
+                          label: 'Cor primária',
+                          controller: _primaryController,
+                          color: primary,
+                          onChanged: () => setState(() {})),
+                      const SizedBox(height: 12),
+                      BrandColorField(
+                          label: 'Cor secundária',
+                          controller: _secondaryController,
+                          color: secondary,
+                          onChanged: () => setState(() {})),
+                      const SizedBox(height: 16),
+                      _BrandAssetField(
+                          title: 'Logo principal',
+                          description:
+                              'Marca horizontal para o menu e telas claras.',
+                          source: _logoImage,
+                          name: _nameController.text,
+                          fileName: _logoFileName,
+                          onPick: _pickLogo,
+                          onClear: _clearLogo),
+                      const SizedBox(height: 16),
+                      _BrandAssetField(
+                          title: 'Símbolo da marca',
+                          description:
+                              'Usado no menu recolhido e no ícone da aba do navegador.',
+                          source: _symbolImage,
+                          name: _nameController.text,
+                          fileName: _symbolFileName,
+                          onPick: () => _pickBrandAsset('symbol'),
+                          onClear: () => setState(() {
+                                _symbolImage = null;
+                                _symbolFileName = null;
+                              })),
+                      const SizedBox(height: 16),
+                      _BrandAssetField(
+                          title: 'Logo para fundo escuro',
+                          description:
+                              'Versão clara da marca para o login e fundos escuros.',
+                          source: _darkLogoImage,
+                          name: _nameController.text,
+                          fileName: _darkLogoFileName,
+                          dark: true,
+                          onPick: () => _pickBrandAsset('dark'),
+                          onClear: () => setState(() {
+                                _darkLogoImage = null;
+                                _darkLogoFileName = null;
+                              })),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Imagem de fundo do login',
+                        style: TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
                         ),
-                        if ((_logoImage ?? '').isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _clearLogo,
-                            icon: const Icon(Icons.close_rounded, size: 16),
-                            label: const Text('Remover'),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if ((_logoFileName ?? '').isNotEmpty) ...[
+                      ),
                       const SizedBox(height: 4),
-                      Text(
-                        _logoFileName!,
-                        style: const TextStyle(
-                            color: Color(0xFF60718D), fontSize: 11),
+                      const Text(
+                        'Sem imagem, o login usa o fundo padrão desenhado do sistema.',
+                        style:
+                            TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
                       ),
-                    ],
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Imagem de fundo do login',
-                      style: TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Sem imagem, o login usa o fundo padrão desenhado do sistema.',
-                      style:
-                          TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
-                    ),
-                    const SizedBox(height: 8),
-                    if ((_loginBackgroundImage ?? '').isNotEmpty)
-                      Container(
-                        height: 120,
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFDDE5F0)),
-                          image: DecorationImage(
-                            image: NetworkImage(_loginBackgroundImage!),
-                            fit: BoxFit.cover,
+                      const SizedBox(height: 8),
+                      if ((_loginBackgroundImage ?? '').isNotEmpty)
+                        Container(
+                          height: 120,
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFDDE5F0)),
+                            image: DecorationImage(
+                              image: NetworkImage(_loginBackgroundImage!),
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
-                      ),
-                    Row(
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _pickLoginBackground,
-                          icon: const Icon(Icons.image_outlined, size: 16),
-                          label: Text((_loginBackgroundImage ?? '').isEmpty
-                              ? 'Escolher imagem'
-                              : 'Trocar imagem'),
-                        ),
-                        if ((_loginBackgroundImage ?? '').isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _clearLoginBackground,
-                            icon: const Icon(Icons.close_rounded, size: 16),
-                            label: const Text('Remover'),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _pickLoginBackground,
+                            icon: const Icon(Icons.image_outlined, size: 16),
+                            label: Text((_loginBackgroundImage ?? '').isEmpty
+                                ? 'Escolher imagem'
+                                : 'Trocar imagem'),
                           ),
+                          if ((_loginBackgroundImage ?? '').isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            TextButton.icon(
+                              onPressed: _clearLoginBackground,
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              label: const Text('Remover'),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                    if ((_loginBackgroundFileName ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _loginBackgroundFileName!,
-                        style: const TextStyle(
-                            color: Color(0xFF60718D), fontSize: 11),
                       ),
-                    ],
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton(
+                      if ((_loginBackgroundFileName ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _loginBackgroundFileName!,
+                          style: const TextStyle(
+                              color: Color(0xFF60718D), fontSize: 11),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ])),
+                Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                        border:
+                            Border(top: BorderSide(color: Color(0xFFE2E8F0)))),
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
                         onPressed: () => _saveWhiteLabel(config),
-                        child: const Text('Salvar marca'),
-                      ),
-                    ),
-                  ]),
-                ),
+                        child: const Text('Salvar marca')))
               ]),
               right: Padding(
                 padding: const EdgeInsets.all(12),
@@ -551,6 +564,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     _SummaryBox(title: 'Prévia da marca', children: [
                       BrandLogo(
                           source: _logoImage,
+                          symbolSource: _symbolImage,
+                          darkSource: _darkLogoImage,
                           name: _nameController.text,
                           height: 44,
                           width: 170),
@@ -562,6 +577,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               borderRadius: BorderRadius.circular(8)),
                           child: BrandLogo(
                               source: _logoImage,
+                              symbolSource: _symbolImage,
+                              darkSource: _darkLogoImage,
                               name: _nameController.text,
                               height: 40,
                               width: 170,
@@ -1027,7 +1044,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               FilledButton(
                 onPressed: _savePermissions,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F69E8),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   shape: RoundedRectangleBorder(
@@ -2013,16 +2030,17 @@ class _RoleCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        margin: EdgeInsets.only(bottom: 5),
+        padding: EdgeInsets.symmetric(horizontal: 11, vertical: 9),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFFEBF3FF)
+              ? Color(0xFFEBF3FF)
               : Colors.white.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(9),
           border: Border.all(
-            color:
-                isSelected ? const Color(0xFF0F69E8) : const Color(0xFFE2E8F0),
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Color(0xFFE2E8F0),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -2034,7 +2052,7 @@ class _RoleCard extends StatelessWidget {
               decoration:
                   BoxDecoration(color: entry.color, shape: BoxShape.circle),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2045,21 +2063,20 @@ class _RoleCard extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: isSelected
-                          ? const Color(0xFF0F69E8)
-                          : const Color(0xFF1F2A44),
+                          ? Theme.of(context).colorScheme.primary
+                          : Color(0xFF1F2A44),
                     ),
                   ),
                   Text(
                     '$count usuário${count != 1 ? 's' : ''}',
-                    style: const TextStyle(
-                        fontSize: 10.5, color: Color(0xFF7A8CA8)),
+                    style: TextStyle(fontSize: 10.5, color: Color(0xFF7A8CA8)),
                   ),
                 ],
               ),
             ),
             if (isSelected)
-              const Icon(Icons.chevron_right,
-                  size: 15, color: Color(0xFF0F69E8)),
+              Icon(Icons.chevron_right,
+                  size: 15, color: Theme.of(context).colorScheme.primary),
           ],
         ),
       ),
@@ -2671,16 +2688,17 @@ class _SidebarListCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        margin: EdgeInsets.only(bottom: 5),
+        padding: EdgeInsets.symmetric(horizontal: 11, vertical: 9),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFFEBF3FF)
+              ? Color(0xFFEBF3FF)
               : Colors.white.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(9),
           border: Border.all(
-            color:
-                isSelected ? const Color(0xFF0F69E8) : const Color(0xFFE2E8F0),
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Color(0xFFE2E8F0),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -2692,7 +2710,7 @@ class _SidebarListCard extends StatelessWidget {
               decoration:
                   BoxDecoration(color: dotColor, shape: BoxShape.circle),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2703,13 +2721,13 @@ class _SidebarListCard extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: isSelected
-                          ? const Color(0xFF0F69E8)
-                          : const Color(0xFF1F2A44),
+                          ? Theme.of(context).colorScheme.primary
+                          : Color(0xFF1F2A44),
                     ),
                   ),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       color: Color(0xFF8B99AE),
                       fontWeight: FontWeight.w600,
@@ -2719,8 +2737,8 @@ class _SidebarListCard extends StatelessWidget {
               ),
             ),
             if (isSelected)
-              const Icon(Icons.chevron_right_rounded,
-                  size: 16, color: Color(0xFF0F69E8)),
+              Icon(Icons.chevron_right_rounded,
+                  size: 16, color: Theme.of(context).colorScheme.primary),
           ],
         ),
       ),
@@ -2850,4 +2868,67 @@ class _BrandSettingLine extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF1F2A44)))
       ]));
+}
+
+class _BrandAssetField extends StatelessWidget {
+  const _BrandAssetField(
+      {required this.title,
+      required this.description,
+      required this.source,
+      required this.name,
+      required this.fileName,
+      required this.onPick,
+      required this.onClear,
+      this.dark = false});
+  final String title, description, name;
+  final String? source, fileName;
+  final VoidCallback onPick, onClear;
+  final bool dark;
+  @override
+  Widget build(BuildContext context) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(title,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Text(description,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF60718D))),
+        const SizedBox(height: 8),
+        Container(
+            height: 72,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: dark ? const Color(0xFF152033) : const Color(0xFFF7F9FD),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0))),
+            alignment: Alignment.centerLeft,
+            child: (source?.isNotEmpty ?? false)
+                ? BrandLogo(
+                    source: source,
+                    name: name,
+                    height: 44,
+                    width: 180,
+                    dark: dark)
+                : Text('Nenhum arquivo escolhido',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            dark ? Colors.white70 : const Color(0xFF60718D)))),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          OutlinedButton.icon(
+              onPressed: onPick,
+              icon: const Icon(Icons.image_outlined, size: 16),
+              label: Text((source?.isNotEmpty ?? false)
+                  ? 'Trocar arquivo'
+                  : 'Escolher arquivo')),
+          if (source?.isNotEmpty ?? false)
+            TextButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.close_rounded, size: 16),
+                label: const Text('Remover'))
+        ]),
+        if (fileName != null)
+          Text(fileName!,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF60718D)))
+      ]);
 }

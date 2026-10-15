@@ -225,11 +225,15 @@ class ModuleListItem extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-          color: selected ? UiTokens.selected : Colors.white,
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: .08)
+              : Colors.white,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(9),
               side: BorderSide(
-                  color: selected ? UiTokens.primary : UiTokens.line,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : UiTokens.line,
                   width: selected ? 1.5 : 1)),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -258,7 +262,7 @@ class ModuleListItem extends StatelessWidget {
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: selected
-                                      ? UiTokens.primary
+                                      ? Theme.of(context).colorScheme.primary
                                       : UiTokens.ink)),
                           if (subtitle != null) ...[
                             const SizedBox(height: 4),
@@ -272,8 +276,9 @@ class ModuleListItem extends StatelessWidget {
                       trailing!
                     ],
                     if (selected)
-                      const Icon(Icons.chevron_right,
-                          size: 16, color: UiTokens.primary)
+                      Icon(Icons.chevron_right,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary)
                   ])))));
 }
 

@@ -10,8 +10,9 @@ class OperationalPanel extends StatelessWidget {
     const ink = Color(0xFF1F2A44);
     const muted = Color(0xFF60718D);
     const line = Color(0xFFDDE5F0);
-    const blue = Color(0xFF176EEB);
     final theme = Theme.of(context);
+    final blue = theme.colorScheme.primary;
+    final selectedSurface = blue.withValues(alpha: .08);
     final textTheme = theme.textTheme.apply(
         fontFamily: 'DeviceEditorSegoe', bodyColor: ink, displayColor: ink);
     const buttonText = TextStyle(
@@ -27,7 +28,7 @@ class OperationalPanel extends StatelessWidget {
             onSurface: ink,
             outline: line,
             primary: blue,
-            secondaryContainer: const Color(0xFFEAF3FF),
+            secondaryContainer: selectedSurface,
             onSecondaryContainer: blue),
         textTheme: textTheme.copyWith(
           headlineSmall: textTheme.headlineSmall
@@ -41,7 +42,7 @@ class OperationalPanel extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         chipTheme: theme.chipTheme.copyWith(
           backgroundColor: const Color(0xFFF7F9FC),
-          selectedColor: const Color(0xFFEAF3FF),
+          selectedColor: selectedSurface,
           labelStyle: buttonText.copyWith(color: muted),
           side: const BorderSide(color: line),
           shape: shape,
@@ -52,7 +53,7 @@ class OperationalPanel extends StatelessWidget {
           textStyle: const WidgetStatePropertyAll(buttonText),
           backgroundColor: WidgetStateProperty.resolveWith((states) =>
               states.contains(WidgetState.selected)
-                  ? const Color(0xFFEAF3FF)
+                  ? selectedSurface
                   : Colors.white),
           foregroundColor: WidgetStateProperty.resolveWith(
               (states) => states.contains(WidgetState.selected) ? blue : muted),
@@ -76,7 +77,7 @@ class OperationalPanel extends StatelessWidget {
                 buttonText.copyWith(fontWeight: FontWeight.w400, color: ink),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14))),
-        inputDecorationTheme: const InputDecorationTheme(
+        inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Color(0xFFF7F9FC),
           isDense: true,

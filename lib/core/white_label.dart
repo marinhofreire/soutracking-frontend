@@ -11,6 +11,9 @@ class WhiteLabelConfig {
     required this.primaryColor,
     required this.secondaryColor,
     this.logoAsset,
+    this.symbolAsset,
+    this.darkLogoAsset,
+    this.customPalette = false,
     this.loginBackgroundImage,
     this.homeHubId,
   });
@@ -20,6 +23,9 @@ class WhiteLabelConfig {
   final Color primaryColor;
   final Color secondaryColor;
   final String? logoAsset;
+  final String? symbolAsset;
+  final String? darkLogoAsset;
+  final bool customPalette;
   // Imagem de fundo da tela de login -- data URL (base64) ou asset path.
   // Quando null/vazio, login_screen.dart cai no PNG fixo de referência
   // (comportamento de antes, preservado).
@@ -44,6 +50,9 @@ class WhiteLabelConfig {
       secondaryColor:
           _parseColor(json['secondaryColor']) ?? fallback.secondaryColor,
       logoAsset: json['logoAsset'] as String?,
+      symbolAsset: json['symbolAsset'] as String?,
+      darkLogoAsset: json['darkLogoAsset'] as String?,
+      customPalette: json['customPalette'] == true,
       loginBackgroundImage: json['loginBackgroundImage'] as String?,
       homeHubId: json['homeHubId'] as String?,
     );
@@ -56,6 +65,9 @@ class WhiteLabelConfig {
       'primaryColor': _colorToHex(primaryColor),
       'secondaryColor': _colorToHex(secondaryColor),
       'logoAsset': logoAsset,
+      'symbolAsset': symbolAsset,
+      'darkLogoAsset': darkLogoAsset,
+      'customPalette': customPalette,
       'loginBackgroundImage': loginBackgroundImage,
       'homeHubId': homeHubId,
     };
@@ -67,6 +79,9 @@ class WhiteLabelConfig {
     Color? primaryColor,
     Color? secondaryColor,
     String? logoAsset,
+    String? symbolAsset,
+    String? darkLogoAsset,
+    bool? customPalette,
     String? loginBackgroundImage,
     String? homeHubId,
   }) {
@@ -76,8 +91,10 @@ class WhiteLabelConfig {
       primaryColor: primaryColor ?? this.primaryColor,
       secondaryColor: secondaryColor ?? this.secondaryColor,
       logoAsset: logoAsset ?? this.logoAsset,
-      loginBackgroundImage:
-          loginBackgroundImage ?? this.loginBackgroundImage,
+      symbolAsset: symbolAsset ?? this.symbolAsset,
+      darkLogoAsset: darkLogoAsset ?? this.darkLogoAsset,
+      customPalette: customPalette ?? this.customPalette,
+      loginBackgroundImage: loginBackgroundImage ?? this.loginBackgroundImage,
       homeHubId: homeHubId ?? this.homeHubId,
     );
   }
@@ -115,8 +132,10 @@ class WhiteLabelController extends StateNotifier<AsyncValue<WhiteLabelConfig>> {
   }
 
   WhiteLabelConfig _normalizeLegacyPalette(WhiteLabelConfig config) {
-    final shouldUpgradePrimary = _isLegacyPurple(config.primaryColor);
-    final shouldUpgradeSecondary = _isLegacyPurple(config.secondaryColor);
+    final shouldUpgradePrimary =
+        !config.customPalette && _isLegacyPurple(config.primaryColor);
+    final shouldUpgradeSecondary =
+        !config.customPalette && _isLegacyPurple(config.secondaryColor);
     final currentName = config.appName.trim().toLowerCase();
     final shouldUpgradeName =
         currentName == 'sou fleet' || currentName == 'soufind';
@@ -201,6 +220,9 @@ class WhiteLabelController extends StateNotifier<AsyncValue<WhiteLabelConfig>> {
       logoAsset: branding['logoAsset']?.toString() ??
           branding['logoUrl']?.toString() ??
           current.logoAsset,
+      symbolAsset: branding['symbolAsset']?.toString() ?? current.symbolAsset,
+      darkLogoAsset:
+          branding['darkLogoAsset']?.toString() ?? current.darkLogoAsset,
     );
     await save(merged);
   }

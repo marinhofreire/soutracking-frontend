@@ -100,7 +100,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final usePixelReferenceLogin = isWideEnoughForPixelReference &&
         config.appName.trim().toLowerCase().contains('soutracking') &&
         !hasCustomLogo &&
-        (config.loginBackgroundImage?.trim().isEmpty ?? true);
+        (config.loginBackgroundImage?.trim().isEmpty ?? true) &&
+        config.primaryColor == WhiteLabelConfig.fallback.primaryColor;
 
     if (usePixelReferenceLogin) {
       return _buildPixelReferenceLogin(
@@ -185,6 +186,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           if (hasCustomLogo)
                             BrandLogo(
                                 source: config.logoAsset,
+                                symbolSource: config.symbolAsset,
+                                darkSource: config.darkLogoAsset,
                                 name: config.appName,
                                 height: 64,
                                 width: 280,

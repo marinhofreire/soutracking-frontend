@@ -663,12 +663,14 @@ class _MaintenanceTemplateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(7),
+      padding: EdgeInsets.all(7),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFEAF3FF) : Colors.white,
+        color: selected ? Color(0xFFEAF3FF) : Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: selected ? const Color(0xFF176EEB) : const Color(0xFFDDE6F2),
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Color(0xFFDDE6F2),
         ),
       ),
       child: Column(
@@ -677,14 +679,14 @@ class _MaintenanceTemplateCard extends StatelessWidget {
           Row(
             children: [
               Icon(_groupIcon(template.group),
-                  size: 16, color: const Color(0xFF41536F)),
-              const SizedBox(width: 6),
+                  size: 16, color: Color(0xFF41536F)),
+              SizedBox(width: 6),
               Expanded(
                 child: Text(
                   template.group,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF5F738F),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -693,39 +695,39 @@ class _MaintenanceTemplateCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             template.name,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 12,
               color: Color(0xFF25344A),
             ),
           ),
-          const SizedBox(height: 2),
+          SizedBox(height: 2),
           Text(
             metricLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               color: Color(0xFF4D5D78),
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Align(
             alignment: Alignment.centerRight,
             child: OutlinedButton(
               onPressed: onUse,
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 28),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                textStyle: const TextStyle(
-                    fontSize: 11, fontFamily: 'DeviceEditorSegoe'),
+                minimumSize: Size(0, 28),
+                padding: EdgeInsets.symmetric(horizontal: 10),
+                textStyle:
+                    TextStyle(fontSize: 11, fontFamily: 'DeviceEditorSegoe'),
               ),
-              child: const Text('Usar'),
+              child: Text('Usar'),
             ),
           ),
         ],
@@ -734,7 +736,7 @@ class _MaintenanceTemplateCard extends StatelessWidget {
   }
 }
 
-const List<_MaintenanceTemplate> _maintenanceTemplates = [
+List<_MaintenanceTemplate> _maintenanceTemplates = [
   _MaintenanceTemplate(
     id: 'oil-engine',
     name: 'Troca de óleo do motor',

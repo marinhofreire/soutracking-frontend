@@ -8,16 +8,21 @@ ThemeData buildAppTheme(WhiteLabelConfig config) {
   const card = Color(0xD9FFFFFF);
   const border = Color(0xFFD6E2F2);
   const menuSurface = Color(0xF5FFFFFF);
-  const menuSelected = Color(0xFF1F6FEB);
   final accent = config.primaryColor;
+  final menuSelected = accent;
+  final onAccent =
+      accent.computeLuminance() > .179 ? Colors.black : Colors.white;
 
   final colorScheme = const ColorScheme.light().copyWith(
     primary: accent,
     secondary: config.secondaryColor,
+    onSecondary: config.secondaryColor.computeLuminance() > .179
+        ? Colors.black
+        : Colors.white,
     surface: surface,
     outline: border,
     onSurface: const Color(0xFF1F2A44),
-    onPrimary: Colors.white,
+    onPrimary: onAccent,
   );
 
   final standardShape = RoundedRectangleBorder(
@@ -116,20 +121,20 @@ ThemeData buildAppTheme(WhiteLabelConfig config) {
     dropdownMenuTheme: const DropdownMenuThemeData(
       textStyle: TextStyle(color: Color(0xFF1F2A44), fontSize: 13.5),
     ),
-    listTileTheme: const ListTileThemeData(
+    listTileTheme: ListTileThemeData(
       iconColor: Color(0xFF324968),
       textColor: Color(0xFF1F2A44),
-      selectedColor: Color(0xFF176EEB),
-      selectedTileColor: Color(0x261F6FEB),
+      selectedColor: accent,
+      selectedTileColor: accent.withValues(alpha: .15),
     ),
-    navigationDrawerTheme: const NavigationDrawerThemeData(
+    navigationDrawerTheme: NavigationDrawerThemeData(
       backgroundColor: menuSurface,
-      indicatorColor: Color(0x261F6FEB),
+      indicatorColor: accent.withValues(alpha: .15),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: menuSelected,
-        foregroundColor: Colors.white,
+        foregroundColor: onAccent,
         minimumSize: const Size(0, 40),
         shape: standardShape,
         textStyle: const TextStyle(
@@ -153,7 +158,7 @@ ThemeData buildAppTheme(WhiteLabelConfig config) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: menuSelected,
-        foregroundColor: Colors.white,
+        foregroundColor: onAccent,
         minimumSize: const Size(0, 40),
         shape: standardShape,
         textStyle: const TextStyle(
@@ -178,7 +183,7 @@ ThemeData buildAppTheme(WhiteLabelConfig config) {
     ),
     chipTheme: ChipThemeData(
       backgroundColor: Colors.white.withValues(alpha: 0.72),
-      selectedColor: const Color(0x261F6FEB),
+      selectedColor: accent.withValues(alpha: .15),
       labelStyle: const TextStyle(
         color: Color(0xFF2F3F59),
         fontWeight: FontWeight.w600,

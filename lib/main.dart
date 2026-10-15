@@ -8,6 +8,8 @@ import 'features/home/home_shell.dart';
 import 'features/home/pixel_perfect_image_screens.dart';
 import 'features/login/login_screen.dart';
 import 'state/session_state.dart';
+import 'ui/browser_brand_stub.dart'
+    if (dart.library.js_interop) 'ui/browser_brand_web.dart' as browser;
 
 void main() {
   runApp(const ProviderScope(child: SouFleetApp()));
@@ -29,6 +31,21 @@ class SouFleetApp extends ConsumerWidget {
 
     return whiteLabelAsync.when(
       data: (config) {
+        final logo = config.logoAsset?.trim() ?? '';
+        final symbol = config.symbolAsset?.trim() ?? '';
+        final builtIn =
+            logo == 'assets/branding/soutracking_logo_horizontal.png' ||
+                logo == 'assets/branding/soutracking_logo_transparent.png' ||
+                (logo.isEmpty && config.appName.toLowerCase() == 'soutracking');
+        browser.syncBrowserBrand(
+            config.appName,
+            symbol.isNotEmpty
+                ? symbol
+                : builtIn
+                    ? 'assets/branding/soutracking_symbol_transparent.png'
+                    : logo,
+            color:
+                '#${(config.primaryColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}');
         final home = pixelMode
             ? const PixelPerfectImageScreens()
             : session.status == SessionStatus.loading

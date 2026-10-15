@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/app_constants.dart';
+import '../../core/app_permissions.dart';
 import '../../core/display_text_formatter.dart';
 import '../../core/parking_state.dart' as parking_state;
 import '../../core/teltonika_obd_fields.dart';
@@ -249,7 +250,7 @@ const List<Color> _geofencePalette = [
 // `Image.asset` tentava carregar a data URL como se fosse um caminho de
 // arquivo e falhava silenciosamente -- por isso o logo customizado nunca
 // aparecia na sidebar/menu mobile (2026-09-05).
-Widget _brandLogoImage(String logoAsset,{required double height}) => BrandLogo(source:logoAsset,height:height);
+Widget _brandLogoImage(String logoAsset,{required double height, String name = 'SouTracking'}) => BrandLogo(source:logoAsset,name:name,height:height);
 
 Color _geofenceColorFor(Object id) {
   final index = id.hashCode.abs() % _geofencePalette.length;
@@ -467,6 +468,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   final bool _showHighlightsRail = false;
 
+  int _settingsInitialTab = 0;
   bool _menuOpen = true;
   bool _sidebarHidden = false;
   // Em telas estreitas a régua lateral flutuante do desktop nunca some de
@@ -749,7 +751,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
+  void _openMyProfile() {
+    _openPanel(_operationalMenu.firstWhere((item) => item.id == 'settings').copyWith(label: 'Meu perfil'));
+    setState(() => _settingsInitialTab = 1);
+  }
+
   void _openPanel(_OperationalMenuItem item) {
+    if (item.id == 'settings') _settingsInitialTab = 0;
     if (item.id == 'map') {
       _blockSurfaceClearUntil = DateTime.now().add(
         const Duration(milliseconds: 700),
@@ -2712,6 +2720,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onClosePanel: _closePanel,
                   onOpenSettingsPanel: _openSettingsPanel,
                   onOpenChangePassword: _openChangePasswordDialog,
+                  onOpenProfile: _openMyProfile,
                   onOpenVehicleSearch: _openVehicleSearchDialog,
                   showStatusCards: showTopStatusCards,
                   onLogout: () {
@@ -2720,6 +2729,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   profileName: profileName,
                   profileDetail: profileDetail,
                   profilePhotoUrl: profilePhotoUrl,
+                  profileRole: labelFromRole(roleFromProfileCode(currentSession.profileCode)),
                   compactProfileMenu: isPixeltiSession,
                   noCommunicationCount: noCommunicationCount,
                   showMapQuickActions: showMapQuickActions,
@@ -2743,6 +2753,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   cardDensity: visualSettings.cardDensity,
                   brandName: brand.appName,
                   brandLogoAsset: brand.logoAsset,
+                  brandSymbolAsset: brand.symbolAsset,
+                  profileName: profileName,
+                  profilePhotoUrl: profilePhotoUrl,
                   onToggle: _toggleSidebarCompact,
                   items: menuItems,
                   activeId: _activePanelId ?? 'map',
@@ -3041,6 +3054,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 _MobileFullScreenMenu(
                   brandName: brand.appName,
                   brandLogoAsset: brand.logoAsset,
+                  brandSymbolAsset: brand.symbolAsset,
                   items: menuItems,
                   activeId: _activePanelId ?? 'map',
                   onSelect: (item) {
@@ -4105,6 +4119,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Widget _buildSettingsPanel() {
     return SettingsScreen(
+      key: ValueKey('settings-$_settingsInitialTab'),
+      initialTab: _settingsInitialTab,
+      profileOnly: _settingsInitialTab == 1,
       onLogout: () {
         _handleLogout();
       },
@@ -5411,7 +5428,7 @@ class _SurfaceGuard extends StatelessWidget {
 
 ThemeData _panelLightTheme(BuildContext context) {
   final base = Theme.of(context);
-  const primary = Color(0xFF176EEB);
+  final primary = base.colorScheme.primary;
   const text = Color(0xFF1F2A44);
   const muted = Color(0xFF60718D);
   const surface = Color(0xFFFFFFFF);
@@ -5423,7 +5440,9 @@ ThemeData _panelLightTheme(BuildContext context) {
     brightness: Brightness.light,
   ).copyWith(
     primary: primary,
-    secondary: const Color(0xFF37C1A3),
+    secondary: base.colorScheme.secondary,
+    onPrimary: base.colorScheme.onPrimary,
+    onSecondary: base.colorScheme.onSecondary,
     surface: surface,
     outline: border,
   );
@@ -5455,14 +5474,14 @@ ThemeData _panelLightTheme(BuildContext context) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: primary, width: 1.2),
+        borderSide: BorderSide(color: primary, width: 1.2),
       ),
     ),
-    listTileTheme: const ListTileThemeData(
+    listTileTheme: ListTileThemeData(
       iconColor: Color(0xFF526684),
       textColor: text,
       selectedColor: primary,
-      selectedTileColor: Color(0xFFE7F0FF),
+      selectedTileColor: primary.withValues(alpha: .1),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: surface,
@@ -5478,7 +5497,7 @@ ThemeData _panelLightTheme(BuildContext context) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: primary,
-        foregroundColor: Colors.white,
+        foregroundColor: base.colorScheme.onPrimary,
       ),
     ),
   );
@@ -6405,6 +6424,7 @@ class _TopSearchBar extends StatelessWidget {
     required this.profileName,
     required this.profileDetail,
     this.profilePhotoUrl,
+    this.profileRole,
     required this.compactProfileMenu,
     required this.kpis,
     required this.activeFilter,
@@ -6423,6 +6443,7 @@ class _TopSearchBar extends StatelessWidget {
     this.sidebarVisible = true,
     this.onOpenSettingsPanel,
     this.onOpenChangePassword,
+    this.onOpenProfile,
     this.onOpenVehicleSearch,
     this.showStatusCards = false,
     this.noCommunicationCount = 0,
@@ -6448,6 +6469,7 @@ class _TopSearchBar extends StatelessWidget {
   final String profileName;
   final String profileDetail;
   final String? profilePhotoUrl;
+  final String? profileRole;
   final bool compactProfileMenu;
   final _FleetKpis kpis;
   final _KpiFilter? activeFilter;
@@ -6465,6 +6487,7 @@ class _TopSearchBar extends StatelessWidget {
   final bool sidebarVisible;
   final VoidCallback? onOpenSettingsPanel;
   final VoidCallback? onOpenChangePassword;
+  final VoidCallback? onOpenProfile;
   final VoidCallback? onOpenVehicleSearch;
   final bool showStatusCards;
   final int noCommunicationCount;
@@ -6539,7 +6562,7 @@ class _TopSearchBar extends StatelessWidget {
                         children: [
                           Expanded(
                             child: hasBrandLogo
-                                ? BrandLogo(source:brandLogoAsset,name:brandName,height:logoHeight,width:180)
+                                ? BrandLogo(source:brandLogoAsset,symbolSource:brand.symbolAsset,darkSource:brand.darkLogoAsset,name:brandName,height:logoHeight,width:180)
                                 : Text(
                                     brandName,
                                     maxLines: 1,
@@ -6707,10 +6730,12 @@ class _TopSearchBar extends StatelessWidget {
                     profileName: profileName,
                     profileDetail: profileDetail,
                     photoUrl: profilePhotoUrl,
+                    profileRole: profileRole,
                     compactMenu: compactProfileMenu,
                     avatarOnly: true,
                     onOpenQuickSettings: onOpenSettingsPanel,
                     onOpenChangePassword: onOpenChangePassword,
+                    onOpenProfile: onOpenProfile,
                     showQuickActions: showMapQuickActions,
                     mapType: mapType,
                     trafficEnabled: trafficEnabled,
@@ -6951,6 +6976,7 @@ class _ProfileMenuButton extends StatelessWidget {
     required this.profileDetail,
     required this.compactMenu,
     this.photoUrl,
+    this.profileRole,
     this.avatarOnly = false,
     this.showQuickActions = false,
     this.onFilterSelected,
@@ -6965,6 +6991,7 @@ class _ProfileMenuButton extends StatelessWidget {
     this.onRefreshPositions,
     this.onOpenQuickSettings,
     this.onOpenChangePassword,
+    this.onOpenProfile,
   });
 
   final VoidCallback onLogout;
@@ -6972,6 +6999,7 @@ class _ProfileMenuButton extends StatelessWidget {
   final String profileDetail;
   final bool compactMenu;
   final String? photoUrl;
+  final String? profileRole;
   final bool avatarOnly;
   final bool showQuickActions;
   final ValueChanged<_KpiFilter>? onFilterSelected;
@@ -6987,8 +7015,10 @@ class _ProfileMenuButton extends StatelessWidget {
   final VoidCallback? onRefreshPositions;
   final VoidCallback? onOpenQuickSettings;
   final VoidCallback? onOpenChangePassword;
+  final VoidCallback? onOpenProfile;
 
   static const String _profileMenuKey = 'my-profile';
+  static const String _passwordMenuKey = 'change-password';
   static const String _quickSettingsKey = 'quick-settings';
   static const String _filterOnlineKey = 'filter-online';
   static const String _filterOfflineKey = 'filter-offline';
@@ -7016,13 +7046,13 @@ class _ProfileMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'Menu do perfil',
       position: PopupMenuPosition.under,
-      offset: const Offset(0, 8),
-      color: const Color(0xFFFDFEFF),
+      offset: Offset(0, 8),
+      color: Color(0xFFFDFEFF),
       elevation: 14,
-      constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
+      constraints: BoxConstraints(minWidth: 220, maxWidth: 300),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFD8E3F2)),
+        side: BorderSide(color: Color(0xFFD8E3F2)),
       ),
       onSelected: (value) {
         switch (value) {
@@ -7072,6 +7102,9 @@ class _ProfileMenuButton extends StatelessWidget {
             onRefreshPositions?.call();
             return;
           case _profileMenuKey:
+            onOpenProfile?.call();
+            return;
+          case _passwordMenuKey:
             onOpenChangePassword?.call();
             return;
         }
@@ -7084,8 +7117,16 @@ class _ProfileMenuButton extends StatelessWidget {
         final liveTrailOn = liveTrailEnabled == true;
 
         return [
-          const PopupMenuItem<String>(
-            value: _profileMenuKey,
+          PopupMenuItem<String>(enabled: false, height: 78, child: Row(children: [
+            _BrandProfileAvatar(name: displayName, photoUrl: photoUrl, size: 40),
+            SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              SizedBox(height: 4), Text(displayDetail, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Color(0xFF60718D))),
+              if (profileRole != null) ...[SizedBox(height: 4), Text(profileRole!, style: TextStyle(fontSize: 10, color: Color(0xFF60718D)))]
+            ]))])), PopupMenuDivider(),
+          PopupMenuItem<String>(value: _profileMenuKey, child: Row(children: [Icon(Icons.person_outline_rounded, size: 18, color: Color(0xFF52627C)), SizedBox(width: 10), Expanded(child: Text('Meu perfil'))])),
+          PopupMenuItem<String>(
+            value: _passwordMenuKey,
             child: Row(
               children: [
                 Icon(
@@ -7098,7 +7139,7 @@ class _ProfileMenuButton extends StatelessWidget {
               ],
             ),
           ),
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             value: _quickSettingsKey,
             child: Row(
               children: [
@@ -7113,8 +7154,8 @@ class _ProfileMenuButton extends StatelessWidget {
             ),
           ),
           if (showQuickActions) ...[
-            const PopupMenuDivider(),
-            const PopupMenuItem<String>(
+            PopupMenuDivider(),
+            PopupMenuItem<String>(
               enabled: false,
               height: 28,
               child: Text(
@@ -7136,8 +7177,8 @@ class _ProfileMenuButton extends StatelessWidget {
                         : Icons.radio_button_unchecked,
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Mapa'),
+                  SizedBox(width: 8),
+                  Text('Mapa'),
                 ],
               ),
             ),
@@ -7151,8 +7192,8 @@ class _ProfileMenuButton extends StatelessWidget {
                         : Icons.radio_button_unchecked,
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Satélite'),
+                  SizedBox(width: 8),
+                  Text('Satélite'),
                 ],
               ),
             ),
@@ -7166,8 +7207,8 @@ class _ProfileMenuButton extends StatelessWidget {
                         : Icons.radio_button_unchecked,
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Híbrido'),
+                  SizedBox(width: 8),
+                  Text('Híbrido'),
                 ],
               ),
             ),
@@ -7181,8 +7222,8 @@ class _ProfileMenuButton extends StatelessWidget {
                         : Icons.check_box_outline_blank_rounded,
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Trânsito on/off'),
+                  SizedBox(width: 8),
+                  Text('Trânsito on/off'),
                 ],
               ),
             ),
@@ -7196,22 +7237,22 @@ class _ProfileMenuButton extends StatelessWidget {
                         : Icons.check_box_outline_blank_rounded,
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Rastro on/off'),
+                  SizedBox(width: 8),
+                  Text('Rastro on/off'),
                 ],
               ),
             ),
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: _mapRecenterKey,
               child: Text('Centralizar frota'),
             ),
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: _mapRefreshKey,
               child: Text('Atualizar posições'),
             ),
           ],
-          const PopupMenuDivider(),
-          const PopupMenuItem<String>(
+          PopupMenuDivider(),
+          PopupMenuItem<String>(
             value: _logoutMenuKey,
             child: Row(
               children: [
@@ -7253,28 +7294,14 @@ class _ProfileMenuButton extends StatelessWidget {
                 height: 40,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF176EEB),
+                  color: Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: (photoUrl?.isNotEmpty ?? false)
-                    ? Image.network(
-                        photoUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.person_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                child: _BrandProfileAvatar(name: displayName, photoUrl: photoUrl, size: 40),
               ),
             ),
             if (!avatarOnly) ...[
-              const SizedBox(width: 9),
+              SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -7284,7 +7311,7 @@ class _ProfileMenuButton extends StatelessWidget {
                       displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFF1F2A44),
                         fontWeight: FontWeight.w800,
                         fontSize: 12,
@@ -7294,7 +7321,7 @@ class _ProfileMenuButton extends StatelessWidget {
                       displayDetail,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFF60718D),
                         fontWeight: FontWeight.w700,
                         fontSize: 10.5,
@@ -7303,7 +7330,7 @@ class _ProfileMenuButton extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.keyboard_arrow_down_rounded,
                 color: Color(0xFF52627C),
                 size: 18,
@@ -7326,6 +7353,10 @@ class _SideMenu extends StatelessWidget {
     required this.onLogout,
     this.brandName,
     this.brandLogoAsset,
+    this.brandSymbolAsset,
+    this.profileName,
+    this.profilePhotoUrl,
+    this.profileRole,
     this.onToggle,
     this.userEmail = '',
     this.isAdmin = false,
@@ -7340,6 +7371,9 @@ class _SideMenu extends StatelessWidget {
   final VoidCallback onLogout;
   final String? brandName;
   final String? brandLogoAsset;
+  final String? brandSymbolAsset;
+  final String? profileName, profilePhotoUrl;
+  final String? profileRole;
   final VoidCallback? onToggle;
   final String userEmail;
   final bool isAdmin;
@@ -7385,7 +7419,7 @@ class _SideMenu extends StatelessWidget {
                               ? Align(
                                   alignment: Alignment.centerLeft,
                                   child:
-                                      _brandLogoImage(logoAsset, height: 36),
+                                      _brandLogoImage(logoAsset, height: 36, name: brandName ?? 'SouTracking'),
                                 )
                               : Text(
                                   brandName ?? 'SouTracking',
@@ -7424,7 +7458,7 @@ class _SideMenu extends StatelessWidget {
                               color: Colors.transparent,
                               borderRadius: BorderRadius.circular(7),
                             ),
-                            child: BrandLogo(source:brandLogoAsset,name:brandName??'SouTracking',height:28,compact:true),
+                            child: BrandLogo(source:brandLogoAsset,symbolSource:brandSymbolAsset,name:brandName??'SouTracking',height:28,compact:true),
                           ),
                         ),
                       ),
@@ -7451,6 +7485,7 @@ class _SideMenu extends StatelessWidget {
                     const Divider(color: Color(0xFFE2E8F0), height: 1),
                     const SizedBox(height: 8),
                     _SideMenuFooter(
+                      profileRole: profileRole,                      profileName: profileName, photoUrl: profilePhotoUrl,
                       userEmail: userEmail,
                       isAdmin: isAdmin,
                       onLogout: onLogout,
@@ -7459,6 +7494,7 @@ class _SideMenu extends StatelessWidget {
                   ] else ...[
                     const SizedBox(height: 6),
                     _SideMenuFooterCollapsed(
+                      profileName: profileName, photoUrl: profilePhotoUrl,
                       userEmail: userEmail,
                       onLogout: onLogout,
                     ),
@@ -7485,6 +7521,7 @@ class _MobileFullScreenMenu extends StatelessWidget {
     required this.onLogout,
     this.brandName,
     this.brandLogoAsset,
+    this.brandSymbolAsset,
     this.userEmail = '',
   });
 
@@ -7495,6 +7532,7 @@ class _MobileFullScreenMenu extends StatelessWidget {
   final VoidCallback onLogout;
   final String? brandName;
   final String? brandLogoAsset;
+  final String? brandSymbolAsset;
   final String userEmail;
 
   @override
@@ -7513,7 +7551,7 @@ class _MobileFullScreenMenu extends StatelessWidget {
                   children: [
                     Expanded(
                       child: hasLogo
-                          ? _brandLogoImage(logoAsset, height: 26)
+                          ? _brandLogoImage(logoAsset, height: 26, name: brandName ?? 'SouTracking')
                           : Text(
                               brandName ?? 'SouTracking',
                               style: const TextStyle(
@@ -7638,11 +7676,15 @@ class _MobileMenuTile extends StatelessWidget {
 class _SideMenuFooter extends StatelessWidget {
   const _SideMenuFooter({
     required this.userEmail,
+    this.profileName,
+    this.photoUrl,
+    this.profileRole,
     required this.isAdmin,
     required this.onLogout,
     this.debugProfileInfo,
   });
   final String userEmail;
+  final String? profileName, photoUrl, profileRole;
   final bool isAdmin;
   final VoidCallback onLogout;
   // Diagnostico temporario -- toque longo/hover no "v1.0.1" mostra o
@@ -7652,13 +7694,12 @@ class _SideMenuFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = userEmail.isNotEmpty ? userEmail[0].toUpperCase() : 'U';
-    final role = isAdmin ? 'Administrador' : 'Operador';
+    final role = profileRole ?? (isAdmin ? 'Administrador' : 'Operador');
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F4FA),
+        color: Color(0xFFF0F4FA),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -7666,32 +7707,14 @@ class _SideMenuFooter extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(initial,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12)),
-                ),
-              ),
-              const SizedBox(width: 8),
+              _BrandProfileAvatar(name: profileName ?? userEmail, photoUrl: photoUrl, size: 28),
+              SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(role,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: Color(0xFF1F2A44),
                             fontWeight: FontWeight.w800,
                             fontSize: 11)),
@@ -7699,7 +7722,7 @@ class _SideMenuFooter extends StatelessWidget {
                       userEmail,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: Color(0xFF9DB1CC),
                           fontSize: 10,
                           fontWeight: FontWeight.w600),
@@ -7710,53 +7733,53 @@ class _SideMenuFooter extends StatelessWidget {
               IconButton(
                 tooltip: 'Sair',
                 onPressed: onLogout,
-                icon: const Icon(Icons.logout_rounded, size: 16),
+                icon: Icon(Icons.logout_rounded, size: 16),
                 style: IconButton.styleFrom(
-                  foregroundColor: const Color(0xFF60718D),
+                  foregroundColor: Color(0xFF60718D),
                   padding: EdgeInsets.zero,
-                  minimumSize: const Size(28, 28),
+                  minimumSize: Size(28, 28),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Row(
             children: [
               Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                       color: Color(0xFF10B981), shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-              const Text('Online',
+              SizedBox(width: 6),
+              Text('Online',
                   style: TextStyle(
                       color: Color(0xFF10B981),
                       fontSize: 10,
                       fontWeight: FontWeight.w700)),
-              const Spacer(),
+              Spacer(),
               GestureDetector(
                 onTap: () {
                   showDialog<void>(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       backgroundColor: Colors.white,
-                      title: const Text('Diagnostico de sessao'),
+                      title: Text('Diagnostico de sessao'),
                       content: SelectableText(
                         'Versão: $kAppVersionLabel\nBuild: $kBuildDiagnosticLabel\n\n'
                         '${debugProfileInfo ?? 'sem dados de diagnostico'}',
-                        style: const TextStyle(fontSize: 12),
+                        style: TextStyle(fontSize: 12),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(ctx).pop(),
-                          child: const Text('Fechar'),
+                          child: Text('Fechar'),
                         ),
                       ],
                     ),
                   );
                 },
                 child: Text(kAppVersionLabel,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: Color(0xFF9DB1CC),
                         fontSize: 10,
                         fontWeight: FontWeight.w600)),
@@ -7771,44 +7794,26 @@ class _SideMenuFooter extends StatelessWidget {
 
 class _SideMenuFooterCollapsed extends StatelessWidget {
   const _SideMenuFooterCollapsed(
-      {required this.userEmail, required this.onLogout});
+      {required this.userEmail, required this.onLogout, this.profileName, this.photoUrl});
   final String userEmail;
+  final String? profileName, photoUrl;
   final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
-    final initial = userEmail.isNotEmpty ? userEmail[0].toUpperCase() : 'U';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(initial,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12)),
-          ),
-        ),
-        const SizedBox(height: 4),
+        _BrandProfileAvatar(name: profileName ?? userEmail, photoUrl: photoUrl, size: 28),
+        SizedBox(height: 4),
         IconButton(
           tooltip: 'Sair',
           onPressed: onLogout,
-          icon: const Icon(Icons.logout_rounded, size: 16),
+          icon: Icon(Icons.logout_rounded, size: 16),
           style: IconButton.styleFrom(
-            foregroundColor: const Color(0xFF60718D),
+            foregroundColor: Color(0xFF60718D),
             padding: EdgeInsets.zero,
-            minimumSize: const Size(28, 28),
+            minimumSize: Size(28, 28),
           ),
         ),
       ],
@@ -7834,8 +7839,9 @@ class _MenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeLabel = formatDisplayText(item.label);
-    final accent = item.color ?? const Color(0xFF176EEB);
-    final iconColor = selected ? accent : accent.withValues(alpha: 0.55);
+    final accent = Theme.of(context).colorScheme.primary;
+    final itemAccent = item.color ?? accent;
+    final iconColor = selected ? accent : itemAccent.withValues(alpha: 0.55);
     final textColor = selected ? accent : const Color(0xFF3D4F6B);
     final bgColor =
         selected ? accent.withValues(alpha: 0.10) : Colors.transparent;
@@ -11343,21 +11349,21 @@ class _AiAssistButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: Color(0xFFE2E8F0)),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.auto_awesome_rounded,
-                color: Color(0xFF0F69E8), size: 14),
+                color: Theme.of(context).colorScheme.primary, size: 14),
             SizedBox(width: 6),
             Text('IA',
                 style: TextStyle(
-                    color: Color(0xFF0F69E8),
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                     letterSpacing: 0.5)),
@@ -14125,15 +14131,15 @@ class _GlassButton extends StatelessWidget {
           child: _GlassSurface(
             padding: EdgeInsets.zero,
             borderColor:
-                selected ? const Color(0xFFBFD8FF) : const Color(0xFFE2E8F3),
+                selected ? Color(0xFFBFD8FF) : Color(0xFFE2E8F3),
             child: SizedBox(
               width: 48,
               height: 48,
               child: Icon(
                 icon,
                 color: selected
-                    ? const Color(0xFF176EEB)
-                    : const Color(0xFF25344A),
+                    ? Theme.of(context).colorScheme.primary
+                    : Color(0xFF25344A),
               ),
             ),
           ),
@@ -14324,20 +14330,20 @@ class _TopIcon extends StatelessWidget {
               decoration: BoxDecoration(
                 color: backgroundColor ??
                     (selected
-                        ? const Color(0xFFEAF3FF)
+                        ? Color(0xFFEAF3FF)
                         : Colors.white.withValues(alpha: 0.82)),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: selected
-                      ? const Color(0xFFBFD8FF)
-                      : const Color(0xFFE1E8F2),
+                      ? Color(0xFFBFD8FF)
+                      : Color(0xFFE1E8F2),
                 ),
               ),
               child: Icon(
                 icon,
                 color: selected
-                    ? const Color(0xFF176EEB)
-                    : const Color(0xFF526684),
+                    ? Theme.of(context).colorScheme.primary
+                    : Color(0xFF526684),
                 size: 20,
               ),
             ),
@@ -14347,15 +14353,15 @@ class _TopIcon extends StatelessWidget {
                 top: -6,
                 child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8C530),
+                    color: Color(0xFFF8C530),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: Colors.white),
                   ),
                   child: Text(
                     count! > 99 ? '99+' : '$count',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Color(0xFF1F2A44),
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
@@ -22501,21 +22507,21 @@ class _HubTabScreenState extends State<_HubTabScreen>
     return Column(
       children: [
         Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: Colors.white,
             border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
           ),
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
-            labelColor: const Color(0xFF0F69E8),
-            unselectedLabelColor: const Color(0xFF60718D),
-            indicatorColor: const Color(0xFF0F69E8),
+            labelColor: Theme.of(context).colorScheme.primary,
+            unselectedLabelColor: Color(0xFF60718D),
+            indicatorColor: Theme.of(context).colorScheme.primary,
             indicatorWeight: 2,
             labelStyle:
-                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
             unselectedLabelStyle:
-                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
             tabs: [for (final t in widget.tabs) Tab(text: t)],
             onTap: (index) {
               if (_builtTabs.add(index)) {
@@ -22531,7 +22537,7 @@ class _HubTabScreenState extends State<_HubTabScreen>
               for (var i = 0; i < widget.builders.length; i++)
                 _builtTabs.contains(i)
                     ? widget.builders[i]()
-                    : const SizedBox.shrink(),
+                    : SizedBox.shrink(),
             ],
           ),
         ),
@@ -22672,3 +22678,16 @@ const List<_OperationalMenuItem> _operationalMenu = [
   ) {
     return rawProgress.clamp(0.0, 1.0);
   }
+
+class _BrandProfileAvatar extends StatelessWidget {
+  const _BrandProfileAvatar({required this.name, this.photoUrl, this.size = 40});
+  final String name; final String? photoUrl; final double size;
+  @override
+  Widget build(BuildContext context) {
+    final words = name.trim().split(RegExp(r'\s+')).where((v) => v.isNotEmpty).toList();
+    final initials = words.isEmpty ? 'U' : (words.first.characters.first + (words.length > 1 ? words.last.characters.first : '')).toUpperCase();
+    final fallback = Center(child: Text(initials, style: TextStyle(fontSize: size * .34, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onPrimary)));
+    return ClipRRect(borderRadius: BorderRadius.circular(12), child: Container(width: size, height: size, color: Theme.of(context).colorScheme.primary,
+      child: (photoUrl?.isNotEmpty ?? false) ? Image.network(photoUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback) : fallback));
+  }
+}

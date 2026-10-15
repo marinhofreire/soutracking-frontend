@@ -2356,14 +2356,16 @@ class _TopActionButton extends StatelessWidget {
   final bool primary;
   @override
   Widget build(BuildContext context) {
-    final color = primary ? Colors.white : const Color(0xFF60718D);
+    final color = primary
+        ? Theme.of(context).colorScheme.onPrimary
+        : const Color(0xFF60718D);
     return Material(
-        color: primary ? const Color(0xFF176EEB) : Colors.white,
+        color: primary ? Theme.of(context).colorScheme.primary : Colors.white,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
             side: BorderSide(
                 color: primary
-                    ? const Color(0xFF176EEB)
+                    ? Theme.of(context).colorScheme.primary
                     : const Color(0xFFD6E2F2))),
         child: InkWell(
             onTap: onTap,
@@ -2484,21 +2486,22 @@ class _DeviceEditorLayout extends StatelessWidget {
   final List<Widget> actions;
   @override
   Widget build(BuildContext context) {
-    const line = Color(0xFFDDE5F0), accent = Color(0xFF176EEB);
+    const line = Color(0xFFDDE5F0);
+    final accent = Theme.of(context).colorScheme.primary;
     final base = Theme.of(context);
     final border = OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFD6E2F2)));
+        borderSide: BorderSide(color: Color(0xFFD6E2F2)));
     final shape =
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
     final theme = base.copyWith(
       textTheme: base.textTheme.apply(fontFamily: 'DeviceEditorSegoe').copyWith(
-          bodyLarge: const TextStyle(
+          bodyLarge: TextStyle(
               fontFamily: 'DeviceEditorSegoe',
               fontSize: 11,
               height: 14 / 11,
               color: Color(0xFF1F2A44)),
-          bodyMedium: const TextStyle(
+          bodyMedium: TextStyle(
               fontFamily: 'DeviceEditorSegoe',
               fontSize: 11,
               height: 14 / 11,
@@ -2508,78 +2511,77 @@ class _DeviceEditorLayout extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(
           isDense: true,
           filled: true,
-          fillColor: const Color(0xFFF8FAFF),
+          fillColor: Color(0xFFF8FAFF),
           floatingLabelBehavior: FloatingLabelBehavior.always,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          labelStyle: const TextStyle(
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          labelStyle: TextStyle(
               fontFamily: 'DeviceEditorSegoe',
               fontSize: 12,
               color: Color(0xFF6D82A3)),
-          floatingLabelStyle: const TextStyle(
+          floatingLabelStyle: TextStyle(
               fontFamily: 'DeviceEditorSegoe',
               fontSize: 12,
               color: Color(0xFF6D82A3)),
-          hintStyle: const TextStyle(
+          hintStyle: TextStyle(
               fontFamily: 'DeviceEditorSegoe',
               fontSize: 11,
               color: Color(0xFF97A7BD)),
           border: border,
           enabledBorder: border,
           focusedBorder:
-              border.copyWith(borderSide: const BorderSide(color: accent))),
+              border.copyWith(borderSide: BorderSide(color: accent))),
       filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
               shape: shape,
-              minimumSize: const Size(0, 33),
-              maximumSize: const Size(double.infinity, 33),
-              padding: const EdgeInsets.symmetric(horizontal: 15),
+              minimumSize: Size(0, 33),
+              maximumSize: Size(double.infinity, 33),
+              padding: EdgeInsets.symmetric(horizontal: 15),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
+              textStyle: TextStyle(
                   fontFamily: 'DeviceEditorSegoe',
                   fontSize: 11,
                   fontWeight: FontWeight.w600))),
       outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF60718D),
-              side: const BorderSide(color: Color(0xFFD6E2F2)),
+              foregroundColor: Color(0xFF60718D),
+              side: BorderSide(color: Color(0xFFD6E2F2)),
               shape: shape,
-              minimumSize: const Size(0, 33),
-              maximumSize: const Size(double.infinity, 33),
-              padding: const EdgeInsets.symmetric(horizontal: 15),
+              minimumSize: Size(0, 33),
+              maximumSize: Size(double.infinity, 33),
+              padding: EdgeInsets.symmetric(horizontal: 15),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
+              textStyle: TextStyle(
                   fontFamily: 'DeviceEditorSegoe',
                   fontSize: 11,
                   fontWeight: FontWeight.w600))),
       textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF60718D),
-              textStyle: const TextStyle(
-                  fontFamily: 'DeviceEditorSegoe', fontSize: 10))),
+              foregroundColor: Color(0xFF60718D),
+              textStyle:
+                  TextStyle(fontFamily: 'DeviceEditorSegoe', fontSize: 10))),
       switchTheme: SwitchThemeData(
-          trackOutlineWidth: const WidgetStatePropertyAll(0),
-          thumbColor: const WidgetStatePropertyAll(Colors.white),
+          trackOutlineWidth: WidgetStatePropertyAll(0),
+          thumbColor: WidgetStatePropertyAll(Colors.white),
           trackColor: WidgetStateProperty.resolveWith((states) =>
               states.contains(WidgetState.selected)
                   ? accent
-                  : const Color(0xFFE7EDF6))),
+                  : Color(0xFFE7EDF6))),
     );
     final styledForm = Theme(
         data: theme,
         child: DefaultTextStyle(
-            style: const TextStyle(
+            style: TextStyle(
                 fontFamily: 'DeviceEditorSegoe',
                 fontSize: 11,
                 color: Color(0xFF1F2A44)),
             child: form));
     final left = Container(
         width: 194,
-        padding: const EdgeInsets.fromLTRB(10, 17, 10, 17),
+        padding: EdgeInsets.fromLTRB(10, 17, 10, 17),
         decoration:
-            const BoxDecoration(border: Border(right: BorderSide(color: line))),
+            BoxDecoration(border: Border(right: BorderSide(color: line))),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           SizedBox(
@@ -2587,42 +2589,42 @@ class _DeviceEditorLayout extends StatelessWidget {
               child: _DeviceEditorCaption(isEditing
                   ? 'EDIÇÃO DO DISPOSITIVO'
                   : 'CADASTRO DO DISPOSITIVO')),
-          const SizedBox(height: 13),
+          SizedBox(height: 13),
           navigation,
-          const Spacer(),
-          const Divider(height: 1, color: Color(0xFFEDF1F6)),
-          const SizedBox(height: 12),
+          Spacer(),
+          Divider(height: 1, color: Color(0xFFEDF1F6)),
+          SizedBox(height: 12),
           Text(title,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 10, height: 1.6, color: Color(0xFF536E93))),
           Text(
               isEditing
                   ? 'Revise os dados e a configuração deste equipamento.'
                   : 'Cadastre um novo rastreador e defina seus parâmetros iniciais.',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 10, height: 1.6, color: Color(0xFF8A9BB2)))
         ]));
     final right = Container(
         width: 232,
-        padding: const EdgeInsets.fromLTRB(10, 17, 10, 17),
+        padding: EdgeInsets.fromLTRB(10, 17, 10, 17),
         decoration:
-            const BoxDecoration(border: Border(left: BorderSide(color: line))),
+            BoxDecoration(border: Border(left: BorderSide(color: line))),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SizedBox(
+          SizedBox(
               height: 12, child: _DeviceEditorCaption('RESUMO DO DISPOSITIVO')),
-          const SizedBox(height: 13),
+          SizedBox(height: 13),
           Expanded(child: summary)
         ]));
     final content = isMobile
         ? Column(children: [
-            Padding(padding: const EdgeInsets.all(10), child: navigation),
+            Padding(padding: EdgeInsets.all(10), child: navigation),
             Expanded(
                 child: Column(children: [
               Expanded(
                   flex: 3,
-                  child: Padding(
-                      padding: const EdgeInsets.all(12), child: styledForm)),
+                  child:
+                      Padding(padding: EdgeInsets.all(12), child: styledForm)),
               Expanded(flex: 2, child: summary)
             ]))
           ])
@@ -2630,14 +2632,14 @@ class _DeviceEditorLayout extends StatelessWidget {
             left,
             Expanded(
                 child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 17, 16, 17),
+                    padding: EdgeInsets.fromLTRB(16, 17, 16, 17),
                     child: styledForm)),
             right
           ]);
     return Theme(
         data: theme,
         child: DefaultTextStyle(
-            style: const TextStyle(
+            style: TextStyle(
                 fontFamily: 'DeviceEditorSegoe',
                 fontSize: 12,
                 color: Color(0xFF1F2A44)),
@@ -2653,46 +2655,46 @@ class _DeviceEditorLayout extends StatelessWidget {
                 child: Column(children: [
                   Container(
                       height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 25),
-                      decoration: const BoxDecoration(
+                      padding: EdgeInsets.symmetric(horizontal: 25),
+                      decoration: BoxDecoration(
                           border: Border(bottom: BorderSide(color: line))),
                       child: Row(children: [
                         Container(
                             height: 48,
                             alignment: Alignment.center,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                                 border: Border(
                                     bottom:
                                         BorderSide(color: accent, width: 3))),
                             child: Text(title,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: accent))),
-                        const Spacer(),
+                        Spacer(),
                         SizedBox(
                             width: 28,
                             height: 28,
                             child: IconButton(
                                 padding: EdgeInsets.zero,
                                 onPressed: onClose,
-                                icon: const DeviceEditorReferenceIcon('close',
+                                icon: DeviceEditorReferenceIcon('close',
                                     size: 16, color: Color(0xFF8194AF)),
-                                color: const Color(0xFF8194AF)))
+                                color: Color(0xFF8194AF)))
                       ])),
                   Expanded(child: content),
                   Container(
                       height: isMobile ? null : 54,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: const BoxDecoration(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
                           border: Border(top: BorderSide(color: line))),
                       child: isMobile
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                   for (var i = 0; i < actions.length; i++) ...[
-                                    if (i > 0) const SizedBox(height: 6),
+                                    if (i > 0) SizedBox(height: 6),
                                     actions[i]
                                   ]
                                 ])
@@ -2700,7 +2702,7 @@ class _DeviceEditorLayout extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                   for (var i = 0; i < actions.length; i++) ...[
-                                    if (i > 0) const SizedBox(width: 9),
+                                    if (i > 0) SizedBox(width: 9),
                                     SizedBox(
                                         width: [74.7, 153.58, 141.08][i],
                                         height: 33,
@@ -2834,19 +2836,19 @@ class _DeviceEditorNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      _item(
+      _item(context,
           section: _DeviceEditorSection.vehicle,
           icon: 'car',
           title: 'Veículo',
           subtitle: 'Dados e visual',
           ready: vehicleReady),
-      _item(
+      _item(context,
           section: _DeviceEditorSection.equipment,
           icon: 'chip',
           title: 'Chip e equipamento',
           subtitle: 'Rastreador e rede',
           ready: equipmentReady),
-      _item(
+      _item(context,
           section: _DeviceEditorSection.sensors,
           icon: 'tune',
           title: 'Sensores e atuadores',
@@ -2856,47 +2858,45 @@ class _DeviceEditorNavigation extends StatelessWidget {
     return vertical
         ? Column(children: [
             for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(height: 6),
+              if (i > 0) SizedBox(height: 6),
               items[i]
             ]
           ])
         : Row(children: [
             for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
+              if (i > 0) SizedBox(width: 6),
               Expanded(child: items[i])
             ]
           ]);
   }
 
-  Widget _item(
+  Widget _item(BuildContext context,
       {required _DeviceEditorSection section,
       required String icon,
       required String title,
       required String subtitle,
       required bool ready}) {
     final selected = activeSection == section;
-    const accent = Color(0xFF176EEB);
+    final accent = Theme.of(context).colorScheme.primary;
     return Semantics(
         button: true,
         selected: selected,
         label: title,
         child: Material(
-            color: selected ? const Color(0xFFEAF2FF) : Colors.white,
+            color: selected ? Color(0xFFEAF2FF) : Colors.white,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(9),
-                side: BorderSide(
-                    color: selected ? accent : const Color(0xFFDDE5F0))),
+                side: BorderSide(color: selected ? accent : Color(0xFFDDE5F0))),
             child: InkWell(
                 onTap: () => onChanged(section),
                 borderRadius: BorderRadius.circular(9),
                 child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+                    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 12),
                     child: Row(children: [
                       DeviceEditorReferenceIcon(icon,
                           size: 14,
-                          color: selected ? accent : const Color(0xFF8299BB)),
-                      const SizedBox(width: 8),
+                          color: selected ? accent : Color(0xFF8299BB)),
+                      SizedBox(width: 8),
                       Expanded(
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2906,18 +2906,17 @@ class _DeviceEditorNavigation extends StatelessWidget {
                                     fontSize: 10,
                                     height: 1.4,
                                     fontWeight: FontWeight.w600,
-                                    color: selected
-                                        ? accent
-                                        : const Color(0xFF1F2A44))),
-                            const SizedBox(height: 4),
+                                    color:
+                                        selected ? accent : Color(0xFF1F2A44))),
+                            SizedBox(height: 4),
                             Text(subtitle,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 9,
                                     height: 4 / 3,
                                     color: Color(0xFF8194B1)))
                           ])),
                       if (selected)
-                        const DeviceEditorReferenceIcon('chevron',
+                        DeviceEditorReferenceIcon('chevron',
                             size: 14, color: accent),
                     ])))));
   }
@@ -2967,20 +2966,21 @@ class _VehicleVisualChoiceCard extends StatelessWidget {
   };
   @override
   Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFF176EEB) : const Color(0xFF768BAA);
+    final color =
+        selected ? Theme.of(context).colorScheme.primary : Color(0xFF768BAA);
     final assetType = _spriteTypes[choice.key];
     return Semantics(
         button: true,
         selected: selected,
         label: 'Visual do mapa: ${choice.label}',
         child: Material(
-            color: selected ? const Color(0xFFEEF5FF) : Colors.white,
+            color: selected ? Color(0xFFEEF5FF) : Colors.white,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(7),
                 side: BorderSide(
                     color: selected
-                        ? const Color(0xFF176EEB)
-                        : const Color(0xFFDDE5F0))),
+                        ? Theme.of(context).colorScheme.primary
+                        : Color(0xFFDDE5F0))),
             child: InkWell(
                 onTap: onTap,
                 borderRadius: BorderRadius.circular(7),
@@ -2997,7 +2997,7 @@ class _VehicleVisualChoiceCard extends StatelessWidget {
                                   'assets/icons/map_sprites/$assetType/${assetType}_0.png',
                                   fit: BoxFit.contain,
                                   filterQuality: FilterQuality.high)),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4),
                       Text(choice.label,
                           style: TextStyle(
                               fontSize: 9, height: 13 / 9, color: color))

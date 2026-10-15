@@ -227,7 +227,9 @@ class _AdminMenuTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFEAF3FF) : Colors.transparent,
+        color: selected
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: .08)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: selected ? const Color(0xFFC7DAF7) : Colors.transparent,
@@ -238,7 +240,9 @@ class _AdminMenuTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         leading: Icon(
           item.icon,
-          color: selected ? const Color(0xFF176EEB) : const Color(0xFF5F738F),
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : const Color(0xFF5F738F),
           size: 18,
         ),
         title: Text(
@@ -274,8 +278,8 @@ class AdminActionButton extends StatelessWidget {
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF2C7BEA),
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
