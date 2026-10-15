@@ -92,6 +92,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   DateTime _from = DateTime.now().subtract(const Duration(hours: 24));
   DateTime _to = DateTime.now();
   bool _loading = false;
+  // Diagnostico (nao e tela de cliente): mostra todo campo que o Traccar
+  // mandou, sem preset de protocolo, sem esconder vazio/"-" e sem a lista
+  // de chaves ignoradas -- necessario pra confirmar se o equipamento (ex.
+  // NT40) realmente nao envia ignicao/bateria/GSM/satelites, ou se e so
+  // filtro da tela escondendo um dado que chegou.
+  bool _rawMode = false;
   String _sourceFilter = 'Todos';
   String _severityFilter = 'Todos';
   final TextEditingController _searchController = TextEditingController();
@@ -324,7 +330,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       lng: lng,
       origin: 'GPS',
       attributesSummary: _attributesSummary(attributes),
-      protocolValues: _extractProtocolValues(raw: raw, attributes: attributes),
+      protocolValues: _extractProtocolValues(
+        raw: raw,
+        attributes: attributes,
+        includeAll: _rawMode,
+      ),
     );
   }
 
@@ -358,7 +368,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       lng: lng,
       origin: 'Evento',
       attributesSummary: _attributesSummary(attributes),
-      protocolValues: _extractProtocolValues(raw: raw, attributes: attributes),
+      protocolValues: _extractProtocolValues(
+        raw: raw,
+        attributes: attributes,
+        includeAll: _rawMode,
+      ),
       rawEventType: eventType.isEmpty ? null : eventType,
     );
   }
@@ -478,13 +492,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       for (final key in orderedKeys) {
         final value = row.protocolValue(key);
         final normalized = value.trim();
-        if (normalized.isEmpty ||
+        final isEmptyValue = normalized.isEmpty ||
             normalized == '-' ||
-            normalized.toLowerCase() == 'nao informado') {
+            normalized.toLowerCase() == 'nao informado';
+        if (isEmptyValue && !_rawMode) {
           continue;
         }
 
-        values[key] = normalized;
+        values[key] = isEmptyValue ? '-' : normalized;
         final fieldSeverity = _severityFromField(
           field: key,
           value: normalized,
@@ -684,17 +699,22 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     // protocolo detectado) que realmente vieram com dado -- sem isso a
     // tabela cai para "toda chave presente nos dados", incluindo campos
     // de posicao crus (lat/lng/etc) que bagunçam a leitura das colunas.
-    final protocolColumns = <String>[
-      ..._priorityProtocolKeys
-          .where((key) => _activeProtocolKeys.contains(key))
-          .where(protocolColumnsSet.contains),
-      ...protocolColumnsSet
-          .where((key) =>
-              _activeProtocolKeys.contains(key) &&
-              !_priorityProtocolKeys.contains(key))
-          .toList(growable: false)
-        ..sort(),
-    ];
+    // Modo bruto: mostra toda coluna que apareceu em algum registro, sem
+    // filtrar pelo preset do protocolo -- e a tela de diagnostico, entao
+    // "sujeira" (campo fora do preset) e exatamente o que se quer ver.
+    final protocolColumns = _rawMode
+        ? (protocolColumnsSet.toList(growable: false)..sort())
+        : <String>[
+            ..._priorityProtocolKeys
+                .where((key) => _activeProtocolKeys.contains(key))
+                .where(protocolColumnsSet.contains),
+            ...protocolColumnsSet
+                .where((key) =>
+                    _activeProtocolKeys.contains(key) &&
+                    !_priorityProtocolKeys.contains(key))
+                .toList(growable: false)
+              ..sort(),
+          ];
 
     const panelBackground = Color(0xEFFFFFFF);
     const panelBorder = Color(0xFFD6E0EE);
@@ -786,7 +806,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     ),
                   ),
                 ),
-                const SizedBox.shrink(),
+                FilterChip(
+                  label: const Text('Bruto (sem filtro)'),
+                  avatar: const Icon(Icons.bug_report_outlined, size: 16),
+                  selected: _rawMode,
+                  onSelected: (value) {
+                    setState(() => _rawMode = value);
+                    if (_deviceId != null) {
+                      _loadHistory();
+                    }
+                  },
+                ),
               ],
             ),
           )
@@ -1105,6 +1135,7 @@ bool _ignoreProtocolKey(String key) {
 Map<String, String> _extractProtocolValues({
   required Map<String, dynamic> raw,
   required Map<String, dynamic> attributes,
+  bool includeAll = false,
 }) {
   final normalizedRaw = <String, dynamic>{
     for (final entry in raw.entries) entry.key.toLowerCase(): entry.value,
@@ -1142,7 +1173,10 @@ Map<String, String> _extractProtocolValues({
 
   for (final entry in normalizedAttributes.entries) {
     final key = entry.key;
-    if (result.containsKey(key) || _ignoreProtocolKey(key)) {
+    if (result.containsKey(key)) {
+      continue;
+    }
+    if (!includeAll && _ignoreProtocolKey(key)) {
       continue;
     }
     result[key] = _formatProtocolValue(key, entry.value);
@@ -1150,10 +1184,19 @@ Map<String, String> _extractProtocolValues({
 
   for (final entry in normalizedRaw.entries) {
     final key = entry.key;
-    if (result.containsKey(key) || _ignoreProtocolKey(key)) {
+    if (result.containsKey(key)) {
       continue;
     }
-    if (key == 'protocol' || key.startsWith('io') || key.startsWith('di')) {
+    if (!includeAll && _ignoreProtocolKey(key)) {
+      continue;
+    }
+    // Fora do modo bruto, so campos de protocolo (protocol/ioXX/diXX) do
+    // payload raw entram -- o resto (lat/lng/etc) ja esta coberto acima ou
+    // e ruido de posicao. No modo bruto, tudo que sobrou do raw entra.
+    if (includeAll ||
+        key == 'protocol' ||
+        key.startsWith('io') ||
+        key.startsWith('di')) {
       result[key] = _formatProtocolValue(key, entry.value);
     }
   }

@@ -3115,7 +3115,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 'fleet':
         return 'Veiculos, motoristas, manutencao e TPMS';
       case 'monitoring':
-        return 'Alertas, cercas, data log e telemetria';
+        return 'Cercas e áreas monitoradas';
       case 'support':
         return 'Chamados, comunicacao e IA Operacional';
       case 'automation-hub':
@@ -3548,17 +3548,20 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   bool _shouldShowDataLogMenu(SessionState session) {
-    return true;
+    return session.profileCode.trim().toUpperCase() == 'MA';
   }
 
   Widget _panelFor(String? id) {
     switch (id) {
       case 'master-panel':
+        final showDataLog = _shouldShowDataLogMenu(ref.watch(sessionProvider));
         return _HubTabScreen(
-          tabs: const ['Visão geral', 'Empresas'],
+          key: ValueKey('master-panel-$showDataLog'),
+          tabs: ['Visão geral', 'Empresas', if (showDataLog) 'Data Log'],
           builders: [
             () => _buildMasterPanel(),
             () => _buildSuperadminEmpresasPanel(),
+            if (showDataLog) () => _buildLogsPanel(),
           ],
         );
       // Dashboard virou hub (2026-09-03): Visão geral + Telemetria + TPMS
@@ -3639,10 +3642,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         // principal ("Eventos", id 'alerts'), ter as duas rotas pra mesma
         // tela confundia (P1-3 do plano de auditoria).
         return _HubTabScreen(
-          tabs: const ['Cercas', 'Data Log'],
+          tabs: const ['Cercas'],
           builders: [
             () => _buildGeofencesPanel(),
-            () => _buildLogsPanel(),
           ],
         );
       case 'support':
@@ -3976,6 +3978,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildLogsPanel() {
+    if (!_shouldShowDataLogMenu(ref.watch(sessionProvider))) {
+      return const Center(child: Text('Acesso restrito ao SuperAdmin.'));
+    }
     return const HistoryScreen();
   }
 
