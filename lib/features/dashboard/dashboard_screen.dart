@@ -22,9 +22,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final positions =
         ref.watch(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
     final byId = {for (final p in positions) p.deviceId: p};
+    // Categorias mutuamente exclusivas -- "Sem comunicacao" (nunca recebeu
+    // posicao) e um caso mais especifico de "Offline", nao soma-las evita
+    // contar o mesmo equipamento duas vezes (Offline + Sem comunicacao
+    // passando do total de equipamentos).
     bool matches(TraccarDevice d, String category) => switch (category) {
           'Online' => isDeviceOnline(d.status),
-          'Offline' => isDeviceOffline(d.status),
+          'Offline' =>
+            isDeviceOffline(d.status) && byId.containsKey(d.id),
           'Sem comunicação' => !byId.containsKey(d.id),
           _ => true
         };

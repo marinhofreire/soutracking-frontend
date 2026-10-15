@@ -125,7 +125,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final devices = devicesAsync.valueOrNull ?? [];
     final events = eventsAsync.valueOrNull ?? [];
     final records = _mapEvents(events, devices, ruleFilter: ruleFilter);
-    final summary = _buildSummary(records);
 
     final vehicleOptions = <String>[
       'Todos',
@@ -148,6 +147,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
         .where(
             (r) => _selectedSeverity == null || r.severity == _selectedSeverity)
         .toList();
+    // KPIs refletem o filtro ativo (severidade/tipo/veiculo), nao a lista
+    // crua do periodo -- antes "Eventos" contava tudo e "Criticos" so a
+    // severidade selecionada, dando numeros que pareciam contraditorios
+    // (ex: "Eventos 0, Criticos 10" com filtro Critica+7 dias).
+    final summary = _buildSummary(visible);
     final selected = visible.where((r) => r.id == _selectedEventId).firstOrNull;
     return ModuleScaffold(
       title: 'Eventos',

@@ -14,6 +14,7 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/app_constants.dart';
 import '../../core/display_text_formatter.dart';
+import '../../core/parking_state.dart' as parking_state;
 import '../../core/teltonika_obd_fields.dart';
 import '../../core/white_label.dart';
 import '../../data/bridge_client.dart';
@@ -1225,6 +1226,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     required TraccarPosition? position,
   }) {
     if (isMoving) return false;
+
+    // Ignicao fisica confirmada desligada: trava na hora, sem esperar o
+    // threshold de tempo -- regra de negocio (2026-10-15): o fio de ACC e
+    // mais confiavel que o relogio quando o equipamento manda esse dado.
+    if (parking_state.hasPhysicalIgnitionData(position) &&
+        !parking_state.isPhysicalIgnitionOn(position)) {
+      return true;
+    }
+
     final fixTime = DateTime.tryParse(position?.fixTime ?? '');
     if (fixTime == null) return false;
     return DateTime.now().toUtc().difference(fixTime.toUtc()) >=

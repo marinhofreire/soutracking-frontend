@@ -32,8 +32,8 @@ class BridgeConfig {
       'alertas':    true,
       'cercas':     false,
       'despacho':   false,
-      'whatsapp':   true,
-      'relatorios': true,
+      'whatsapp':   false,
+      'relatorios': false,
     },
   });
 
@@ -101,8 +101,8 @@ class BridgeConfig {
       'alertas':    true,
       'cercas':     false,
       'despacho':   false,
-      'whatsapp':   true,
-      'relatorios': true,
+      'whatsapp':   false,
+      'relatorios': false,
     };
     if (autonomyStr.isNotEmpty) {
       for (final pair in autonomyStr.split(',')) {
