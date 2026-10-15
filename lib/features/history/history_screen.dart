@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
@@ -542,8 +543,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       return null;
     }
 
-    final totalSeconds =
-        gaps.fold<int>(0, (sum, g) => sum + g.inSeconds);
+    final totalSeconds = gaps.fold<int>(0, (sum, g) => sum + g.inSeconds);
     final avgSeconds = totalSeconds / gaps.length;
 
     return _RadioCycleStats(
@@ -727,70 +727,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: panelBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: panelBorder),
-          ),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _pickDateTime(isFrom: true),
-                icon: const Icon(Icons.schedule_outlined, size: 16),
-                label: Text(_fmt(_from)),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _pickDateTime(isFrom: false),
-                icon: const Icon(Icons.schedule_outlined, size: 16),
-                label: Text(_fmt(_to)),
-              ),
-              SizedBox(
-                width: 240,
-                child: devicesAsync.when(
-                  data: (loadedDevices) => DropdownButtonFormField<int>(
-                    initialValue: _deviceId,
-                    style: const TextStyle(color: titleColor),
-                    decoration: darkInput(labelText: 'Equipamento'),
-                    items: [
-                      for (final d in loadedDevices)
-                        DropdownMenuItem(value: d.id, child: Text(d.name)),
-                    ],
-                    onChanged: (v) => _onDeviceChanged(v, loadedDevices),
-                  ),
-                  loading: () => const SizedBox(
-                    width: 240,
-                    child: LinearProgressIndicator(),
-                  ),
-                  error: (e, _) => SizedBox(
-                    width: 240,
-                    child: Text(
-                      'Erro: $e',
-                      style: const TextStyle(color: Color(0xFFFF8A8A)),
-                    ),
-                  ),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _loading ? null : _loadHistory,
-                icon: const Icon(Icons.search_outlined, size: 16),
-                label: Text(_loading ? 'Buscando...' : 'Buscar'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (radioCycleStats != null) _radioCycleCard(radioCycleStats),
-        Expanded(
-          child: Container(
+    return ModuleScaffold(
+        title: 'Data Log',
+        subtitle: 'Consulte os registros recebidos pelo equipamento.',
+        navigation:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Consulta'),
+          Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -798,98 +741,172 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: panelBorder),
             ),
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredEntries.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Sem logs no periodo/criterios selecionados.',
-                          style: TextStyle(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _pickDateTime(isFrom: true),
+                  icon: const Icon(Icons.schedule_outlined, size: 16),
+                  label: Text(_fmt(_from)),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _pickDateTime(isFrom: false),
+                  icon: const Icon(Icons.schedule_outlined, size: 16),
+                  label: Text(_fmt(_to)),
+                ),
+                SizedBox(
+                  width: 240,
+                  child: devicesAsync.when(
+                    data: (loadedDevices) => DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: _deviceId,
+                      style: const TextStyle(color: titleColor),
+                      decoration: darkInput(labelText: 'Equipamento'),
+                      items: [
+                        for (final d in loadedDevices)
+                          DropdownMenuItem(
+                              value: d.id,
+                              child: Text(d.name,
+                                  overflow: TextOverflow.ellipsis)),
+                      ],
+                      onChanged: (v) => _onDeviceChanged(v, loadedDevices),
+                    ),
+                    loading: () => const SizedBox(
+                      width: 240,
+                      child: LinearProgressIndicator(),
+                    ),
+                    error: (e, _) => SizedBox(
+                      width: 240,
+                      child: Text(
+                        'Erro: $e',
+                        style: const TextStyle(color: Color(0xFFFF8A8A)),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox.shrink(),
+              ],
+            ),
+          )
+        ]),
+        scrollContent: false,
+        content: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: panelBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: panelBorder),
+          ),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : filteredEntries.isEmpty
+                  ? Center(
+                      child: Text(
+                        _deviceId == null
+                            ? 'Escolha um equipamento para consultar os registros.'
+                            : 'Nenhum registro nos critérios selecionados.',
+                        style: TextStyle(
+                          color: subtitleColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mostrando 1 a ${filteredEntries.length} registros',
+                          style: const TextStyle(
                             color: subtitleColor,
                             fontWeight: FontWeight.w700,
+                            fontSize: 12,
                           ),
                         ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Mostrando 1 a ${filteredEntries.length} registros',
-                            style: const TextStyle(
-                              color: subtitleColor,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: Scrollbar(
-                              thumbVisibility: true,
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
                               child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: SingleChildScrollView(
-                                  child: DataTable(
-                                    dividerThickness: 0.45,
-                                    headingRowColor: WidgetStatePropertyAll(
-                                      const Color(0xCCF8FBFF),
-                                    ),
-                                    headingTextStyle: const TextStyle(
-                                      color: titleColor,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                    ),
-                                    dataTextStyle: const TextStyle(
-                                      color: titleColor,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                    columns: [
-                                      const DataColumn(
-                                          label: Text('Data/Hora')),
-                                      const DataColumn(
-                                          label: Text('Equipamento')),
-                                      const DataColumn(
-                                          label: Text('Tipo de Log')),
-                                      const DataColumn(
-                                          label: Text('Severidade')),
-                                      for (final key in protocolColumns)
-                                        DataColumn(label: Text(key)),
-                                    ],
-                                    rows: [
-                                      for (final entry in filteredEntries)
-                                        DataRow(
-                                          cells: [
-                                            DataCell(Text(entry.timestamp)),
-                                            DataCell(Text(entry.equipment)),
-                                            DataCell(Text(entry.logType)),
+                                child: DataTable(
+                                  dividerThickness: 0.45,
+                                  headingRowColor: WidgetStatePropertyAll(
+                                    const Color(0xCCF8FBFF),
+                                  ),
+                                  headingTextStyle: const TextStyle(
+                                    color: titleColor,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                  dataTextStyle: const TextStyle(
+                                    color: titleColor,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                  columns: [
+                                    const DataColumn(label: Text('Data/Hora')),
+                                    const DataColumn(
+                                        label: Text('Equipamento')),
+                                    const DataColumn(
+                                        label: Text('Tipo de Log')),
+                                    const DataColumn(label: Text('Severidade')),
+                                    for (final key in protocolColumns)
+                                      DataColumn(label: Text(key)),
+                                  ],
+                                  rows: [
+                                    for (final entry in filteredEntries)
+                                      DataRow(
+                                        cells: [
+                                          DataCell(Text(entry.timestamp)),
+                                          DataCell(Text(entry.equipment)),
+                                          DataCell(Text(entry.logType)),
+                                          DataCell(
+                                              _severityBadge(entry.severity)),
+                                          for (final key in protocolColumns)
                                             DataCell(
-                                                _severityBadge(entry.severity)),
-                                            for (final key in protocolColumns)
-                                              DataCell(
-                                                SizedBox(
-                                                  width: 160,
-                                                  child: Text(
-                                                    entry.protocolValue(key),
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
+                                              SizedBox(
+                                                width: 160,
+                                                child: Text(
+                                                  entry.protocolValue(key),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                          ],
-                                        ),
-                                    ],
-                                  ),
+                                            ),
+                                        ],
+                                      ),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-          ),
+                        ),
+                      ],
+                    ),
         ),
-      ],
-    );
+        detail:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          ModuleCard(
+              title: 'Resumo da consulta',
+              child: Column(children: [
+                ModuleDetailRow('Início', _fmt(_from)),
+                ModuleDetailRow('Fim', _fmt(_to)),
+                ModuleDetailRow('Registros', '${filteredEntries.length}')
+              ])),
+          if (radioCycleStats != null) _radioCycleCard(radioCycleStats)
+        ]),
+        actions: [
+          FilledButton.icon(
+            onPressed: _loading ? null : _loadHistory,
+            icon: const Icon(Icons.search_outlined, size: 16),
+            label: Text(_loading ? 'Buscando...' : 'Buscar'),
+          )
+        ]);
   }
 }
 
