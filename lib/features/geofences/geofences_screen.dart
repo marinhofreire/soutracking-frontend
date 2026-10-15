@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -35,6 +36,8 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
   String _groupFilter = 'Todos os grupos';
   bool _saving = false;
   int? _deletingId;
+  VoidCallback? _refreshEditor;
+  int? _selectedFenceId;
   int? _editingFenceId;
   int? _togglingId;
 
@@ -67,6 +70,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       _pointLonController.clear();
     });
     _mapController.move(LatLng(lat, lon), _mapController.camera.zoom);
+    _refreshEditor?.call();
   }
 
   void _onMapTap(TapPosition _, LatLng latLng) {
@@ -75,6 +79,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
         _polygonPoints
             .add(_GeoPoint(lat: latLng.latitude, lon: latLng.longitude));
       });
+      _refreshEditor?.call();
       return;
     }
 
@@ -90,6 +95,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
   void _undoLastPoint() {
     if (_polygonPoints.isEmpty) return;
     setState(() => _polygonPoints.removeLast());
+    _refreshEditor?.call();
   }
 
   Widget _buildGeofenceMapEditor() {
@@ -517,9 +523,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
           '${fence['area'] ?? ''}',
         ],
     ];
-    final csv = rows
-        .map((row) => row.map(_csvEscape).join(','))
-        .join('\r\n');
+    final csv = rows.map((row) => row.map(_csvEscape).join(',')).join('\r\n');
     final timestamp = DateTime.now();
     final fileName = 'cercas_'
         '${timestamp.year}${timestamp.month.toString().padLeft(2, '0')}'
@@ -632,54 +636,73 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
       context: context,
       builder: (dialogContext) {
         return Dialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 720),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 940;
-                  if (!wide) {
-                    return Column(
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: _buildEditorForm(),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          height: 300,
-                          child: _buildGeofenceMapEditor(),
-                        ),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 360,
-                        child: SingleChildScrollView(child: _buildEditorForm()),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildGeofenceMapEditor()),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        );
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(24),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: SizedBox(
+                width: 1104,
+                height: 580,
+                child: StatefulBuilder(builder: (context, setModal) {
+                  _refreshEditor = () => setModal(() {});
+                  return AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _nameController,
+                        _latController,
+                        _lonController,
+                        _radiusController
+                      ]),
+                      builder: (context, _) => ModuleScaffold(
+                              title: _editingFenceId == null
+                                  ? 'Adicionar cerca'
+                                  : 'Editar cerca',
+                              navigation: _buildEditorForm(),
+                              content: _buildGeofenceMapEditor(),
+                              detail: ModuleCard(
+                                  title: 'Resumo da cerca',
+                                  child: Column(children: [
+                                    ModuleDetailRow(
+                                        'Nome',
+                                        _nameController.text.trim().isEmpty
+                                            ? 'Não informado'
+                                            : _nameController.text.trim()),
+                                    ModuleDetailRow(
+                                        'Tipo',
+                                        _shapeMode == 'circle'
+                                            ? 'Circular'
+                                            : 'Poligonal'),
+                                    if (_shapeMode == 'circle')
+                                      ModuleDetailRow(
+                                          'Raio',
+                                          _radiusController.text.trim().isEmpty
+                                              ? 'Não informado'
+                                              : '${_radiusController.text} m'),
+                                    if (_shapeMode == 'polygon')
+                                      ModuleDetailRow(
+                                          'Pontos', '${_polygonPoints.length}')
+                                  ])),
+                              actions: [
+                                OutlinedButton(
+                                    onPressed: _saving
+                                        ? null
+                                        : () =>
+                                            Navigator.of(dialogContext).pop(),
+                                    child: const Text('Cancelar')),
+                                FilledButton.icon(
+                                    onPressed: _saving ? null : _saveGeofence,
+                                    icon: const Icon(Icons.save_outlined,
+                                        size: 16),
+                                    label: Text(_saving
+                                        ? 'Salvando...'
+                                        : _editingFenceId == null
+                                            ? 'Salvar cerca'
+                                            : 'Atualizar cerca'))
+                              ]));
+                })));
       },
     );
+    _refreshEditor = null;
     // Fechou sem salvar (tocou fora, voltou) — nao deixa dado de edicao
     // vazando pro proximo "Adicionar cerca".
     if (mounted && _editingFenceId != null) {
@@ -691,35 +714,6 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                _editingFenceId != null ? 'Editar cerca' : 'Editor de cerca',
-                style: const TextStyle(
-                  color: Color(0xFF25344A),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: _saving ? null : _saveGeofence,
-              icon: _saving
-                  ? const SizedBox(
-                      height: 14,
-                      width: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined, size: 18),
-              label: Text(_saving
-                  ? 'Salvando...'
-                  : (_editingFenceId != null
-                      ? 'Atualizar cerca'
-                      : 'Salvar cerca')),
-            ),
-          ],
-        ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _shapeMode,
@@ -731,6 +725,7 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
           onChanged: (value) {
             if (value == null) return;
             setState(() => _shapeMode = value);
+            _refreshEditor?.call();
           },
         ),
         const SizedBox(height: 12),
@@ -780,7 +775,9 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton.icon(
                 onPressed: _addPolygonPoint,
@@ -791,7 +788,10 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
               TextButton.icon(
                 onPressed: _polygonPoints.isEmpty
                     ? null
-                    : () => setState(() => _polygonPoints.clear()),
+                    : () {
+                        setState(() => _polygonPoints.clear());
+                        _refreshEditor?.call();
+                      },
                 icon: const Icon(Icons.delete_sweep_outlined),
                 label: const Text('Limpar pontos'),
               ),
@@ -810,179 +810,124 @@ class _GeofencesScreenState extends ConsumerState<GeofencesScreen> {
     final filtered = _applyFilters(geofences);
     final activeCount =
         geofences.where((fence) => _geofenceStatus(fence) == 'Ativa').length;
-    final eventsToday = geofences.length;
-    final violationsToday =
-        geofences.where((fence) => _geofenceType(fence) == 'Poligonal').length;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Cercas Eletrônicas',
-                      style: TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 22,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Gerencie áreas de segurança e monitore violações em tempo real.',
-                      style: TextStyle(color: Color(0xFF5A6B84), fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _exportGeofencesCsv(filtered),
-                icon: const Icon(Icons.file_download_outlined, size: 18),
-                label: const Text('Exportar'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: _saving ? null : _openCreateEditorDialog,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Adicionar cerca'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFD6E0EE)),
-                  ),
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _SimpleFilterDropdown(
-                        label: 'Tipo',
-                        value: _typeFilter,
-                        options: const [
-                          'Todos os tipos',
-                          'Circular',
-                          'Poligonal'
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _typeFilter = value),
-                      ),
-                      _SimpleFilterDropdown(
-                        label: 'Status',
-                        value: _statusFilter,
-                        options: const ['Todos os status', 'Ativa', 'Inativa'],
-                        onChanged: (value) =>
-                            setState(() => _statusFilter = value),
-                      ),
-                      _SimpleFilterDropdown(
-                        label: 'Grupo',
-                        value: _groupFilter,
-                        options: const ['Todos os grupos'],
-                        onChanged: (value) =>
-                            setState(() => _groupFilter = value),
-                      ),
-                      SizedBox(
-                        width: 230,
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: 'Buscar cerca...',
-                            prefixIcon: const Icon(Icons.search_rounded),
-                            isDense: true,
-                            filled: true,
-                            fillColor: const Color(0xFFF8FBFF),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFFD6E0EE)),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFFD6E0EE)),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFF7CB0FF)),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              const SizedBox(width: 250, height: 120, child: _MiniMapPreview()),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _GeofenceKpiCard(
-                label: 'Cercas ativas',
-                value: activeCount,
-                accent: const Color(0xFF2D8CFF),
-                icon: Icons.shield_outlined,
-              ),
-              _GeofenceKpiCard(
-                label: 'Eventos hoje',
-                value: eventsToday,
-                accent: const Color(0xFF22A06B),
-                icon: Icons.event_note_outlined,
-              ),
-              _GeofenceKpiCard(
-                label: 'Violações hoje',
-                value: violationsToday,
-                accent: const Color(0xFFE74B4B),
-                icon: Icons.warning_amber_rounded,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Stack(
-            children: [
-              _GeofenceTable(
-                geofences: filtered,
-                geofenceType: _geofenceType,
-                geofenceAreaLabel: _geofenceAreaLabel,
-                geofenceStatus: _geofenceStatus,
-                geofenceDisabled: _geofenceDisabled,
-                deletingId: _deletingId,
-                togglingId: _togglingId,
-                onDelete: _deleteGeofence,
-                onEdit: (fence) => _openCreateEditorDialog(existing: fence),
-                onToggle: _toggleGeofenceEnabled,
-              ),
-              if (geofencesAsync.isLoading)
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: LinearProgressIndicator(
-                    minHeight: 2,
-                  ),
-                ),
-            ],
-          ),
+    final selected =
+        filtered.where((f) => f['id'] == _selectedFenceId).firstOrNull;
+    return ModuleScaffold(
+      title: 'Cercas eletrônicas',
+      subtitle: 'Gerencie as áreas de segurança dos seus equipamentos.',
+      navigation:
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const ModuleSectionLabel('Grupos e filtros'),
+        _SimpleFilterDropdown(
+            label: 'Grupo',
+            value: _groupFilter,
+            options: const ['Todos os grupos'],
+            onChanged: (v) => setState(() => _groupFilter = v)),
+        const SizedBox(height: 14),
+        _SimpleFilterDropdown(
+            label: 'Tipo',
+            value: _typeFilter,
+            options: const ['Todos os tipos', 'Circular', 'Poligonal'],
+            onChanged: (v) => setState(() => _typeFilter = v)),
+        const SizedBox(height: 14),
+        _SimpleFilterDropdown(
+            label: 'Status',
+            value: _statusFilter,
+            options: const ['Todos os status', 'Ativa', 'Inativa'],
+            onChanged: (v) => setState(() => _statusFilter = v)),
+      ]),
+      content:
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+                hintText: 'Buscar cerca...',
+                prefixIcon: Icon(Icons.search_rounded))),
+        const SizedBox(height: 14),
+        const ModuleSectionLabel('Cercas cadastradas'),
+        if (geofencesAsync.isLoading) const LinearProgressIndicator(),
+        if (geofencesAsync.hasError)
+          const ModuleEmpty('Não foi possível carregar as cercas',
+              'Tente novamente em instantes.')
+        else if (filtered.isEmpty)
+          const ModuleEmpty('Nenhuma cerca cadastrada',
+              'Adicione uma cerca para acompanhar uma área de segurança.',
+              icon: Icons.shield_outlined)
+        else
+          for (final fence in filtered)
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              ModuleListItem(
+                  title: '${fence['name'] ?? 'Sem nome'}',
+                  subtitle:
+                      '${_geofenceType(fence)} · ${_geofenceAreaLabel(fence)}',
+                  icon: Icons.shield_outlined,
+                  selected: selected?['id'] == fence['id'],
+                  onTap: () =>
+                      setState(() => _selectedFenceId = fence['id'] as int),
+                  trailing: ModuleStatusChip(_geofenceStatus(fence),
+                      tone: _geofenceDisabled(fence)
+                          ? ModuleTone.neutral
+                          : ModuleTone.success)),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                IconButton(
+                    tooltip: 'Editar cerca',
+                    onPressed: () => _openCreateEditorDialog(existing: fence),
+                    icon: const Icon(Icons.edit_outlined, size: 17)),
+                IconButton(
+                    tooltip: 'Excluir cerca',
+                    onPressed: _deletingId == fence['id']
+                        ? null
+                        : () => _deleteGeofence(fence),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 17)),
+                Switch(
+                    value: !_geofenceDisabled(fence),
+                    onChanged: _togglingId == fence['id']
+                        ? null
+                        : (_) => _toggleGeofenceEnabled(fence))
+              ]),
+            ]),
+      ]),
+      detail: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const ModuleSectionLabel('Área da cerca'),
+        if (selected == null)
+          const ModuleCard(
+              title: 'Selecione uma cerca',
+              child: ModuleEmpty('Nenhuma cerca selecionada',
+                  'Selecione uma área para consultar seus limites.',
+                  icon: Icons.place_rounded))
+        else ...[
+          SizedBox(
+              height: 180,
+              child: GeofenceAreaPreview(area: '${selected['area'] ?? ''}')),
+          const SizedBox(height: 12),
+          ModuleCard(
+              title: '${selected['name'] ?? 'Cerca'}',
+              child: Column(children: [
+                ModuleDetailRow('Tipo', _geofenceType(selected)),
+                ModuleDetailRow('Status', _geofenceStatus(selected)),
+                ModuleDetailRow('Área', _geofenceAreaLabel(selected))
+              ]))
         ],
-      ),
+        ModuleCard(
+            title: 'Resumo',
+            child: Column(children: [
+              ModuleDetailRow('Cercas', '${geofences.length}'),
+              ModuleDetailRow('Ativas', '$activeCount')
+            ])),
+      ]),
+      actions: [
+        OutlinedButton.icon(
+            onPressed: () => _exportGeofencesCsv(filtered),
+            icon: const Icon(Icons.file_download_outlined, size: 16),
+            label: const Text('Exportar')),
+        FilledButton.icon(
+            onPressed: _saving ? null : _openCreateEditorDialog,
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text('Adicionar cerca'))
+      ],
+      footerLabel: '${filtered.length} cercas exibidas',
     );
   }
 }
@@ -1042,344 +987,6 @@ class _SimpleFilterDropdown extends StatelessWidget {
   }
 }
 
-class _GeofenceKpiCard extends StatelessWidget {
-  const _GeofenceKpiCard({
-    required this.label,
-    required this.value,
-    required this.accent,
-    required this.icon,
-  });
-
-  final String label;
-  final int value;
-  final Color accent;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 200,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD6E0EE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: accent, size: 17),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$value',
-                  style: const TextStyle(
-                    color: Color(0xFF25344A),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 20,
-                  ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF5F738F),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniMapPreview extends StatelessWidget {
-  const _MiniMapPreview();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD6E0EE)),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FAFD), Color(0xFFEFF4FB)],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 24,
-            top: 24,
-            child: Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: const Color(0x663B82F6),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF3B82F6), width: 2),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 20,
-            top: 22,
-            child: Transform.rotate(
-              angle: 0.5,
-              child: Container(
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  color: const Color(0x6655C57A),
-                  border: Border.all(color: const Color(0xFF2EA85F), width: 2),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 54,
-            bottom: 14,
-            child: Transform.rotate(
-              angle: -0.3,
-              child: Container(
-                width: 58,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: const Color(0x66FF8A8A),
-                  border: Border.all(color: const Color(0xFFE74B4B), width: 2),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GeofenceTable extends StatelessWidget {
-  const _GeofenceTable({
-    required this.geofences,
-    required this.geofenceType,
-    required this.geofenceAreaLabel,
-    required this.geofenceStatus,
-    required this.geofenceDisabled,
-    required this.deletingId,
-    required this.togglingId,
-    required this.onDelete,
-    required this.onEdit,
-    required this.onToggle,
-  });
-
-  final List<Map<String, dynamic>> geofences;
-  final String Function(Map<String, dynamic>) geofenceType;
-  final String Function(Map<String, dynamic>) geofenceAreaLabel;
-  final String Function(Map<String, dynamic>) geofenceStatus;
-  final bool Function(Map<String, dynamic>) geofenceDisabled;
-  final int? deletingId;
-  final int? togglingId;
-  final ValueChanged<Map<String, dynamic>> onDelete;
-  final ValueChanged<Map<String, dynamic>> onEdit;
-  final ValueChanged<Map<String, dynamic>> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (geofences.isEmpty) {
-      return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFD6E0EE)),
-        ),
-        child: const Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Nenhuma cerca cadastrada',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF60718D),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Adicione uma cerca para monitorar áreas de segurança.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF60718D),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD6E0EE)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xCCF8FBFF),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
-              ),
-              border: Border(
-                bottom: BorderSide(
-                  color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
-                ),
-              ),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderCell('Nome')),
-                Expanded(flex: 2, child: _HeaderCell('Tipo')),
-                Expanded(flex: 2, child: _HeaderCell('Área')),
-                Expanded(flex: 2, child: _HeaderCell('Status')),
-                SizedBox(width: 72),
-              ],
-            ),
-          ),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: geofences.length,
-            separatorBuilder: (_, __) => Divider(
-              color: const Color(0xFFD6E0EE).withValues(alpha: 0.9),
-              height: 1,
-            ),
-            itemBuilder: (context, index) {
-              final fence = geofences[index];
-              final disabled = geofenceDisabled(fence);
-              final status = geofenceStatus(fence);
-              final statusColor = status == 'Ativa'
-                  ? const Color(0xFF10B981)
-                    : const Color(0xFF94A3B8);
-
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: _CellText('${fence['name'] ?? 'Cerca'}'),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: _CellText(geofenceType(fence)),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: _CellText(geofenceAreaLabel(fence)),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: _StatusCell(
-                          label: status,
-                          color: statusColor,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 108,
-                        child: Row(
-                          children: [
-                            IconButton(
-                              tooltip: disabled ? 'Ativar' : 'Desativar',
-                              onPressed: togglingId == fence['id']
-                                  ? null
-                                  : () => onToggle(fence),
-                              icon: togglingId == fence['id']
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Icon(
-                                      disabled
-                                          ? Icons.toggle_off_outlined
-                                          : Icons.toggle_on,
-                                      color: disabled
-                                          ? const Color(0xFF9AA7B8)
-                                          : const Color(0xFF2FA35A),
-                                      size: 20,
-                                    ),
-                            ),
-                            IconButton(
-                              tooltip: 'Editar',
-                              onPressed: () => onEdit(fence),
-                              icon: const Icon(
-                                Icons.edit_outlined,
-                                color: Color(0xFF176EEB),
-                                size: 16,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Excluir',
-                              onPressed: deletingId == fence['id']
-                                  ? null
-                                  : () => onDelete(fence),
-                              icon: deletingId == fence['id']
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.delete_outline,
-                                      color: Color(0xFFE74B4B),
-                                      size: 16,
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _GeoPoint {
   const _GeoPoint({required this.lat, required this.lon});
 
@@ -1387,69 +994,81 @@ class _GeoPoint {
   final double lon;
 }
 
-class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.text);
-
-  final String text;
-
+/// Read-only rendering of the geometry already stored with the selected area.
+class GeofenceAreaPreview extends StatelessWidget {
+  const GeofenceAreaPreview({super.key, required this.area});
+  final String area;
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: Color(0xFF5F738F),
-        fontWeight: FontWeight.w700,
-        fontSize: 12,
-      ),
-    );
-  }
-}
+    final circle = RegExp(
+            r'CIRCLE\s*\(\s*([\-0-9.]+)\s+([\-0-9.]+)\s*,\s*([0-9.]+)\s*\)',
+            caseSensitive: false)
+        .firstMatch(area);
+    final polygon =
+        RegExp(r'POLYGON\s*\(\(\s*(.+?)\s*\)\)', caseSensitive: false)
+            .firstMatch(area);
+    final points = <LatLng>[];
+    double? radius;
+    void add(String? lat, String? lon) {
+      final a = double.tryParse(lat ?? ''), b = double.tryParse(lon ?? '');
+      if (a != null &&
+          b != null &&
+          a.isFinite &&
+          b.isFinite &&
+          a.abs() <= 90 &&
+          b.abs() <= 180) points.add(LatLng(a, b));
+    }
 
-class _CellText extends StatelessWidget {
-  const _CellText(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Color(0xFF334155),
-        fontWeight: FontWeight.w600,
-        fontSize: 12,
-      ),
-    );
-  }
-}
-
-class _StatusCell extends StatelessWidget {
-  const _StatusCell({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
+    if (circle != null) {
+      add(circle.group(1), circle.group(2));
+      radius = double.tryParse(circle.group(3) ?? '');
+    }
+    if (polygon != null) {
+      for (final pair in polygon.group(1)!.split(',')) {
+        final values = pair.trim().split(RegExp(r'\s+'));
+        if (values.length == 2) add(values[0], values[1]);
+      }
+    }
+    if (points.isEmpty)
+      return const ModuleEmpty(
+          'Área indisponível', 'Não há geometria válida para esta cerca.');
+    return ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: FlutterMap(
+            key: ValueKey(area),
+            options: MapOptions(
+                initialCenter: points.first,
+                initialZoom: 13,
+                minZoom: MapConfig.minZoom,
+                maxZoom: MapConfig.maxZoom),
+            children: [
+              TileLayer(
+                  urlTemplate: MapConfig.openStreetMapTileUrl,
+                  userAgentPackageName: 'com.soutracking.app'),
+              if (circle != null &&
+                  radius != null &&
+                  radius.isFinite &&
+                  radius > 0)
+                CircleLayer(circles: [
+                  CircleMarker(
+                      point: points.first,
+                      radius: radius,
+                      useRadiusInMeter: true,
+                      color: const Color(0x33176EEB),
+                      borderColor: const Color(0xFF176EEB),
+                      borderStrokeWidth: 2)
+                ]),
+              if (polygon != null && points.length >= 3)
+                PolygonLayer(polygons: [
+                  Polygon(
+                      points: points,
+                      color: const Color(0x33176EEB),
+                      borderColor: const Color(0xFF176EEB),
+                      borderStrokeWidth: 2)
+                ]),
+              const RichAttributionWidget(attributions: [
+                TextSourceAttribution('OpenStreetMap contributors')
+              ]),
+            ]));
   }
 }
