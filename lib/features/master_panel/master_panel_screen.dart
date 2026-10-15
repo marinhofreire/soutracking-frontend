@@ -164,7 +164,7 @@ class _NoticeBanner extends StatelessWidget {
         const SizedBox(width: 7),
         Expanded(
           child: Text(
-            'Painel Master · mostrando dado real de "$companyName" (a conta logada). Consolidar múltiplas empresas ainda não existe no backend.',
+            'Visão geral de $companyName',
             style: const TextStyle(
                 color: Color(0xFF7B6639),
                 fontSize: 10,
