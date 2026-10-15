@@ -30,6 +30,7 @@ import '../common/placeholder_screen.dart';
 import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../dashboard/executive_dashboard_screen.dart';
 import '../devices/devices_screen.dart';
 import '../master_panel/master_panel_screen.dart';
 import '../master_panel/superadmin_empresas_screen.dart';
@@ -3575,9 +3576,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // duplicado -- Telemetria saiu de Monitoramento, TPMS saiu de Frota.
       case 'dashboard':
         return _HubTabScreen(
-          tabs: const ['Visão geral', 'Telemetria', 'TPMS'],
+          key: ValueKey('dashboard-${ref.watch(executiveViewEnabledProvider)}'),
+          tabs: ['Visão geral',if(ref.watch(executiveViewEnabledProvider)) 'Visão executiva','Telemetria','TPMS'],
           builders: [
             () => _buildDashboardPanel(),
+            if(ref.watch(executiveViewEnabledProvider)) () => const ExecutiveDashboardScreen(),
             () => _buildTelemetryPanel(),
             () => _buildTpmsPanel(),
           ],
@@ -3671,9 +3674,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         );
       case 'finance-hub':
         return _HubTabScreen(
-          tabs: const ['Financeiro', 'Estoque'],
+          tabs: const ['Clientes', 'Cobranças', 'Estoque'],
           builders: [
-            () => _buildFinancePanel(),
+            () => const ClientsScreen(),
+            () => const FinanceScreen(),
             () => _buildInventoryPanel(),
           ],
         );
@@ -3715,7 +3719,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildDashboardPanel() {
-    return const DashboardScreen();
+    return DashboardScreen(onOpenVehicle: (id) {
+      final devices = ref.read(devicesProvider).valueOrNull ?? const <TraccarDevice>[];
+      final positions = ref.read(positionsProvider).valueOrNull ?? const <TraccarPosition>[];
+      final snapshot = _buildSnapshots(devices, positions).where((s) => s.device.id == id).firstOrNull;
+      if (snapshot != null) { _closePanel(); _selectVehicleOnMap(snapshot); }
+    });
   }
 
   Widget _buildMasterPanel() {
@@ -22489,7 +22498,7 @@ String _bearingToCardinalLabel(double bearing) {
 // pra só montar a aba quando ela for de fato selecionada -- evita
 // construir os 4-5 painéis de uma vez toda hora que o hub abre.
 class _HubTabScreen extends StatefulWidget {
-  const _HubTabScreen({required this.tabs, required this.builders});
+  const _HubTabScreen({super.key, required this.tabs, required this.builders});
 
   final List<String> tabs;
   final List<Widget Function()> builders;

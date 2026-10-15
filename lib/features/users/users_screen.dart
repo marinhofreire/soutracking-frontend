@@ -366,7 +366,8 @@ class _UserTableRowState extends ConsumerState<_UserTableRow> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444)),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Excluir'),
           ),
@@ -559,6 +560,7 @@ class _EditUserDialog extends ConsumerStatefulWidget {
 }
 
 class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
+  late bool _executiveView;
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
@@ -570,9 +572,10 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
   @override
   void initState() {
     super.initState();
-    _nameCtrl     = TextEditingController(text: widget.user.name);
-    _emailCtrl    = TextEditingController(text: widget.user.email);
-    _phoneCtrl    = TextEditingController();
+    _executiveView = widget.user.attributes?['souExecutiveView'] == true;
+    _nameCtrl = TextEditingController(text: widget.user.name);
+    _emailCtrl = TextEditingController(text: widget.user.email);
+    _phoneCtrl = TextEditingController();
     _passwordCtrl = TextEditingController();
 
     final roleStr = widget.user.soutrackingRole;
@@ -592,15 +595,19 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
   }
 
   String _roleDescription(AppUserRole role) => switch (role) {
-        AppUserRole.superAdmin => 'Acesso total — cria usuários e vê todos os dados.',
-        AppUserRole.master     => 'Revenda — gerencia seus clientes e dispositivos.',
-        AppUserRole.operator   => 'Operador — mapa, alertas, relatórios e comandos.',
-        AppUserRole.client     => 'Cliente final — visualiza seus veículos.',
-        AppUserRole.viewer     => 'Somente leitura — mapa e posições, sem comandos.',
+        AppUserRole.superAdmin =>
+          'Acesso total — cria usuários e vê todos os dados.',
+        AppUserRole.master =>
+          'Revenda — gerencia seus clientes e dispositivos.',
+        AppUserRole.operator =>
+          'Operador — mapa, alertas, relatórios e comandos.',
+        AppUserRole.client => 'Cliente final — visualiza seus veículos.',
+        AppUserRole.viewer =>
+          'Somente leitura — mapa e posições, sem comandos.',
       };
 
   Future<void> _save() async {
-    final name  = _nameCtrl.text.trim();
+    final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     if (name.isEmpty || email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -610,21 +617,22 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
     }
     setState(() => _saving = true);
     final session = ref.read(sessionProvider);
-    final client  = ref.read(traccarClientProvider);
-    final flags   = traccarFlagsFromRole(_role);
+    final client = ref.read(traccarClientProvider);
+    final flags = traccarFlagsFromRole(_role);
 
     try {
       final body = <String, dynamic>{
-        'id':            widget.user.id,
-        'name':          name,
-        'email':         email,
+        'id': widget.user.id,
+        'name': name,
+        'email': email,
         'administrator': widget.user.administrator,
-        'readonly':      widget.user.readonly,
-        'disabled':      widget.user.disabled,
+        'readonly': widget.user.readonly,
+        'disabled': widget.user.disabled,
         ...flags,
         'attributes': {
           ...?widget.user.attributes,
           'soutracking_role': soutrackingAttrFromRole(_role),
+          'souExecutiveView': _executiveView,
         },
       };
       if (_passwordCtrl.text.isNotEmpty) {
@@ -658,8 +666,10 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
   static const _fieldDecoration = InputDecoration(
     filled: true,
     fillColor: Color(0xFFF7F9FD),
-    border: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
-    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+    border:
+        OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
+    enabledBorder:
+        OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFDDE5F0))),
   );
 
   @override
@@ -688,18 +698,23 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
                       color: const Color(0xFF176EEB).withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.person_outline_rounded, color: Color(0xFF176EEB), size: 16),
+                    child: const Icon(Icons.person_outline_rounded,
+                        color: Color(0xFF176EEB), size: 16),
                   ),
                   const SizedBox(width: 10),
                   const Text(
                     'Editar usuário',
-                    style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w900, fontSize: 15),
+                    style: TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15),
                   ),
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
-                    style: IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
+                    style: IconButton.styleFrom(
+                        foregroundColor: const Color(0xFF60718D)),
                   ),
                 ],
               ),
@@ -724,7 +739,8 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
                       keyboardType: TextInputType.emailAddress,
                       decoration: _fieldDecoration.copyWith(
                         labelText: 'E-mail',
-                        prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
+                        prefixIcon:
+                            const Icon(Icons.alternate_email_rounded, size: 18),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -733,20 +749,27 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
                       obscureText: !_showPassword,
                       decoration: _fieldDecoration.copyWith(
                         labelText: 'Nova senha (deixe em branco para manter)',
-                        prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                        prefixIcon:
+                            const Icon(Icons.lock_outline_rounded, size: 18),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            _showPassword
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
                             size: 18,
                           ),
-                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                          onPressed: () =>
+                              setState(() => _showPassword = !_showPassword),
                         ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
                       'Perfil de acesso',
-                      style: TextStyle(color: Color(0xFF1F2A44), fontWeight: FontWeight.w800, fontSize: 12.5),
+                      style: TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<AppUserRole>(
@@ -765,11 +788,23 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
                     const SizedBox(height: 6),
                     Text(
                       _roleDescription(_role),
-                      style: const TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+                      style: const TextStyle(
+                          color: Color(0xFF60718D), fontSize: 11.5),
                     ),
                   ],
                 ),
               ),
+            ),
+            SwitchListTile(
+              title:
+                  const Text('Visão executiva', style: TextStyle(fontSize: 12)),
+              subtitle: const Text(
+                  'Permitir o acesso à visão executiva do Dashboard.',
+                  style: TextStyle(fontSize: 11)),
+              value: _executiveView,
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _executiveView = value),
             ),
             // Footer
             Container(
@@ -780,11 +815,13 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
               child: Row(
                 children: [
                   OutlinedButton(
-                    onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                    onPressed:
+                        _saving ? null : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF526684),
                       side: const BorderSide(color: Color(0xFFDDE5F0)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
                     ),
                     child: const Text('Cancelar'),
                   ),
@@ -795,13 +832,15 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
                         ? const SizedBox(
                             width: 15,
                             height: 15,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
                         : const Icon(Icons.check_rounded, size: 15),
                     label: Text(_saving ? 'Salvando...' : 'Salvar alterações'),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF176EEB),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
                     ),
                   ),
                 ],
