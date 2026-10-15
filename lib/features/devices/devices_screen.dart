@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'device_editor_sensor_dialog.dart';
+import 'device_connectivity.dart';
 import 'device_editor_reference_icons.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -243,6 +244,20 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   }
 
   Future<void> _openDeviceDialog({TraccarDevice? editing}) async {
+    List<TraccarPosition> positions =
+        ref.read(positionsProvider).valueOrNull ?? const [];
+    if (editing != null &&
+        (editing.attributes?['souProtocol']?.toString().trim() ?? '').isEmpty &&
+        !positions.any((p) => p.deviceId == editing.id)) {
+      try {
+        positions = await ref
+            .read(positionsProvider.future)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Saved fields remain editable if telemetry is temporarily unavailable.
+      }
+      if (!mounted) return;
+    }
     if (editing == null) {
       _nameController.clear();
       _plateController.clear();
@@ -271,9 +286,11 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       _plateController.text = _readPlate(editing);
       _identifierController.text = (editing.uniqueId ?? '').trim();
       _categoryController.text = (editing.category ?? '').trim();
-      _phoneController.text = (editing.attributes?['phone'] ?? '').toString();
-      _portController.text = (editing.attributes?['souPort'] ?? '').toString();
-      _apnController.text = (editing.attributes?['souApn'] ?? '').toString();
+      final connectivity =
+          DeviceConnectivity.fromDevice(editing, positions, _operatorApns);
+      _phoneController.text = connectivity.phone;
+      _portController.text = connectivity.port;
+      _apnController.text = connectivity.apn;
       _clientController.text =
           (editing.attributes?['souClient'] ?? '').toString();
       _groupController.text =
@@ -285,8 +302,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       _selectedMapIconKey = _normalizeMapIconKey(
         editing.attributes?['souMapIcon']?.toString(),
       );
-      _selectedProtocol = editing.attributes?['souProtocol']?.toString();
-      _selectedOperator = editing.attributes?['souOperator']?.toString();
+      _selectedProtocol = connectivity.protocol;
+      _selectedOperator = connectivity.operator;
       _selectedManufacturer =
           editing.attributes?['souManufacturer']?.toString();
       _selectedModel = editing.attributes?['souModel']?.toString();
@@ -297,6 +314,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     }
 
     var activeEditorSection = _DeviceEditorSection.vehicle;
+    var sensorsReviewed = false;
 
     await showDialog<void>(
       context: context,
@@ -319,7 +337,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                       _identifierController.text.trim().length >= 10;
                   final hasProtocol = _selectedProtocol != null &&
                       _portController.text.trim().isNotEmpty;
-                  final hasSensors = _selectedSensorKeys.isNotEmpty;
+                  final hasSensors = sensorsReviewed;
                   final hasGroup = _groupController.text.trim().isNotEmpty;
                   final isMobile = MediaQuery.sizeOf(context).width < 760;
                   return _DeviceEditorLayout(
@@ -327,6 +345,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                         ? 'Novo equipamento'
                         : 'Editar equipamento',
                     isMobile: isMobile,
+                    isEditing: editing != null,
                     onClose: _saving
                         ? null
                         : () => Navigator.of(dialogContext).pop(),
@@ -574,12 +593,18 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                       child: _DeviceDropdown(
                                         label: 'Operadora',
                                         value: _selectedOperator,
-                                        options: _operatorOptions,
+                                        options: [
+                                          ..._operatorOptions,
+                                          if (_selectedOperator != null &&
+                                              !_operatorOptions.any((o) =>
+                                                  o.key == _selectedOperator))
+                                            MapEntry(_selectedOperator!,
+                                                _selectedOperator!),
+                                        ],
                                         onChanged: (v) => setModalState(() {
                                           _selectedOperator = v;
                                           final apn = _operatorApns[v];
-                                          if (apn != null &&
-                                              _apnController.text.isEmpty) {
+                                          if (apn != null) {
                                             _apnController.text = apn;
                                           }
                                         }),
@@ -603,11 +628,19 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                       child: _DeviceDropdown(
                                         label: 'Protocolo',
                                         value: _selectedProtocol,
-                                        options: _protocolOptions,
+                                        options: [
+                                          ..._protocolOptions,
+                                          if (_selectedProtocol != null &&
+                                              !_protocolOptions.any((o) =>
+                                                  o.key == _selectedProtocol))
+                                            MapEntry(_selectedProtocol!,
+                                                _selectedProtocol!),
+                                        ],
                                         onChanged: (v) => setModalState(() {
                                           _selectedProtocol = v;
                                           final port = _protocolPorts[v];
-                                          if (port != null &&
+                                          if (editing == null &&
+                                              port != null &&
                                               _portController.text.isEmpty) {
                                             _portController.text = port;
                                           }
@@ -622,7 +655,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                         onChanged: (_) => setModalState(() {}),
                                         decoration: const InputDecoration(
                                           labelText: 'Porta',
-                                          hintText: 'Ex: 5023',
+                                          hintText:
+                                              'Informe a porta configurada',
                                         ),
                                         keyboardType: TextInputType.number,
                                         inputFormatters: [
@@ -648,8 +682,11 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                               const Expanded(child: SizedBox())
                             ]),
                             const _PixelEditorDivider(space: 10),
-                            const _PixelEditorGroup(
-                                'settings', 'CONFIGURAÇÃO INICIAL'),
+                            _PixelEditorGroup(
+                                'settings',
+                                editing == null
+                                    ? 'CONFIGURAÇÃO INICIAL'
+                                    : 'CONFIGURAÇÃO DO EQUIPAMENTO'),
                             const SizedBox(height: 11),
                             _PixelEditorToggle(
                                 title: 'Ativo / Inativo',
@@ -665,8 +702,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                             _PixelEditorToggle(
                                 title: 'Equipamento com câmera (MDVR)',
                                 subtitle: _isMdvr
-                                    ? 'Sincroniza no CMSV6'
-                                    : 'Só Traccar',
+                                    ? 'Câmeras habilitadas'
+                                    : 'Sem câmeras',
                                 control: Switch(
                                   value: _isMdvr,
                                   onChanged: _saving
@@ -715,6 +752,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                           onToggle: _saving
                                               ? null
                                               : (v) => setModalState(() {
+                                                    sensorsReviewed = true;
                                                     final key =
                                                         _sensorOptions[i].key;
                                                     if (v) {
@@ -741,6 +779,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                                     return;
                                                   }
                                                   setModalState(() {
+                                                    sensorsReviewed = true;
                                                     _sensorConfigs[key] =
                                                         updated;
                                                     _selectedSensorKeys
@@ -784,6 +823,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                                 return;
                                               }
                                               setModalState(() {
+                                                sensorsReviewed = true;
                                                 _selectedSensorKeys
                                                     .remove(sensorKey);
                                                 _selectedSensorKeys.add(
@@ -793,9 +833,11 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                             },
                                       onDelete: _saving
                                           ? null
-                                          : () => setModalState(() =>
-                                              _selectedSensorKeys
-                                                  .remove(sensorKey)),
+                                          : () => setModalState(() {
+                                                sensorsReviewed = true;
+                                                _selectedSensorKeys
+                                                    .remove(sensorKey);
+                                              }),
                                     ),
                                 ],
                                 const SizedBox(height: 8),
@@ -811,6 +853,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                               return;
                                             }
                                             setModalState(() {
+                                              sensorsReviewed = true;
                                               _selectedSensorKeys.add(
                                                 _normalizeSensorKey(created),
                                               );
@@ -853,7 +896,9 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                 ),
                                 const SizedBox(height: 13),
                                 _DeviceSummaryRow(
-                                  label: 'Status inicial',
+                                  label: editing == null
+                                      ? 'Status inicial'
+                                      : 'Status',
                                   chip: _isActive ? 'Ativo' : 'Inativo',
                                   chipColor: _isActive
                                       ? const Color(0xFF18A558)
@@ -868,7 +913,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                 _DeviceSummaryRow(
                                   label: 'Protocolo',
                                   value: _selectedProtocol == null
-                                      ? 'Não definido'
+                                      ? 'Não informado'
                                       : (_protocolOptions
                                               .where((e) =>
                                                   e.key == _selectedProtocol)
@@ -879,7 +924,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                 _DeviceSummaryRow(
                                   label: 'Porta',
                                   value: _portController.text.trim().isEmpty
-                                      ? 'Não definido'
+                                      ? 'Não informada'
                                       : _portController.text.trim(),
                                 ),
                                 const _DeviceSummaryRow(
@@ -902,9 +947,11 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Checklist de Criação',
-                                  style: TextStyle(
+                                Text(
+                                  editing == null
+                                      ? 'Checklist de criação'
+                                      : 'Checklist de edição',
+                                  style: const TextStyle(
                                     color: Color(0xFF1F2A44),
                                     fontWeight: FontWeight.w600,
                                     fontSize: 11,
@@ -913,11 +960,11 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                                 ),
                                 const SizedBox(height: 10),
                                 _ChecklistItem(
-                                  label: 'Validar IMEI',
+                                  label: 'IMEI informado',
                                   checked: hasImei,
                                 ),
                                 _ChecklistItem(
-                                  label: 'Confirmar protocolo e porta',
+                                  label: 'Protocolo e porta informados',
                                   checked: hasProtocol,
                                 ),
                                 _ChecklistItem(
@@ -2423,6 +2470,7 @@ class _DeviceEditorLayout extends StatelessWidget {
   const _DeviceEditorLayout(
       {required this.title,
       required this.isMobile,
+      required this.isEditing,
       required this.onClose,
       required this.navigation,
       required this.form,
@@ -2430,6 +2478,7 @@ class _DeviceEditorLayout extends StatelessWidget {
       required this.actions});
   final String title;
   final bool isMobile;
+  final bool isEditing;
   final VoidCallback? onClose;
   final Widget navigation, form, summary;
   final List<Widget> actions;
@@ -2533,9 +2582,11 @@ class _DeviceEditorLayout extends StatelessWidget {
             const BoxDecoration(border: Border(right: BorderSide(color: line))),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SizedBox(
+          SizedBox(
               height: 12,
-              child: _DeviceEditorCaption('CADASTRO DO DISPOSITIVO')),
+              child: _DeviceEditorCaption(isEditing
+                  ? 'EDIÇÃO DO DISPOSITIVO'
+                  : 'CADASTRO DO DISPOSITIVO')),
           const SizedBox(height: 13),
           navigation,
           const Spacer(),
@@ -2544,9 +2595,11 @@ class _DeviceEditorLayout extends StatelessWidget {
           Text(title,
               style: const TextStyle(
                   fontSize: 10, height: 1.6, color: Color(0xFF536E93))),
-          const Text(
-              'Cadastre um novo rastreador e defina seus parâmetros iniciais.',
-              style: TextStyle(
+          Text(
+              isEditing
+                  ? 'Revise os dados e a configuração deste equipamento.'
+                  : 'Cadastre um novo rastreador e defina seus parâmetros iniciais.',
+              style: const TextStyle(
                   fontSize: 10, height: 1.6, color: Color(0xFF8A9BB2)))
         ]));
     final right = Container(

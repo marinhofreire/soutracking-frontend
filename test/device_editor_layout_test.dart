@@ -37,12 +37,24 @@ void main() {
                   status: 'offline',
                   lastUpdate: null,
                   uniqueId: '123456789012345',
+                  phone: '11999999999',
                   attributes: const {
                     'plate': 'ABC1D23',
+                    'souPort': '6200',
+                    'souOperator': 'vivo',
+                    'souApn': 'custom.m2m',
                     'souSensors': ['ignition', 'input2']
                   })
             ]),
-        positionsProvider.overrideWith((ref) async => <TraccarPosition>[]),
+        positionsProvider.overrideWith((ref) async => [
+              TraccarPosition(
+                  id: 20,
+                  deviceId: 1,
+                  latitude: 0,
+                  longitude: 0,
+                  fixTime: '2026-10-14T10:00:00Z',
+                  protocol: 'h02'),
+            ]),
       ]);
       addTearDown(container.dispose);
       await container.read(devicesManagementProvider.future);
@@ -129,6 +141,38 @@ void main() {
       expect(find.text('Veículo de teste'), findsWidgets);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('Editar').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Checklist de edição'), findsOneWidget);
+      expect(find.text('Status inicial'), findsNothing);
+      expect(
+          find.text(
+              'Cadastre um novo rastreador e defina seus parâmetros iniciais.'),
+          findsNothing);
+      final checklist = find.byWidgetPredicate(
+          (w) => w.runtimeType.toString() == '_ChecklistItem');
+      expect((tester.widget(checklist.at(2)) as dynamic).checked, isFalse);
+      await tester.tap(find.text('Chip e equipamento'));
+      await tester.pumpAndSettle();
+      Finder field(String label) => find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == label);
+      expect(
+          tester.widget<TextField>(field('Chip / Telefone')).controller!.text,
+          '11999999999');
+      expect(tester.widget<TextField>(field('Porta')).controller!.text, '6200');
+      expect(tester.widget<TextField>(field('APN')).controller!.text,
+          'custom.m2m');
+      expect(find.text('h02'), findsWidgets);
+      expect(find.text('Só Traccar'), findsNothing);
+      final operator = find.byWidgetPredicate((w) =>
+          w.runtimeType.toString() == '_DeviceDropdown' &&
+          (w as dynamic).label == 'Operadora');
+      await tester.tap(operator);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Claro').last);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field('APN')).controller!.text,
+          'claro.com.br');
+      await tester.tap(find.text('Veículo'));
       await tester.pumpAndSettle();
       final picker = find.byWidgetPredicate(
           (w) => w.runtimeType.toString() == '_VehicleVisualPicker');

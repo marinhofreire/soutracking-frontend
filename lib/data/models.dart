@@ -5,6 +5,7 @@ class TraccarDevice {
     required this.status,
     required this.lastUpdate,
     this.uniqueId,
+    this.phone,
     this.positionId,
     this.category,
     this.image,
@@ -16,6 +17,7 @@ class TraccarDevice {
   final String status;
   final String? lastUpdate;
   final String? uniqueId;
+  final String? phone;
   final int? positionId;
   final String? category;
   final String? image;
@@ -36,6 +38,7 @@ class TraccarDevice {
       status: (json['status'] ?? 'unknown') as String,
       lastUpdate: json['lastUpdate'] as String?,
       uniqueId: json['uniqueId'] as String?,
+      phone: json['phone'] as String?,
       positionId: json['positionId'] as int?,
       category: json['category'] as String?,
       image: (uploadedPhoto?.isNotEmpty ?? false)
@@ -56,6 +59,7 @@ class TraccarPosition {
     this.speed,
     this.course,
     this.address,
+    this.protocol,
     this.attributes,
   });
 
@@ -67,6 +71,7 @@ class TraccarPosition {
   final double? speed;
   final double? course;
   final String? address;
+  final String? protocol;
   final Map<String, dynamic>? attributes;
 
   factory TraccarPosition.fromJson(Map<String, dynamic> json) {
@@ -81,6 +86,7 @@ class TraccarPosition {
         json['course'] ?? json['heading'] ?? json['bearing'],
       ),
       address: json['address'] as String?,
+      protocol: json['protocol'] as String?,
       attributes: json['attributes'] is Map
           ? (json['attributes'] as Map).cast<String, dynamic>()
           : null,
