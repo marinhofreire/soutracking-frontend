@@ -5,6 +5,7 @@ import '../../core/app_permissions.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../admin/admin_reference_ui.dart';
+import '../../ui/module_scaffold.dart';
 
 class UsersScreen extends ConsumerStatefulWidget {
   const UsersScreen({super.key});
@@ -19,6 +20,10 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
 
+  String _profileFilter = 'Todos', _search = '';
+  int? _selectedId;
+  final _detailKey = GlobalKey();
+  final _rowKeys = <int, GlobalKey<_UserTableRowState>>{};
   AppUserRole _selectedRole = AppUserRole.operator;
   bool _saving = false;
 
@@ -27,118 +32,158 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
       context: context,
       builder: (context) {
         return Dialog(
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: AdminGlassPanel(
-              padding: const EdgeInsets.all(20),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Novo Usuário',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  color: const Color(0xFF1F2A44),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(labelText: 'Nome'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(labelText: 'E-mail'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(labelText: 'Senha'),
-                      obscureText: true,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(labelText: 'Telefone'),
-                    ),
-                    const SizedBox(height: 12),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Perfil de acesso',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: const Color(0xFF7A8CA8),
-                          ),
-                    ),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<AppUserRole>(
-                      initialValue: _selectedRole,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                      items: AppUserRole.values
-                          .map(
-                            (role) => DropdownMenuItem(
-                              value: role,
-                              child: Text(labelFromRole(role)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (role) {
-                        if (role != null) setState(() => _selectedRole = role);
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _roleDescription(_selectedRole),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF9AA8BC),
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: AdminActionButton(
-                        label: _saving ? 'Salvando...' : 'Criar Usuário',
-                        onPressed: _saving
-                            ? null
-                            : () async {
-                                final navigator = Navigator.of(context);
-                                final created = await _createUser();
-                                if (!context.mounted) {
-                                  return;
-                                }
-                                if (created) {
-                                  navigator.pop();
-                                }
-                              },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(16),
+            child: SizedBox(
+                width: 1104,
+                height: 580,
+                child: StatefulBuilder(
+                    builder: (context, setModal) => AnimatedBuilder(
+                        animation: Listenable.merge(
+                            [_nameController, _emailController]),
+                        builder: (context, _) => ModuleScaffold(
+                                title: 'Novo usuário',
+                                subtitle:
+                                    'Dados de contato e perfil de acesso.',
+                                navigation: const Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      ModuleSectionLabel('Cadastro'),
+                                      ModuleListItem(
+                                          title: 'Dados do usuário',
+                                          icon: Icons.person_outline_rounded,
+                                          selected: true),
+                                      ModuleSectionLabel('Acesso'),
+                                      Text(
+                                          'O perfil selecionado mantém as permissões já configuradas.',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF60718D)))
+                                    ]),
+                                content: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      TextField(
+                                        controller: _nameController,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Nome'),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _emailController,
+                                        decoration: const InputDecoration(
+                                            labelText: 'E-mail'),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _passwordController,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Senha'),
+                                        obscureText: true,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _phoneController,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Telefone'),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Perfil de acesso',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                              color: const Color(0xFF7A8CA8),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      DropdownButtonFormField<AppUserRole>(
+                                        isExpanded: true,
+                                        initialValue: _selectedRole,
+                                        decoration: const InputDecoration(
+                                          border: OutlineInputBorder(),
+                                          contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 10),
+                                        ),
+                                        items: AppUserRole.values
+                                            .map(
+                                              (role) => DropdownMenuItem(
+                                                value: role,
+                                                child:
+                                                    Text(labelFromRole(role)),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (role) {
+                                          if (role != null) {
+                                            setState(
+                                                () => _selectedRole = role);
+                                            setModal(() {});
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _roleDescription(_selectedRole),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: const Color(0xFF9AA8BC),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ]),
+                                detail: ModuleCard(
+                                    title: 'Resumo do usuário',
+                                    child: Column(children: [
+                                      ModuleDetailRow(
+                                          'Nome',
+                                          _nameController.text.trim().isEmpty
+                                              ? 'Não informado'
+                                              : _nameController.text.trim()),
+                                      ModuleDetailRow(
+                                          'E-mail',
+                                          _emailController.text.trim().isEmpty
+                                              ? 'Não informado'
+                                              : _emailController.text.trim()),
+                                      ModuleDetailRow('Perfil',
+                                          labelFromRole(_selectedRole))
+                                    ])),
+                                actions: [
+                                  OutlinedButton(
+                                      onPressed: _saving
+                                          ? null
+                                          : () => Navigator.of(context).pop(),
+                                      child: const Text('Cancelar')),
+                                  AdminActionButton(
+                                    label: _saving
+                                        ? 'Salvando...'
+                                        : 'Criar Usuário',
+                                    onPressed: _saving
+                                        ? null
+                                        : () async {
+                                            final navigator =
+                                                Navigator.of(context);
+                                            final pending = _createUser();
+                                            setModal(() {});
+                                            final created = await pending;
+                                            if (context.mounted)
+                                              setModal(() {});
+                                            if (!context.mounted) {
+                                              return;
+                                            }
+                                            if (created) {
+                                              navigator.pop();
+                                            }
+                                          },
+                                  )
+                                ])))));
       },
     );
   }
@@ -227,81 +272,155 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
   @override
   Widget build(BuildContext context) {
     final usersAsync = ref.watch(usersProvider);
-    return AdminReferenceScaffold(
-      title: 'Usuários Internos',
-      breadcrumbs: const [
-        'Usuários Internos',
-        'Supervisor',
-        'Perfis de Usuários'
-      ],
-      selectedMenu: 'users',
-      action: AdminActionButton(
-        label: 'Novo Usuário',
-        onPressed: _openCreateUserDialog,
-      ),
-      child: usersAsync.when(
-        data: (users) {
-          if (users.isEmpty) {
-            return const Center(child: Text('Nenhum usuário encontrado'));
-          }
-          return Column(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7FAFD),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Row(
-                  children: [
-                    _headerCell(context, 'Nome', 32),
-                    _headerCell(context, 'Email', 30),
-                    _headerCell(context, 'Perfil', 18),
-                    _headerCell(context, 'Status', 18),
-                    _headerCell(context, 'Último acesso', 18),
-                    _headerCell(context, 'Ações', 14, alignEnd: true),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              for (final user in users) ...[
-                _UserTableRow(user: user),
-                const SizedBox(height: 10),
-              ],
-            ],
-          );
-        },
-        error: (error, _) => Center(child: Text('Erro: $error')),
-        loading: () => const Center(child: CircularProgressIndicator()),
-      ),
-    );
-  }
-
-  Widget _headerCell(
-    BuildContext context,
-    String label,
-    int flex, {
-    bool alignEnd = false,
-  }) {
-    return Expanded(
-      flex: flex,
-      child: Align(
-        alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF7A8CA8),
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      ),
-    );
+    final users = usersAsync.valueOrNull ?? <TraccarUser>[];
+    final profiles = {'Todos', ...users.map(deriveUserRole)}.toList();
+    final visible = users
+        .where((u) =>
+            (_profileFilter == 'Todos' ||
+                deriveUserRole(u) == _profileFilter) &&
+            ('${u.name} ${u.email}')
+                .toLowerCase()
+                .contains(_search.trim().toLowerCase()))
+        .toList();
+    final selected = visible.where((u) => u.id == _selectedId).firstOrNull;
+    return LayoutBuilder(
+        builder: (context, size) => ModuleScaffold(
+                title: 'Usuários',
+                subtitle: 'Perfis, contatos e acessos da equipe.',
+                navigation: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ModuleSectionLabel('Perfis de acesso'),
+                      for (final profile in profiles)
+                        ModuleListItem(
+                            title: profile,
+                            subtitle:
+                                '${users.where((u) => profile == "Todos" || deriveUserRole(u) == profile).length} usuários',
+                            selected: profile == _profileFilter,
+                            onTap: () =>
+                                setState(() => _profileFilter = profile))
+                    ]),
+                content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                          decoration: const InputDecoration(
+                              labelText: 'Buscar usuário',
+                              hintText: 'Nome ou e-mail',
+                              prefixIcon: Icon(Icons.search_rounded)),
+                          onChanged: (v) => setState(() => _search = v)),
+                      const SizedBox(height: 14),
+                      usersAsync.when(
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
+                          error: (e, _) => const ModuleEmpty(
+                              'Não foi possível carregar os usuários',
+                              'Tente novamente em instantes.'),
+                          data: (_) => visible.isEmpty
+                              ? const ModuleEmpty('Nenhum usuário encontrado',
+                                  'Revise os filtros ou cadastre um usuário.',
+                                  icon: Icons.people_outline)
+                              : Column(children: [
+                                  for (final u in visible)
+                                    _UserTableRow(
+                                        key: _rowKeys.putIfAbsent(
+                                            u.id,
+                                            () => GlobalKey<
+                                                _UserTableRowState>()),
+                                        user: u,
+                                        selected: u.id == _selectedId,
+                                        onSelect: () {
+                                          setState(() => _selectedId = u.id);
+                                          if (size.maxWidth < 932)
+                                            WidgetsBinding.instance
+                                                .addPostFrameCallback((_) {
+                                              final target =
+                                                  _detailKey.currentContext;
+                                              if (target != null)
+                                                Scrollable.ensureVisible(target,
+                                                    alignment: 0,
+                                                    duration: const Duration(
+                                                        milliseconds: 220));
+                                            });
+                                        })
+                                ]))
+                    ]),
+                detail: KeyedSubtree(
+                    key: _detailKey,
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const ModuleSectionLabel('Detalhes do usuário'),
+                          if (selected == null)
+                            const ModuleEmpty('Selecione um usuário',
+                                'Contato, perfil e acesso à Visão executiva aparecem aqui.')
+                          else ...[
+                            ModuleCard(
+                                title: selected.name,
+                                child: Column(children: [
+                                  _UserPhoto(user: selected, size: 56),
+                                  const SizedBox(height: 14),
+                                  _UserEmail(selected.email),
+                                  ModuleDetailRow(
+                                      'Perfil', deriveUserRole(selected)),
+                                  ModuleDetailRow('Status',
+                                      selected.disabled ? 'Inativo' : 'Ativo'),
+                                  const ModuleDetailRow(
+                                      'Último acesso', 'Não informado')
+                                ])),
+                            ModuleCard(
+                                title: 'Visão executiva',
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      ModuleStatusChip(
+                                          selected.attributes?[
+                                                      'souExecutiveView'] ==
+                                                  true
+                                              ? 'Liberada'
+                                              : 'Bloqueada',
+                                          tone: selected.attributes?[
+                                                      'souExecutiveView'] ==
+                                                  true
+                                              ? ModuleTone.success
+                                              : ModuleTone.neutral),
+                                      const SizedBox(height: 10),
+                                      const Text(
+                                          'Use Editar para alterar a liberação deste usuário.',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF60718D)))
+                                    ]))
+                          ]
+                        ])),
+                footerLabel: '${visible.length} usuários exibidos',
+                actions: [
+                  OutlinedButton.icon(
+                      onPressed: selected == null
+                          ? null
+                          : () => _rowKeys[selected.id]
+                              ?.currentState
+                              ?._toggleDisabled(),
+                      icon: Icon(selected?.disabled == true
+                          ? Icons.lock_open_rounded
+                          : Icons.block_rounded),
+                      label: Text(selected?.disabled == true
+                          ? 'Reativar'
+                          : 'Desativar')),
+                  FilledButton.icon(
+                      onPressed: _openCreateUserDialog,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Novo usuário'))
+                ]));
   }
 }
 
 class _UserTableRow extends ConsumerStatefulWidget {
-  const _UserTableRow({required this.user});
+  const _UserTableRow(
+      {super.key, required this.user, this.selected = false, this.onSelect});
+  final bool selected;
+  final VoidCallback? onSelect;
 
   final TraccarUser user;
 
@@ -400,116 +519,28 @@ class _UserTableRowState extends ConsumerState<_UserTableRow> {
   @override
   Widget build(BuildContext context) {
     final user = widget.user;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: user.disabled
-            ? const Color(0xFFF7FAFD)
-            : Colors.white.withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE8EEF5)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 32,
-            child: Row(
-              children: [
-                Opacity(
-                  opacity: user.disabled ? 0.45 : 1.0,
-                  child: AdminAvatar(name: user.name),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    user.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: user.disabled
-                              ? const Color(0xFF9AA8BC)
-                              : const Color(0xFF24364F),
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 30,
-            child: Text(
-              user.email,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF74859E),
-                  ),
-            ),
-          ),
-          Expanded(
-            flex: 18,
-            child: Text(
-              deriveUserRole(user),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF334A68),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ),
-          Expanded(
-            flex: 18,
-            child: AdminStatusChip(
-              label: deriveUserStatus(user),
-              color: statusColorFor(user),
-            ),
-          ),
-          Expanded(
-            flex: 18,
-            child: Text(
-              deterministicLastAccess(user),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF74859E),
-                  ),
-            ),
-          ),
-          Expanded(
-            flex: 14,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Wrap(
-                      spacing: 6,
-                      children: [
-                        _ActionIconBtn(
-                          icon: Icons.edit_outlined,
-                          tooltip: 'Editar',
-                          onPressed: _openEditDialog,
-                        ),
-                        _ActionIconBtn(
-                          icon: user.disabled
-                              ? Icons.lock_open_rounded
-                              : Icons.block_rounded,
-                          tooltip: user.disabled ? 'Reativar' : 'Desativar',
-                          color: user.disabled
-                              ? const Color(0xFF22C55E)
-                              : const Color(0xFFF59E0B),
-                          onPressed: _toggleDisabled,
-                        ),
-                        _ActionIconBtn(
-                          icon: Icons.delete_outline_rounded,
-                          tooltip: 'Excluir',
-                          color: const Color(0xFFEF4444),
-                          onPressed: _confirmDelete,
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return ModuleListItem(
+        title: user.name,
+        subtitle:
+            '${user.email}\n${deriveUserRole(user)} · ${user.disabled ? "Inativo" : "Ativo"}',
+        selected: widget.selected,
+        onTap: widget.onSelect,
+        trailing: _busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : Wrap(spacing: 4, children: [
+                _ActionIconBtn(
+                    icon: Icons.edit_outlined,
+                    tooltip: 'Editar',
+                    onPressed: _openEditDialog),
+                _ActionIconBtn(
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Excluir',
+                    color: const Color(0xFFB42318),
+                    onPressed: _confirmDelete)
+              ]));
   }
 }
 
@@ -675,180 +706,201 @@ class _EditUserDialogState extends ConsumerState<_EditUserDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 620),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFE8EFF7))),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF176EEB).withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.person_outline_rounded,
-                        color: Color(0xFF176EEB), size: 16),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Editar usuário',
-                    style: TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                    style: IconButton.styleFrom(
-                        foregroundColor: const Color(0xFF60718D)),
-                  ),
-                ],
-              ),
-            ),
-            // Body
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _nameCtrl,
-                      decoration: _fieldDecoration.copyWith(
-                        labelText: 'Nome',
-                        prefixIcon: const Icon(Icons.badge_outlined, size: 18),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: _fieldDecoration.copyWith(
-                        labelText: 'E-mail',
-                        prefixIcon:
-                            const Icon(Icons.alternate_email_rounded, size: 18),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _passwordCtrl,
-                      obscureText: !_showPassword,
-                      decoration: _fieldDecoration.copyWith(
-                        labelText: 'Nova senha (deixe em branco para manter)',
-                        prefixIcon:
-                            const Icon(Icons.lock_outline_rounded, size: 18),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _showPassword
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded,
-                            size: 18,
-                          ),
-                          onPressed: () =>
-                              setState(() => _showPassword = !_showPassword),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: SizedBox(
+            width: 1104,
+            height: 580,
+            child: AnimatedBuilder(
+                animation: Listenable.merge([_nameCtrl, _emailCtrl]),
+                builder: (context, _) => ModuleScaffold(
+                        title: 'Editar usuário',
+                        subtitle: 'Contato, perfil e acesso à Visão executiva.',
+                        navigation: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const ModuleSectionLabel('Usuário'),
+                              _UserPhoto(user: widget.user, size: 56),
+                              const SizedBox(height: 12),
+                              Text(widget.user.name,
+                                  textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              ModuleStatusChip(
+                                  widget.user.disabled ? 'Inativo' : 'Ativo',
+                                  tone: widget.user.disabled
+                                      ? ModuleTone.neutral
+                                      : ModuleTone.success)
+                            ]),
+                        content: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _nameCtrl,
+                              decoration: _fieldDecoration.copyWith(
+                                labelText: 'Nome',
+                                prefixIcon:
+                                    const Icon(Icons.badge_outlined, size: 18),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _emailCtrl,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: _fieldDecoration.copyWith(
+                                labelText: 'E-mail',
+                                prefixIcon: const Icon(
+                                    Icons.alternate_email_rounded,
+                                    size: 18),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _passwordCtrl,
+                              obscureText: !_showPassword,
+                              decoration: _fieldDecoration.copyWith(
+                                labelText:
+                                    'Nova senha (deixe em branco para manter)',
+                                prefixIcon: const Icon(
+                                    Icons.lock_outline_rounded,
+                                    size: 18),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _showPassword
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded,
+                                    size: 18,
+                                  ),
+                                  onPressed: () => setState(
+                                      () => _showPassword = !_showPassword),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Perfil de acesso',
+                              style: TextStyle(
+                                  color: Color(0xFF1F2A44),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<AppUserRole>(
+                              isExpanded: true,
+                              initialValue: _role,
+                              decoration: _fieldDecoration,
+                              items: AppUserRole.values
+                                  .map((r) => DropdownMenuItem(
+                                        value: r,
+                                        child: Text(labelFromRole(r)),
+                                      ))
+                                  .toList(),
+                              onChanged: (r) {
+                                if (r != null) setState(() => _role = r);
+                              },
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _roleDescription(_role),
+                              style: const TextStyle(
+                                  color: Color(0xFF60718D), fontSize: 11.5),
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Perfil de acesso',
-                      style: TextStyle(
-                          color: Color(0xFF1F2A44),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<AppUserRole>(
-                      initialValue: _role,
-                      decoration: _fieldDecoration,
-                      items: AppUserRole.values
-                          .map((r) => DropdownMenuItem(
-                                value: r,
-                                child: Text(labelFromRole(r)),
-                              ))
-                          .toList(),
-                      onChanged: (r) {
-                        if (r != null) setState(() => _role = r);
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _roleDescription(_role),
-                      style: const TextStyle(
-                          color: Color(0xFF60718D), fontSize: 11.5),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SwitchListTile(
-              title:
-                  const Text('Visão executiva', style: TextStyle(fontSize: 12)),
-              subtitle: const Text(
-                  'Permitir o acesso à visão executiva do Dashboard.',
-                  style: TextStyle(fontSize: 11)),
-              value: _executiveView,
-              onChanged: _saving
-                  ? null
-                  : (value) => setState(() => _executiveView = value),
-            ),
-            // Footer
-            Container(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFE8EFF7))),
-              ),
-              child: Row(
-                children: [
-                  OutlinedButton(
-                    onPressed:
-                        _saving ? null : () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF526684),
-                      side: const BorderSide(color: Color(0xFFDDE5F0)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
-                    ),
-                    child: const Text('Cancelar'),
-                  ),
-                  const Spacer(),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                        detail: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ModuleCard(
+                                  title: 'Resumo do usuário',
+                                  child: Column(children: [
+                                    ModuleDetailRow('Nome', _nameCtrl.text),
+                                    _UserEmail(_emailCtrl.text),
+                                    ModuleDetailRow(
+                                        'Perfil', labelFromRole(_role))
+                                  ])),
+                              ModuleCard(
+                                  title: 'Visão executiva',
+                                  child: SwitchListTile(
+                                    title: const Text('Visão executiva',
+                                        style: TextStyle(fontSize: 12)),
+                                    subtitle: const Text(
+                                        'Permitir o acesso à visão executiva do Dashboard.',
+                                        style: TextStyle(fontSize: 11)),
+                                    value: _executiveView,
+                                    onChanged: _saving
+                                        ? null
+                                        : (value) => setState(
+                                            () => _executiveView = value),
+                                  ))
+                            ]),
+                        actions: [
+                          OutlinedButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF526684),
+                              side: const BorderSide(color: Color(0xFFDDE5F0)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                            ),
+                            child: const Text('Cancelar'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _saving ? null : _save,
+                            icon: _saving
+                                ? const SizedBox(
+                                    width: 15,
+                                    height: 15,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.check_rounded, size: 15),
+                            label: Text(
+                                _saving ? 'Salvando...' : 'Salvar alterações'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF176EEB),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                            ),
                           )
-                        : const Icon(Icons.check_rounded, size: 15),
-                    label: Text(_saving ? 'Salvando...' : 'Salvar alterações'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF176EEB),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+                        ]))));
   }
+}
+
+class _UserPhoto extends StatelessWidget {
+  const _UserPhoto({required this.user, this.size = 36});
+  final TraccarUser user;
+  final double size;
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+      borderRadius: BorderRadius.circular(size / 2),
+      child: SizedBox(
+          width: size,
+          height: size,
+          child: user.photoUrl.isEmpty
+              ? AdminAvatar(name: user.name)
+              : Image.network(user.photoUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => AdminAvatar(name: user.name))));
+}
+
+class _UserEmail extends StatelessWidget {
+  const _UserEmail(this.value);
+  final String value;
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Text('E-mail',
+            style: TextStyle(fontSize: 11, color: Color(0xFF60718D))),
+        const SizedBox(height: 4),
+        Tooltip(
+            message: value,
+            child: Text(value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)))
+      ]));
 }

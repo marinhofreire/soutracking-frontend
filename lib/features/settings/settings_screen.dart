@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/app_permissions.dart';
 import '../../core/white_label.dart';
+import '../../ui/brand_logo.dart';
 import '../../data/asaas_config.dart';
 import '../../data/bridge_config.dart';
 import '../../data/models.dart';
@@ -45,23 +46,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _initialized = false;
 
   // ── Bridge / Integrações ───────────────────────────────────────────────────
-  final _bridgeUrlCtrl      = TextEditingController();
-  final _bridgeApiKeyCtrl   = TextEditingController();
-  final _pusherAppKeyCtrl   = TextEditingController();
-  final _pusherClusterCtrl  = TextEditingController();
-  final _pusherChannelCtrl  = TextEditingController();
-  bool _bridgeInitialized   = false;
-  bool _showBridgeKey       = false;
-  bool _showPusherKey       = false;
-  bool _bridgeSaving        = false;
+  final _bridgeUrlCtrl = TextEditingController();
+  final _bridgeApiKeyCtrl = TextEditingController();
+  final _pusherAppKeyCtrl = TextEditingController();
+  final _pusherClusterCtrl = TextEditingController();
+  final _pusherChannelCtrl = TextEditingController();
+  bool _bridgeInitialized = false;
+  bool _showBridgeKey = false;
+  bool _showPusherKey = false;
+  bool _bridgeSaving = false;
   String? _bridgeTestResult;
 
   // ── SouCall (canal WhatsApp) ─────────────────────────────────────────────
-  final _soucallUrlCtrl   = TextEditingController();
+  final _soucallUrlCtrl = TextEditingController();
   final _soucallTokenCtrl = TextEditingController();
   bool _soucallInitialized = false;
-  bool _showSoucallToken   = false;
-  bool _soucallSaving      = false;
+  bool _showSoucallToken = false;
+  bool _soucallSaving = false;
 
   bool _mapTraffic = false;
   bool _mapSatellite = false;
@@ -71,8 +72,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   // ── Asaas ──────────────────────────────────────────────────────────────────
   final _asaasApiKeyCtrl = TextEditingController();
   bool _asaasInitialized = false;
-  bool _showAsaasKey     = false;
-  bool _asaasSaving      = false;
+  bool _showAsaasKey = false;
+  bool _asaasSaving = false;
   String? _asaasTestResult;
 
   // ── Permissões tab state ───────────────────────────────────────────────────
@@ -219,8 +220,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       return overrides.action[role]![key]!;
     }
     return switch (key) {
-      'users_add' =>
-        AppPermissions.can(role, AppFeature.users, AppAction.add),
+      'users_add' => AppPermissions.can(role, AppFeature.users, AppAction.add),
       'vehicles_edit' =>
         AppPermissions.can(role, AppFeature.vehicles, AppAction.edit),
       'vehicles_delete' =>
@@ -251,8 +251,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     final whiteLabelAsync = ref.watch(whiteLabelProvider);
-    final users =
-        ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
+    final users = ref.watch(usersProvider).valueOrNull ?? const <TraccarUser>[];
 
     return whiteLabelAsync.when(
       data: (config) {
@@ -321,289 +320,333 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final secondary =
         _parseColor(_secondaryController.text) ?? config.secondaryColor;
 
-    return _ThreeColumnSettingsLayout(
-      left: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _ColumnSectionLabel('MARCA'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
+    return Theme(
+        data: Theme.of(context).copyWith(
+            textTheme: Theme.of(context)
+                .textTheme
+                .apply(fontFamily: 'DeviceEditorSegoe')),
+        child: DefaultTextStyle.merge(
+            style: const TextStyle(fontFamily: 'DeviceEditorSegoe'),
+            child: _ThreeColumnSettingsLayout(
+              constrainPanels: true,
+              left: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
+                  const _ColumnSectionLabel('MARCA'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      Transform.translate(
-                        offset: const Offset(-8, 0),
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: secondary,
-                            shape: BoxShape.circle,
-                            border:
-                                Border.all(color: Colors.white, width: 2),
+                      child: Column(
+                        children: [
+                          BrandLogo(
+                              source: _logoImage,
+                              name: _nameController.text.trim().isEmpty
+                                  ? config.appName
+                                  : _nameController.text.trim(),
+                              height: 48,
+                              width: 160),
+                          const SizedBox(height: 10),
+                          Text(
+                            _nameController.text.trim().isEmpty
+                                ? config.appName
+                                : _nameController.text.trim(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF1F2A44),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _taglineController.text,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFF60718D),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              center: _SettingsTabView(children: [
+                _SettingsCard(
+                  title: 'Identidade visual',
+                  child: Column(children: [
+                    TextField(
+                      controller: _nameController,
+                      decoration:
+                          const InputDecoration(labelText: 'Nome da empresa'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _taglineController,
+                      decoration: const InputDecoration(
+                          labelText: 'Descrição da marca'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _primaryController,
+                      decoration: const InputDecoration(
+                          labelText: 'Cor primária',
+                          helperText: 'Ex.: #1F6FEB'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _secondaryController,
+                      decoration: const InputDecoration(
+                          labelText: 'Cor secundária',
+                          helperText: 'Ex.: #1F6FEB'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Logo',
+                      style: TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Aparece no topo da barra lateral e no menu (mobile). Sem logo, mostra o nome da empresa em texto.',
+                      style:
+                          TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+                    ),
+                    const SizedBox(height: 8),
+                    if ((_logoImage ?? '').isNotEmpty)
+                      Container(
+                        height: 72,
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        alignment: Alignment.centerLeft,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7F9FD),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFDDE5F0)),
+                        ),
+                        child: BrandLogo(
+                            source: _logoImage,
+                            name: _nameController.text,
+                            height: 40,
+                            width: 180),
+                      ),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickLogo,
+                          icon: const Icon(Icons.image_outlined, size: 16),
+                          label: Text((_logoImage ?? '').isEmpty
+                              ? 'Escolher logo'
+                              : 'Trocar logo'),
+                        ),
+                        if ((_logoImage ?? '').isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: _clearLogo,
+                            icon: const Icon(Icons.close_rounded, size: 16),
+                            label: const Text('Remover'),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if ((_logoFileName ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _logoFileName!,
+                        style: const TextStyle(
+                            color: Color(0xFF60718D), fontSize: 11),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Imagem de fundo do login',
+                      style: TextStyle(
+                        color: Color(0xFF1F2A44),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Sem imagem, o login usa o fundo padrão desenhado do sistema.',
+                      style:
+                          TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
+                    ),
+                    const SizedBox(height: 8),
+                    if ((_loginBackgroundImage ?? '').isNotEmpty)
+                      Container(
+                        height: 120,
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFDDE5F0)),
+                          image: DecorationImage(
+                            image: NetworkImage(_loginBackgroundImage!),
+                            fit: BoxFit.cover,
                           ),
                         ),
                       ),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickLoginBackground,
+                          icon: const Icon(Icons.image_outlined, size: 16),
+                          label: Text((_loginBackgroundImage ?? '').isEmpty
+                              ? 'Escolher imagem'
+                              : 'Trocar imagem'),
+                        ),
+                        if ((_loginBackgroundImage ?? '').isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: _clearLoginBackground,
+                            icon: const Icon(Icons.close_rounded, size: 16),
+                            label: const Text('Remover'),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if ((_loginBackgroundFileName ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _loginBackgroundFileName!,
+                        style: const TextStyle(
+                            color: Color(0xFF60718D), fontSize: 11),
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    config.appName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1F2A44),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton(
+                        onPressed: () => _saveWhiteLabel(config),
+                        child: const Text('Salvar marca'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    config.tagline,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: Color(0xFF60718D),
-                      fontWeight: FontWeight.w600,
+                  ]),
+                ),
+              ]),
+              right: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SummaryBox(title: 'Prévia da marca', children: [
+                      BrandLogo(
+                          source: _logoImage,
+                          name: _nameController.text,
+                          height: 44,
+                          width: 170),
+                      const SizedBox(height: 12),
+                      Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFF152033),
+                              borderRadius: BorderRadius.circular(8)),
+                          child: BrandLogo(
+                              source: _logoImage,
+                              name: _nameController.text,
+                              height: 40,
+                              width: 170,
+                              dark: true)),
+                      const SizedBox(height: 12),
+                      Text(_nameController.text,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      Text(_taglineController.text,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 11, color: Color(0xFF60718D))),
+                      const SizedBox(height: 14),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                    color: primary,
+                                    borderRadius: BorderRadius.circular(6))),
+                            const SizedBox(width: 8),
+                            Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                    color: secondary,
+                                    borderRadius: BorderRadius.circular(6)))
+                          ])
+                    ]),
+                    const SizedBox(height: 10),
+                    const _SummaryBox(
+                      title: 'Preferências regionais',
+                      children: [
+                        _BrandSettingLine(
+                            label: 'Fuso horário', value: 'America/Sao_Paulo'),
+                        _BrandSettingLine(
+                            label: 'Formato de data',
+                            value: 'dd/MM/yyyy HH:mm'),
+                        _BrandSettingLine(
+                            label: 'Idioma', value: 'Português (Brasil)'),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-      center: _SettingsTabView(children: [
-        _SettingsCard(
-          title: 'Marca (white-label)',
-          child: Column(children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Nome da empresa'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _taglineController,
-              decoration: const InputDecoration(labelText: 'Tagline'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _primaryController,
-              decoration: const InputDecoration(
-                  labelText: 'Cor primária (#RRGGBB ou #AARRGGBB)'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _secondaryController,
-              decoration: const InputDecoration(
-                  labelText: 'Cor secundária (#RRGGBB ou #AARRGGBB)'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Logo',
-              style: TextStyle(
-                color: Color(0xFF1F2A44),
-                fontWeight: FontWeight.w800,
-                fontSize: 12.5,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Aparece no topo da barra lateral e no menu (mobile). Sem logo, mostra o nome da empresa em texto.',
-              style: TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
-            ),
-            const SizedBox(height: 8),
-            if ((_logoImage ?? '').isNotEmpty)
-              Container(
-                height: 72,
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                alignment: Alignment.centerLeft,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F9FD),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFDDE5F0)),
-                ),
-                child: Image.network(
-                  _logoImage!,
-                  height: 40,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
-                  errorBuilder: (_, __, ___) => const Text(
-                    'Não foi possível abrir esta imagem.',
-                    style: TextStyle(color: Color(0xFFB42318), fontSize: 11),
-                  ),
+                    const SizedBox(height: 10),
+                    _SummaryBox(
+                      title: 'Preferências de mapa',
+                      children: [
+                        SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Exibir tráfego',
+                              style: _switchLabelStyle),
+                          value: _mapTraffic,
+                          onChanged: (v) => setState(() => _mapTraffic = v),
+                        ),
+                        SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Mapa satélite',
+                              style: _switchLabelStyle),
+                          value: _mapSatellite,
+                          onChanged: (v) => setState(() => _mapSatellite = v),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _SummaryBox(
+                      title: 'Outras preferências',
+                      children: [
+                        SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Modo compacto em tabelas',
+                              style: _switchLabelStyle),
+                          value: _compactMode,
+                          onChanged: (v) => setState(() => _compactMode = v),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _pickLogo,
-                  icon: const Icon(Icons.image_outlined, size: 16),
-                  label: Text((_logoImage ?? '').isEmpty
-                      ? 'Escolher logo'
-                      : 'Trocar logo'),
-                ),
-                if ((_logoImage ?? '').isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: _clearLogo,
-                    icon: const Icon(Icons.close_rounded, size: 16),
-                    label: const Text('Remover'),
-                  ),
-                ],
-              ],
-            ),
-            if ((_logoFileName ?? '').isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                _logoFileName!,
-                style: const TextStyle(color: Color(0xFF60718D), fontSize: 11),
-              ),
-            ],
-            const SizedBox(height: 16),
-            const Text(
-              'Imagem de fundo do login',
-              style: TextStyle(
-                color: Color(0xFF1F2A44),
-                fontWeight: FontWeight.w800,
-                fontSize: 12.5,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Sem imagem, o login usa o fundo padrão desenhado do sistema.',
-              style: TextStyle(color: Color(0xFF60718D), fontSize: 11.5),
-            ),
-            const SizedBox(height: 8),
-            if ((_loginBackgroundImage ?? '').isNotEmpty)
-              Container(
-                height: 120,
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFDDE5F0)),
-                  image: DecorationImage(
-                    image: NetworkImage(_loginBackgroundImage!),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _pickLoginBackground,
-                  icon: const Icon(Icons.image_outlined, size: 16),
-                  label: Text((_loginBackgroundImage ?? '').isEmpty
-                      ? 'Escolher imagem'
-                      : 'Trocar imagem'),
-                ),
-                if ((_loginBackgroundImage ?? '').isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: _clearLoginBackground,
-                    icon: const Icon(Icons.close_rounded, size: 16),
-                    label: const Text('Remover'),
-                  ),
-                ],
-              ],
-            ),
-            if ((_loginBackgroundFileName ?? '').isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                _loginBackgroundFileName!,
-                style: const TextStyle(color: Color(0xFF60718D), fontSize: 11),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton(
-                onPressed: () => _saveWhiteLabel(config),
-                child: const Text('Salvar marca'),
-              ),
-            ),
-          ]),
-        ),
-      ]),
-      right: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SummaryBox(
-              title: 'Preferências regionais',
-              children: [
-                _SettingLine(label: 'Fuso horário', value: 'America/Sao_Paulo'),
-                _SettingLine(
-                    label: 'Formato de data', value: 'dd/MM/yyyy HH:mm'),
-                _SettingLine(label: 'Idioma', value: 'Português (Brasil)'),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _SummaryBox(
-              title: 'Preferências de mapa',
-              children: [
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title:
-                      const Text('Exibir tráfego', style: _switchLabelStyle),
-                  value: _mapTraffic,
-                  onChanged: (v) => setState(() => _mapTraffic = v),
-                ),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Mapa satélite', style: _switchLabelStyle),
-                  value: _mapSatellite,
-                  onChanged: (v) => setState(() => _mapSatellite = v),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _SummaryBox(
-              title: 'Outras preferências',
-              children: [
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Modo compacto em tabelas',
-                      style: _switchLabelStyle),
-                  value: _compactMode,
-                  onChanged: (v) => setState(() => _compactMode = v),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+            )));
   }
 
   Future<void> _pickProfilePhoto(TraccarUser me) async {
@@ -682,9 +725,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
     final role = roleFromProfileCode(session.profileCode);
     final roleLabel = labelFromRole(role);
-    final enabledMenus = _permMenuItems
-        .where((item) => _menuEnabled(role, item.feature))
-        .length;
+    final enabledMenus =
+        _permMenuItems.where((item) => _menuEnabled(role, item.feature)).length;
     final initial = name.trim().isNotEmpty
         ? name.trim().substring(0, 1).toUpperCase()
         : '?';
@@ -742,16 +784,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               decoration: const BoxDecoration(
                                 color: Color(0xFF176EEB),
                                 shape: BoxShape.circle,
-                                border:
-                                    Border.fromBorderSide(BorderSide(
-                                        color: Colors.white, width: 2)),
+                                border: Border.fromBorderSide(
+                                    BorderSide(color: Colors.white, width: 2)),
                               ),
                               child: _uploadingProfilePhoto
                                   ? const Padding(
                                       padding: EdgeInsets.all(5),
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white),
+                                          strokeWidth: 2, color: Colors.white),
                                     )
                                   : const Icon(Icons.camera_alt_rounded,
                                       size: 14, color: Colors.white),
@@ -772,8 +812,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
                       color: _accessLevelColorFor(role).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999),
@@ -800,7 +840,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               title: 'Dados da conta',
               child: Column(children: [
                 _SettingLine(label: 'Nome', value: name.isEmpty ? '—' : name),
-                _SettingLine(label: 'Email', value: email.isEmpty ? '—' : email),
+                _SettingLine(
+                    label: 'Email', value: email.isEmpty ? '—' : email),
                 _SettingLine(label: 'Perfil de acesso', value: roleLabel),
                 _SettingLine(
                   label: 'ID do usuário',
@@ -931,8 +972,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   userCounts: {
                     for (final r in AppUserRole.values) r: countForRole(r)
                   },
-                  onSelect: (role) =>
-                      setState(() => _selectedPermRole = role),
+                  onSelect: (role) => setState(() => _selectedPermRole = role),
                 ),
               ),
               Container(width: 1, color: const Color(0xFFE2E8F0)),
@@ -941,8 +981,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 child: _PermMenusColumn(
                   role: _selectedPermRole,
                   isEnabled: (f) => _menuEnabled(_selectedPermRole, f),
-                  onToggle: (f, v) =>
-                      _setMenuEnabled(_selectedPermRole, f, v),
+                  onToggle: (f, v) => _setMenuEnabled(_selectedPermRole, f, v),
                 ),
               ),
               Container(width: 1, color: const Color(0xFFE2E8F0)),
@@ -951,8 +990,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 width: 230,
                 child: _PermActionsColumn(
                   role: _selectedPermRole,
-                  isActionEnabled: (k) =>
-                      _actionEnabled(_selectedPermRole, k),
+                  isActionEnabled: (k) => _actionEnabled(_selectedPermRole, k),
                   onActionToggle: (k, v) =>
                       _setActionEnabled(_selectedPermRole, k, v),
                   enabledMenus: enabledMenus,
@@ -978,8 +1016,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF60718D),
                   side: const BorderSide(color: Color(0xFFDDE6F2)),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
@@ -990,8 +1028,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 onPressed: _savePermissions,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF0F69E8),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
@@ -1005,14 +1043,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Widget _buildIntegracoesTab() {
-    final config      = ref.watch(bridgeConfigProvider);
+    final config = ref.watch(bridgeConfigProvider);
     final asaasConfig = ref.watch(asaasConfigProvider);
 
     // Sync controllers on first load
     if (!_bridgeInitialized && config.bridgeUrl.isNotEmpty) {
-      _bridgeUrlCtrl.text     = config.bridgeUrl;
-      _bridgeApiKeyCtrl.text  = config.bridgeApiKey;
-      _pusherAppKeyCtrl.text  = config.pusherAppKey;
+      _bridgeUrlCtrl.text = config.bridgeUrl;
+      _bridgeApiKeyCtrl.text = config.bridgeApiKey;
+      _pusherAppKeyCtrl.text = config.pusherAppKey;
       _pusherClusterCtrl.text = config.pusherCluster;
       _pusherChannelCtrl.text = config.pusherChannel;
       _bridgeInitialized = true;
@@ -1022,7 +1060,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _asaasInitialized = true;
     }
     if (!_soucallInitialized && config.soucallApiUrl.isNotEmpty) {
-      _soucallUrlCtrl.text   = config.soucallApiUrl;
+      _soucallUrlCtrl.text = config.soucallApiUrl;
       _soucallTokenCtrl.text = config.soucallToken;
       _soucallInitialized = true;
     }
@@ -1064,7 +1102,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               children: [
                 _SidebarListCard(
                   label: 'IA',
-                  subtitle: config.isConfigured ? 'Configurado' : 'Não configurado',
+                  subtitle:
+                      config.isConfigured ? 'Configurado' : 'Não configurado',
                   dotColor: config.isConfigured
                       ? const Color(0xFF10B981)
                       : const Color(0xFF9DB1CC),
@@ -1080,13 +1119,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       ? const Color(0xFF10B981)
                       : const Color(0xFF9DB1CC),
                   isSelected: _selectedIntegration == 'soucall',
-                  onTap: () =>
-                      setState(() => _selectedIntegration = 'soucall'),
+                  onTap: () => setState(() => _selectedIntegration = 'soucall'),
                 ),
                 _SidebarListCard(
                   label: 'Asaas (Financeiro)',
-                  subtitle:
-                      asaasConfig.isConfigured ? 'Configurado' : 'Não configurado',
+                  subtitle: asaasConfig.isConfigured
+                      ? 'Configurado'
+                      : 'Não configurado',
                   dotColor: asaasConfig.isConfigured
                       ? const Color(0xFF10B981)
                       : const Color(0xFF9DB1CC),
@@ -1248,8 +1287,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                             : Icons.visibility_rounded,
                         size: 18,
                       ),
-                      onPressed: () =>
-                          setState(() => _showSoucallToken = !_showSoucallToken),
+                      onPressed: () => setState(
+                          () => _showSoucallToken = !_showSoucallToken),
                     ),
                   ),
                 ),
@@ -1330,7 +1369,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         ? const Color(0xFF10B981)
                         : const Color(0xFF9DB1CC),
                     label: 'Modo',
-                    value: config.aiMode == AiMode.bridge ? 'IA' : 'Demonstração',
+                    value:
+                        config.aiMode == AiMode.bridge ? 'IA' : 'Demonstração',
                     valueColor: config.isConfigured
                         ? const Color(0xFF10B981)
                         : const Color(0xFF9DB1CC),
@@ -1438,18 +1478,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     setState(() => _bridgeSaving = true);
     final current = ref.read(bridgeConfigProvider);
     await ref.read(bridgeConfigProvider.notifier).save(
-      current.copyWith(
-        bridgeUrl:     _bridgeUrlCtrl.text.trim(),
-        bridgeApiKey:  _bridgeApiKeyCtrl.text.trim(),
-        pusherAppKey:  _pusherAppKeyCtrl.text.trim(),
-        pusherCluster: _pusherClusterCtrl.text.trim().isEmpty ? 'mt1' : _pusherClusterCtrl.text.trim(),
-        pusherChannel: _pusherChannelCtrl.text.trim(),
-      ),
-    );
-    setState(() { _bridgeSaving = false; _bridgeTestResult = null; });
+          current.copyWith(
+            bridgeUrl: _bridgeUrlCtrl.text.trim(),
+            bridgeApiKey: _bridgeApiKeyCtrl.text.trim(),
+            pusherAppKey: _pusherAppKeyCtrl.text.trim(),
+            pusherCluster: _pusherClusterCtrl.text.trim().isEmpty
+                ? 'mt1'
+                : _pusherClusterCtrl.text.trim(),
+            pusherChannel: _pusherChannelCtrl.text.trim(),
+          ),
+        );
+    setState(() {
+      _bridgeSaving = false;
+      _bridgeTestResult = null;
+    });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Integrações salvas com sucesso.'), backgroundColor: Color(0xFF10B981)),
+      const SnackBar(
+          content: Text('Integrações salvas com sucesso.'),
+          backgroundColor: Color(0xFF10B981)),
     );
   }
 
@@ -1457,11 +1504,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     setState(() => _soucallSaving = true);
     final current = ref.read(bridgeConfigProvider);
     await ref.read(bridgeConfigProvider.notifier).save(
-      current.copyWith(
-        soucallApiUrl: _soucallUrlCtrl.text.trim(),
-        soucallToken:  _soucallTokenCtrl.text.trim(),
-      ),
-    );
+          current.copyWith(
+            soucallApiUrl: _soucallUrlCtrl.text.trim(),
+            soucallToken: _soucallTokenCtrl.text.trim(),
+          ),
+        );
     setState(() => _soucallSaving = false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1480,8 +1527,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
     setState(() => _asaasSaving = true);
     final current = ref.read(asaasConfigProvider);
-    await ref.read(asaasConfigProvider.notifier).save(current.copyWith(apiKey: key));
-    setState(() { _asaasSaving = false; _asaasTestResult = null; });
+    await ref
+        .read(asaasConfigProvider.notifier)
+        .save(current.copyWith(apiKey: key));
+    setState(() {
+      _asaasSaving = false;
+      _asaasTestResult = null;
+    });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1494,16 +1546,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _testAsaasConnection() async {
     final key = _asaasApiKeyCtrl.text.trim();
     if (key.isEmpty) {
-      setState(() => _asaasTestResult = '✕ Informe a chave de API antes de testar.');
+      setState(
+          () => _asaasTestResult = '✕ Informe a chave de API antes de testar.');
       return;
     }
-    setState(() { _asaasSaving = true; _asaasTestResult = null; });
+    setState(() {
+      _asaasSaving = true;
+      _asaasTestResult = null;
+    });
     try {
       final config = ref.read(asaasConfigProvider);
       final url = '${config.baseUrl}/finance/balance';
-      final resp = await http
-          .get(Uri.parse(url), headers: {'access_token': key})
-          .timeout(const Duration(seconds: 8));
+      final resp = await http.get(Uri.parse(url),
+          headers: {'access_token': key}).timeout(const Duration(seconds: 8));
       setState(() {
         _asaasSaving = false;
         _asaasTestResult = resp.statusCode == 200
@@ -1524,14 +1579,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       setState(() => _bridgeTestResult = '✕ URL da IA não preenchida.');
       return;
     }
-    setState(() { _bridgeSaving = true; _bridgeTestResult = null; });
+    setState(() {
+      _bridgeSaving = true;
+      _bridgeTestResult = null;
+    });
     try {
       // ignore: avoid_dynamic_calls
       final uri = Uri.parse('$url/health');
       final resp = await _httpGet(uri);
       setState(() {
         _bridgeSaving = false;
-        _bridgeTestResult = resp ? '✓ IA respondeu com sucesso.' : '✕ IA não respondeu (verifique URL e chave).';
+        _bridgeTestResult = resp
+            ? '✓ IA respondeu com sucesso.'
+            : '✕ IA não respondeu (verifique URL e chave).';
       });
     } catch (e) {
       setState(() {
@@ -1698,7 +1758,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-
   Widget _buildSegurancaTab(WhiteLabelConfig config) {
     final session = ref.watch(sessionProvider);
     final email = (session.email ?? '').trim();
@@ -1844,27 +1903,19 @@ const _permRoles = <_PermRoleEntry>[
 ];
 
 const _permMenuItems = <_PermMenuEntry>[
-  _PermMenuEntry(
-      AppFeature.dashboard, Icons.dashboard_outlined, 'Dashboard'),
+  _PermMenuEntry(AppFeature.dashboard, Icons.dashboard_outlined, 'Dashboard'),
   _PermMenuEntry(AppFeature.map, Icons.map_outlined, 'Mapa'),
   _PermMenuEntry(
       AppFeature.vehicles, Icons.directions_car_outlined, 'Veículos'),
-  _PermMenuEntry(
-      AppFeature.devices, Icons.memory_outlined, 'Equipamentos'),
-  _PermMenuEntry(
-      AppFeature.alerts, Icons.notifications_outlined, 'Alertas'),
-  _PermMenuEntry(
-      AppFeature.geofences, Icons.fence_outlined, 'Cercas virtuais'),
-  _PermMenuEntry(
-      AppFeature.maintenance, Icons.build_outlined, 'Manutenção'),
-  _PermMenuEntry(
-      AppFeature.reports, Icons.bar_chart_outlined, 'Relatórios'),
+  _PermMenuEntry(AppFeature.devices, Icons.memory_outlined, 'Equipamentos'),
+  _PermMenuEntry(AppFeature.alerts, Icons.notifications_outlined, 'Alertas'),
+  _PermMenuEntry(AppFeature.geofences, Icons.fence_outlined, 'Cercas virtuais'),
+  _PermMenuEntry(AppFeature.maintenance, Icons.build_outlined, 'Manutenção'),
+  _PermMenuEntry(AppFeature.reports, Icons.bar_chart_outlined, 'Relatórios'),
   _PermMenuEntry(AppFeature.commands, Icons.terminal_outlined, 'Comandos'),
-  _PermMenuEntry(
-      AppFeature.communication, Icons.forum_outlined, 'Comunicação'),
+  _PermMenuEntry(AppFeature.communication, Icons.forum_outlined, 'Comunicação'),
   _PermMenuEntry(AppFeature.tickets, Icons.headset_mic_outlined, 'Chamados'),
-  _PermMenuEntry(
-      AppFeature.telemetry, Icons.sensors_outlined, 'Telemetria'),
+  _PermMenuEntry(AppFeature.telemetry, Icons.sensors_outlined, 'Telemetria'),
   _PermMenuEntry(AppFeature.tpms, Icons.tire_repair_outlined, 'TPMS'),
   _PermMenuEntry(AppFeature.logs, Icons.article_outlined, 'Data Log'),
   _PermMenuEntry(
@@ -1872,13 +1923,11 @@ const _permMenuItems = <_PermMenuEntry>[
   _PermMenuEntry(AppFeature.users, Icons.people_outlined, 'Usuários'),
   _PermMenuEntry(
       AppFeature.finance, Icons.account_balance_outlined, 'Financeiro'),
-  _PermMenuEntry(
-      AppFeature.inventory, Icons.inventory_2_outlined, 'Estoque'),
+  _PermMenuEntry(AppFeature.inventory, Icons.inventory_2_outlined, 'Estoque'),
   _PermMenuEntry(AppFeature.mdvr, Icons.videocam_outlined, 'MDVR / Câmeras'),
   _PermMenuEntry(
       AppFeature.aiOps, Icons.auto_awesome_outlined, 'IA Operacional'),
-  _PermMenuEntry(
-      AppFeature.settings, Icons.settings_outlined, 'Configurações'),
+  _PermMenuEntry(AppFeature.settings, Icons.settings_outlined, 'Configurações'),
 ];
 
 const _permActionItems = <_PermActionEntry>[
@@ -1972,9 +2021,8 @@ class _RoleCard extends StatelessWidget {
               : Colors.white.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(9),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF0F69E8)
-                : const Color(0xFFE2E8F0),
+            color:
+                isSelected ? const Color(0xFF0F69E8) : const Color(0xFFE2E8F0),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -2106,12 +2154,10 @@ class _MenuToggleRow extends StatelessWidget {
           GestureDetector(
             onTap: () => onToggle(!enabled),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: enabled
-                    ? const Color(0xFFF0FDF4)
-                    : const Color(0xFFFEF2F2),
+                color:
+                    enabled ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                   color: enabled
@@ -2123,9 +2169,7 @@ class _MenuToggleRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    enabled
-                        ? Icons.check_circle_outline
-                        : Icons.lock_outline,
+                    enabled ? Icons.check_circle_outline : Icons.lock_outline,
                     size: 11,
                     color: enabled
                         ? const Color(0xFF16A34A)
@@ -2252,8 +2296,8 @@ class _PermActionsColumn extends StatelessWidget {
                       children: [
                         const Text(
                           'Nível de acesso',
-                          style: TextStyle(
-                              fontSize: 11, color: Color(0xFF60718D)),
+                          style:
+                              TextStyle(fontSize: 11, color: Color(0xFF60718D)),
                         ),
                         const SizedBox(width: 8),
                         Container(
@@ -2323,12 +2367,10 @@ class _ActionToggleRow extends StatelessWidget {
           GestureDetector(
             onTap: () => onToggle(!enabled),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: enabled
-                    ? const Color(0xFFF0FDF4)
-                    : const Color(0xFFFEF2F2),
+                color:
+                    enabled ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                   color: enabled
@@ -2340,9 +2382,7 @@ class _ActionToggleRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    enabled
-                        ? Icons.check_circle_outline
-                        : Icons.lock_outline,
+                    enabled ? Icons.check_circle_outline : Icons.lock_outline,
                     size: 11,
                     color: enabled
                         ? const Color(0xFF16A34A)
@@ -2393,8 +2433,7 @@ class _SummaryLine extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style:
-                const TextStyle(fontSize: 11, color: Color(0xFF60718D)),
+            style: const TextStyle(fontSize: 11, color: Color(0xFF60718D)),
           ),
         ),
         Text(
@@ -2523,6 +2562,7 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
     required this.right,
     this.leftWidth = 230,
     this.rightWidth = 230,
+    this.constrainPanels = false,
   });
 
   final Widget left;
@@ -2530,9 +2570,30 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
   final Widget right;
   final double leftWidth;
   final double rightWidth;
+  final bool constrainPanels;
 
   @override
   Widget build(BuildContext context) {
+    if (constrainPanels) {
+      return LayoutBuilder(builder: (context, size) {
+        if (size.maxWidth < 900) {
+          return SingleChildScrollView(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                left,
+                SizedBox(height: 520, child: center),
+                right
+              ]));
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SizedBox(width: leftWidth, child: SingleChildScrollView(child: left)),
+          Expanded(child: center),
+          SizedBox(
+              width: rightWidth, child: SingleChildScrollView(child: right))
+        ]);
+      });
+    }
     final isMobile = MediaQuery.sizeOf(context).width < 760;
     // No mobile as 3 colunas (leftWidth + center + rightWidth = ~461px
     // fixos) estouravam a tela em TODAS as abas de Configurações (listras
@@ -2618,9 +2679,8 @@ class _SidebarListCard extends StatelessWidget {
               : Colors.white.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(9),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF0F69E8)
-                : const Color(0xFFE2E8F0),
+            color:
+                isSelected ? const Color(0xFF0F69E8) : const Color(0xFFE2E8F0),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -2629,7 +2689,8 @@ class _SidebarListCard extends StatelessWidget {
             Container(
               width: 8,
               height: 8,
-              decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+              decoration:
+                  BoxDecoration(color: dotColor, shape: BoxShape.circle),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -2703,7 +2764,11 @@ class _SummaryBox extends StatelessWidget {
 // ── Bridge helpers ─────────────────────────────────────────────────────────────
 
 class _ModeChip extends StatelessWidget {
-  const _ModeChip({required this.label, required this.selected, required this.onTap, this.color = const Color(0xFF526684)});
+  const _ModeChip(
+      {required this.label,
+      required this.selected,
+      required this.onTap,
+      this.color = const Color(0xFF526684)});
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -2724,11 +2789,12 @@ class _ModeChip extends StatelessWidget {
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Text(label, style: TextStyle(
-          color: selected ? color : const Color(0xFF60718D),
-          fontWeight: FontWeight.w700,
-          fontSize: 11.5,
-        )),
+        child: Text(label,
+            style: TextStyle(
+              color: selected ? color : const Color(0xFF60718D),
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+            )),
       ),
     );
   }
@@ -2766,4 +2832,22 @@ class _HttpClientWrapper {
 class _FakeResponse {
   const _FakeResponse(this.statusCode);
   final int statusCode;
+}
+
+class _BrandSettingLine extends StatelessWidget {
+  const _BrandSettingLine({required this.label, required this.value});
+  final String label, value;
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF60718D))),
+        const SizedBox(height: 3),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2A44)))
+      ]));
 }

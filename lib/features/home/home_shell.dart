@@ -30,6 +30,7 @@ import '../common/placeholder_screen.dart';
 import '../clients/clients_screen.dart';
 import '../commands/commands_screen.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../../ui/brand_logo.dart';
 import '../dashboard/executive_dashboard_screen.dart';
 import '../devices/devices_screen.dart';
 import '../master_panel/master_panel_screen.dart';
@@ -247,27 +248,7 @@ const List<Color> _geofencePalette = [
 // `Image.asset` tentava carregar a data URL como se fosse um caminho de
 // arquivo e falhava silenciosamente -- por isso o logo customizado nunca
 // aparecia na sidebar/menu mobile (2026-09-05).
-Widget _brandLogoImage(
-  String logoAsset, {
-  required double height,
-}) {
-  if (logoAsset.startsWith('data:')) {
-    return Image.network(
-      logoAsset,
-      height: height,
-      fit: BoxFit.contain,
-      alignment: Alignment.centerLeft,
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-    );
-  }
-  return Image.asset(
-    logoAsset,
-    height: height,
-    fit: BoxFit.contain,
-    alignment: Alignment.centerLeft,
-    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-  );
-}
+Widget _brandLogoImage(String logoAsset,{required double height}) => BrandLogo(source:logoAsset,height:height);
 
 Color _geofenceColorFor(Object id) {
   final index = id.hashCode.abs() % _geofencePalette.length;
@@ -6543,24 +6524,7 @@ class _TopSearchBar extends StatelessWidget {
                         children: [
                           Expanded(
                             child: hasBrandLogo
-                                ? Image.asset(
-                                    brandLogoAsset,
-                                    height: logoHeight,
-                                    fit: BoxFit.contain,
-                                    alignment: Alignment.centerLeft,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Text(
-                                        brandName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: const Color(0xFF1F2A44),
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: compactLogo ? 13 : 16,
-                                        ),
-                                      );
-                                    },
-                                  )
+                                ? BrandLogo(source:brandLogoAsset,name:brandName,height:logoHeight,width:180)
                                 : Text(
                                     brandName,
                                     maxLines: 1,
@@ -7405,7 +7369,7 @@ class _SideMenu extends StatelessWidget {
                               ? Align(
                                   alignment: Alignment.centerLeft,
                                   child:
-                                      _brandLogoImage(logoAsset, height: 22),
+                                      _brandLogoImage(logoAsset, height: 36),
                                 )
                               : Text(
                                   brandName ?? 'SouTracking',
@@ -7441,20 +7405,10 @@ class _SideMenu extends StatelessWidget {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF176EEB), Color(0xFF0D4DB8)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
+                              color: Colors.transparent,
                               borderRadius: BorderRadius.circular(7),
                             ),
-                            child: const Center(
-                              child: Text('S',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 14)),
-                            ),
+                            child: BrandLogo(source:brandLogoAsset,name:brandName??'SouTracking',height:28,compact:true),
                           ),
                         ),
                       ),

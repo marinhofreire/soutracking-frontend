@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/white_label.dart';
+import '../../ui/brand_logo.dart';
 import '../../state/session_state.dart';
 import '../home/home_shell.dart';
 
@@ -93,8 +94,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // em telas largas, caindo pro card responsivo padrao no celular.
     final screenSize = MediaQuery.of(context).size;
     final isWideEnoughForPixelReference = screenSize.width > screenSize.height;
+    final logoSource = config.logoAsset?.trim() ?? '';
+    final hasCustomLogo = logoSource.isNotEmpty &&
+        logoSource != 'assets/branding/soutracking_logo_horizontal.png';
     final usePixelReferenceLogin = isWideEnoughForPixelReference &&
-        config.appName.trim().toLowerCase().contains('soutracking');
+        config.appName.trim().toLowerCase().contains('soutracking') &&
+        !hasCustomLogo &&
+        (config.loginBackgroundImage?.trim().isEmpty ?? true);
 
     if (usePixelReferenceLogin) {
       return _buildPixelReferenceLogin(
@@ -109,7 +115,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final cardPadding = isCompact
         ? const EdgeInsets.symmetric(horizontal: 18, vertical: 20)
         : const EdgeInsets.symmetric(horizontal: 28, vertical: 26);
-    const brandAccent = Color(0xFFF9C61B);
+    final brandAccent =
+        hasCustomLogo || !config.appName.toLowerCase().contains('soutracking')
+            ? config.primaryColor
+            : const Color(0xFFF9C61B);
 
     final customBackground = config.loginBackgroundImage?.trim() ?? '';
 
@@ -173,10 +182,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _LoginBrand(
-                            appName: config.appName,
-                            compact: isCompact,
-                          ),
+                          if (hasCustomLogo)
+                            BrandLogo(
+                                source: config.logoAsset,
+                                name: config.appName,
+                                height: 64,
+                                width: 280,
+                                dark: true)
+                          else
+                            _LoginBrand(
+                              appName: config.appName,
+                              compact: isCompact,
+                            ),
                           const SizedBox(height: 12),
                           Stack(
                             alignment: Alignment.center,
