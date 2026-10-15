@@ -1,5 +1,5 @@
-import '../../core/operational_panel.dart';
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/bridge_client.dart';
@@ -12,291 +12,49 @@ class IaScreen extends ConsumerWidget {
   final VoidCallback? onClose;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => OperationalPanel(
-        child: Builder(builder: (context) => _buildContents(context, ref)),
-      );
+  Widget build(BuildContext context, WidgetRef ref) =>
+      _buildContents(context, ref);
 
   Widget _buildContents(BuildContext context, WidgetRef ref) {
-    final ia = ref.watch(iaProvider);
-    final config = ref.watch(bridgeConfigProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Header(
-            ia: ia,
-            config: config,
-            onClose: onClose,
-            onRefresh: () => ref.read(iaProvider.notifier).refresh()),
-        const SizedBox(height: 10),
-        _KpiBar(ia: ia, config: config),
-        const SizedBox(height: 10),
-        Expanded(
-          child: LayoutBuilder(builder: (context, constraints) {
-            if (constraints.maxWidth < 760) {
-              return ListView(children: [
-                SizedBox(height: 300, child: _ApprovalQueue(ia: ia)),
-                const SizedBox(height: 12),
-                SizedBox(height: 180, child: _ActionLog(ia: ia)),
-                const SizedBox(height: 12),
-                _AutonomyCard(config: config),
-              ]);
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left: approval queue
-                Expanded(
-                  flex: 6,
-                  child: _ApprovalQueue(ia: ia),
-                ),
-                const SizedBox(width: 10),
-                // Right: log + autonomy
-                Expanded(
-                  flex: 5,
-                  child: Column(
-                    children: [
-                      Expanded(child: _ActionLog(ia: ia)),
-                      const SizedBox(height: 10),
-                      _AutonomyCard(config: config),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }),
-        ),
-      ],
-    );
+    final ia = ref.watch(iaProvider), config = ref.watch(bridgeConfigProvider);
+    final status = switch (ia.status) {
+      BridgeConnectionStatus.connected => 'Conectado',
+      BridgeConnectionStatus.connecting => 'Conectando…',
+      BridgeConnectionStatus.error => 'Erro de conexão',
+      BridgeConnectionStatus.disconnected =>
+        config.isConfigured ? 'Desconectado' : 'Modo demonstração'
+    };
+    return ModuleScaffold(
+        title: 'IA Operacional',
+        subtitle: 'Gestão autônoma com aprovação humana.',
+        navigation:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Atividade'),
+          ModuleCard(
+              title: 'Resumo',
+              child: Column(children: [
+                ModuleDetailRow('Modo', 'IA'),
+                ModuleDetailRow('Aprovações pendentes', '${ia.pending.length}')
+              ])),
+          SizedBox(height: 280, child: _ActionLog(ia: ia))
+        ]),
+        scrollContent: false,
+        content: _ApprovalQueue(ia: ia),
+        detail: _AutonomyCard(config: config),
+        headerActions: [
+          ModuleStatusChip(status,
+              tone: ia.status == BridgeConnectionStatus.connected
+                  ? ModuleTone.success
+                  : ModuleTone.neutral),
+          IconButton(
+              tooltip: 'Atualizar',
+              onPressed: () => ref.read(iaProvider.notifier).refresh(),
+              icon: const Icon(Icons.refresh_rounded))
+        ]);
   }
 }
 
 // ── Header ─────────────────────────────────────────────────────────────────────
-
-class _Header extends StatelessWidget {
-  const _Header(
-      {required this.ia,
-      required this.config,
-      required this.onRefresh,
-      this.onClose});
-  final IaState ia;
-  final BridgeConfig config;
-  final VoidCallback onRefresh;
-  final VoidCallback? onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final (statusLabel, statusColor) = switch (ia.status) {
-      BridgeConnectionStatus.connected => (
-          'Conectado',
-          const Color(0xFF10B981)
-        ),
-      BridgeConnectionStatus.connecting => (
-          'Conectando…',
-          const Color(0xFFF59E0B)
-        ),
-      BridgeConnectionStatus.error => (
-          'Erro de conexão',
-          const Color(0xFFEF4444)
-        ),
-      BridgeConnectionStatus.disconnected => config.isConfigured
-          ? ('Desconectado', const Color(0xFFEF4444))
-          : ('Modo demonstração', const Color(0xFF9DB1CC)),
-    };
-
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: const Color(0xFF176EEB).withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Icon(Icons.auto_awesome_rounded,
-              color: Color(0xFF176EEB), size: 20),
-        ),
-        const SizedBox(width: 12),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('IA Operacional',
-                  style: TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18)),
-              SizedBox(height: 1),
-              Text('Gestão autônoma com aprovação humana',
-                  style: TextStyle(
-                      color: Color(0xFF60718D),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-        // Status chip
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: statusColor.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: statusColor.withValues(alpha: 0.30)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                      color: statusColor, shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-              Text(statusLabel,
-                  style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11)),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          onPressed: onRefresh,
-          icon: const Icon(Icons.refresh_rounded),
-          tooltip: 'Atualizar',
-          style: IconButton.styleFrom(
-              foregroundColor: const Color(0xFF60718D),
-              fixedSize: const Size(33, 33),
-              visualDensity: VisualDensity.standard,
-              side: const BorderSide(color: Color(0xFFDDE5F0)),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8))),
-        ),
-        IconButton(
-          onPressed: onClose,
-          icon: const Icon(Icons.close_rounded),
-          tooltip: 'Fechar',
-          style: IconButton.styleFrom(
-              foregroundColor: const Color(0xFF60718D),
-              fixedSize: const Size(33, 33),
-              visualDensity: VisualDensity.standard,
-              side: const BorderSide(color: Color(0xFFDDE5F0)),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8))),
-        ),
-      ],
-    );
-  }
-}
-
-// ── KPI bar ────────────────────────────────────────────────────────────────────
-
-class _KpiBar extends StatelessWidget {
-  const _KpiBar({required this.ia, required this.config});
-  final IaState ia;
-  final BridgeConfig config;
-
-  @override
-  Widget build(BuildContext context) =>
-      LayoutBuilder(builder: (context, constraints) {
-        if (constraints.maxWidth < 760) {
-          return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(width: 850, child: _buildBar(context)));
-        }
-        return _buildBar(context);
-      });
-
-  Widget _buildBar(BuildContext context) {
-    final acoesHoje =
-        ia.events.where((e) => !e.requerAprovacao || e.aprovado == true).length;
-    final pendentes = ia.pending.length;
-    final taxa = ia.acertosHoje == 0
-        ? '--'
-        : '${((ia.acertosHoje / (ia.acertosHoje + 1)) * 100).toStringAsFixed(0)}%';
-    final tokens = ia.tokensUsed == 0 ? '--' : _fmt(ia.tokensUsed);
-
-    return Container(
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: const Color(0xFFDDE5F0))),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            _kpi('Ações hoje', '$acoesHoje', const Color(0xFF176EEB),
-                Icons.bolt_rounded),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _kpi(
-                'Aprovações',
-                '$pendentes',
-                pendentes > 0
-                    ? const Color(0xFFF59E0B)
-                    : const Color(0xFF10B981),
-                Icons.pending_actions_rounded),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _kpi('Taxa de acerto', taxa, const Color(0xFF10B981),
-                Icons.verified_rounded),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _kpi('Tokens usados', tokens, const Color(0xFF526684),
-                Icons.data_usage_rounded),
-            const VerticalDivider(width: 1, color: Color(0xFFE8EFF7)),
-            _kpi(
-              'Modo',
-              config.aiMode == AiMode.bridge ? 'IA' : 'Demo',
-              config.aiMode == AiMode.bridge
-                  ? const Color(0xFF176EEB)
-                  : const Color(0xFF9DB1CC),
-              Icons.hub_rounded,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _kpi(String label, String value, Color color, IconData icon) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(8)),
-              child: Icon(icon, color: color, size: 15),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(value,
-                    style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 18)),
-                Text(label,
-                    style: const TextStyle(
-                        color: Color(0xFF60718D),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmt(int n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
-}
-
-// ── Approval queue ─────────────────────────────────────────────────────────────
 
 class _ApprovalQueue extends ConsumerWidget {
   const _ApprovalQueue({required this.ia});
@@ -575,12 +333,12 @@ class _ActionLog extends StatelessWidget {
                       color: Color(0xFF10B981), size: 14),
                 ),
                 const SizedBox(width: 8),
-                const Text('Log de ações',
-                    style: TextStyle(
-                        color: Color(0xFF1F2A44),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13)),
-                const Spacer(),
+                const Expanded(
+                    child: Text('Log de ações',
+                        style: TextStyle(
+                            color: Color(0xFF1F2A44),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13))),
                 Text('${log.length} registros',
                     style: const TextStyle(
                         color: Color(0xFF9DB1CC), fontSize: 11)),
@@ -713,11 +471,12 @@ class _AutonomyCard extends ConsumerWidget {
                     color: Color(0xFF176EEB), size: 14),
               ),
               const SizedBox(width: 8),
-              const Text('Autonomia da IA',
-                  style: TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13)),
+              const Expanded(
+                  child: Text('Autonomia da IA',
+                      style: TextStyle(
+                          color: Color(0xFF1F2A44),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13))),
             ],
           ),
           const SizedBox(height: 10),
@@ -763,42 +522,22 @@ class _AutonomyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: const TextStyle(
-                    color: Color(0xFF526684),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11.5)),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: value
-                  ? const Color(0xFF10B981).withValues(alpha: 0.10)
-                  : const Color(0xFF9DB1CC).withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              value ? 'Autônomo' : 'Requer aprovação',
-              style: TextStyle(
-                color:
-                    value ? const Color(0xFF10B981) : const Color(0xFF9DB1CC),
-                fontWeight: FontWeight.w700,
-                fontSize: 10,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _IaToggle(
-            value: value,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+                child: Text(label,
+                    style: const TextStyle(
+                        color: Color(0xFF526684),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11.5))),
+            const SizedBox(width: 8),
+            _IaToggle(value: value, onChanged: onChanged)
+          ]),
+          const SizedBox(height: 5),
+          ModuleStatusChip(value ? 'Autônomo' : 'Requer aprovação',
+              tone: value ? ModuleTone.success : ModuleTone.neutral)
+        ]));
   }
 }
 

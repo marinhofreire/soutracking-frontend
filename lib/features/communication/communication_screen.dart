@@ -1,4 +1,4 @@
-import '../../core/operational_panel.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -241,9 +241,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => OperationalPanel(
-        child: Builder(builder: (context) => _buildContents(context)),
-      );
+  Widget build(BuildContext context) => _buildContents(context);
 
   Widget _buildContents(BuildContext context) {
     final devices =
@@ -295,279 +293,211 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
             .where((row) => row.deviceId == _selectedDeviceId)
             .toList(growable: false);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Header ──────────────────────────────────────────────────────────
-        Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: const Color(0xFF176EEB).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.forum_rounded,
-                color: Color(0xFF176EEB),
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Comunicação',
-                    style: TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
+    return ModuleScaffold(
+        title: 'Comunicação',
+        subtitle: 'Mensagens e atendimento via WhatsApp.',
+        navigation:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const ModuleSectionLabel('Canais'),
+          ModuleListItem(
+              title: 'Conversas',
+              subtitle: '${conversationRows.length} conversas',
+              selected: _activeTab == _CommunicationTab.conversations,
+              onTap: () =>
+                  setState(() => _activeTab = _CommunicationTab.conversations),
+              icon: Icons.forum_rounded),
+          ModuleListItem(
+              title: 'Notificações',
+              subtitle: '${notificationRows.length} registros',
+              selected: _activeTab == _CommunicationTab.notifications,
+              onTap: () =>
+                  setState(() => _activeTab = _CommunicationTab.notifications),
+              icon: Icons.notifications_outlined),
+          const SizedBox(height: 12),
+          const ModuleSectionLabel('Filtros'),
+          Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                // Search
+                SizedBox(
+                  width: double.infinity,
+                  height: 36,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar...',
+                      hintStyle: const TextStyle(
+                          fontSize: 12, color: Color(0xFF9DB1CC)),
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          size: 16, color: Color(0xFF9DB1CC)),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: const Color(0xFFF7F9FD),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF176EEB)),
+                      ),
                     ),
                   ),
-                  SizedBox(height: 1),
-                  Text(
-                    'Mensagens e atendimento via WhatsApp',
-                    style: TextStyle(
-                      color: Color(0xFF60718D),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                ),
+                _filterDropdown<String>(
+                  label: 'Canal',
+                  value: _selectedChannel,
+                  options: const [
+                    'Todos',
+                    'Comando',
+                    'Mensagem',
+                    'Notificação'
+                  ],
+                  width: double.infinity,
+                  onChanged: (v) => setState(() => _selectedChannel = v),
+                ),
+                _filterDropdown<int?>(
+                  label: 'Equipamento',
+                  value: _selectedDeviceId,
+                  options: [null, ...devices.map((e) => e.id)],
+                  width: double.infinity,
+                  optionLabel: (id) {
+                    if (id == null) return 'Todos';
+                    return formatDisplayText(
+                        devices.where((d) => d.id == id).firstOrNull?.name);
+                  },
+                  onChanged: (v) => setState(() => _selectedDeviceId = v),
+                ),
+                _filterDropdown<String>(
+                  label: 'Status',
+                  value: _selectedStatus,
+                  options: const ['Todos', 'Enviado', 'Pendente', 'Falha'],
+                  width: double.infinity,
+                  onChanged: (v) => setState(() => _selectedStatus = v),
+                ),
+                _filterDropdown<String>(
+                  label: 'Período',
+                  value: _selectedPeriod,
+                  options: const ['Hoje', '7 dias', '30 dias'],
+                  width: double.infinity,
+                  onChanged: (v) => setState(() => _selectedPeriod = v),
+                ),
+              ])
+        ]),
+        scrollContent: false,
+        content: Builder(builder: (context) {
+          final isMobile = MediaQuery.sizeOf(context).width < 760;
+          final listPanel = _leftListPanel(
+            rows: filteredRows,
+            emptySubtitle: 'Atualize os filtros ou aguarde novos dados',
+            onSelect: (row) => setState(() {
+              _selectedRow = row;
+              if (_activeTab == _CommunicationTab.conversations) {
+                _selectedTicket = row.ticket;
+              } else {
+                _selectedDeviceId = row.deviceId;
+              }
+            }),
+          );
+          final detailPanel = _activeTab == _CommunicationTab.conversations
+              ? _rightWhatsappPanel(
+                  ticket: _selectedTicket,
+                  history: conversationHistory,
+                )
+              : _rightConversationPanel(
+                  selectedDevice: selectedDevice,
+                  selectedPosition: selectedPosition,
+                  selectedStatus: selectedStatus,
+                  selectedStatusColor: selectedStatusColor,
+                  history: conversationHistory,
+                );
+
+          if (isMobile) {
+            // Um painel por vez: enquanto nada selecionado, mostra a
+            // lista; ao selecionar, mostra o detalhe com botão voltar.
+            final hasSelection = _activeTab == _CommunicationTab.conversations
+                ? _selectedTicket != null
+                : _selectedDeviceId != null;
+            if (!hasSelection) return listPanel;
+            return Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() {
+                      _selectedRow = null;
+                      _selectedTicket = null;
+                      _selectedDeviceId = null;
+                    }),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                    label: const Text('Voltar à lista'),
                   ),
-                ],
-              ),
-            ),
-            IconButton(
+                ),
+                Expanded(child: detailPanel),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(flex: 5, child: listPanel),
+              const SizedBox(width: 10),
+              Expanded(flex: 4, child: detailPanel),
+            ],
+          );
+        }),
+        headerActions: [
+          IconButton(
+              tooltip: 'Atualizar',
+              icon: const Icon(Icons.refresh_rounded),
               onPressed: () {
                 ref.invalidate(soucallTicketsProvider);
                 ref.invalidate(notificationsProvider);
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              tooltip: 'Atualizar',
-              style: IconButton.styleFrom(
-                  foregroundColor: const Color(0xFF60718D)),
+              })
+        ],
+        actions: [
+          OutlinedButton.icon(
+            onPressed: () => _exportRows(activeRows),
+            icon: const Icon(Icons.file_download_outlined, size: 15),
+            label: const Text('Exportar', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              foregroundColor: const Color(0xFF526684),
+              side: const BorderSide(color: Color(0xFFDDE5F0)),
             ),
-            IconButton(
-              onPressed: widget.onClose,
-              icon: const Icon(Icons.close_rounded),
-              tooltip: 'Fechar',
-              style: IconButton.styleFrom(
-                  foregroundColor: const Color(0xFF60718D)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        Container(
-          decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFDDE5F0)))),
-          child: Row(children: [
-            _tabChip(
-              label: 'Conversas',
-              count: conversationRows.length,
-              active: _activeTab == _CommunicationTab.conversations,
-              onTap: () =>
-                  setState(() => _activeTab = _CommunicationTab.conversations),
-            ),
-            _tabChip(
-              label: 'Notificações',
-              count: notificationRows.length,
-              active: _activeTab == _CommunicationTab.notifications,
-              onTap: () =>
-                  setState(() => _activeTab = _CommunicationTab.notifications),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 12),
-        // ── Toolbar ─────────────────────────────────────────────────────────
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: const Color(0xFFDDE5F0)),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              // Search
-              SizedBox(
-                width: 180,
-                height: 36,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar...',
-                    hintStyle:
-                        const TextStyle(fontSize: 12, color: Color(0xFF9DB1CC)),
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        size: 16, color: Color(0xFF9DB1CC)),
-                    isDense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    filled: true,
-                    fillColor: const Color(0xFFF7F9FD),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFDDE5F0)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF176EEB)),
-                    ),
-                  ),
-                ),
-              ),
-              _filterDropdown<String>(
-                label: 'Canal',
-                value: _selectedChannel,
-                options: const ['Todos', 'Comando', 'Mensagem', 'Notificação'],
-                width: 136,
-                onChanged: (v) => setState(() => _selectedChannel = v),
-              ),
-              _filterDropdown<int?>(
-                label: 'Equipamento',
-                value: _selectedDeviceId,
-                options: [null, ...devices.map((e) => e.id)],
-                width: 176,
-                optionLabel: (id) {
-                  if (id == null) return 'Todos';
-                  return formatDisplayText(
-                      devices.where((d) => d.id == id).firstOrNull?.name);
-                },
-                onChanged: (v) => setState(() => _selectedDeviceId = v),
-              ),
-              _filterDropdown<String>(
-                label: 'Status',
-                value: _selectedStatus,
-                options: const ['Todos', 'Enviado', 'Pendente', 'Falha'],
-                width: 124,
-                onChanged: (v) => setState(() => _selectedStatus = v),
-              ),
-              _filterDropdown<String>(
-                label: 'Período',
-                value: _selectedPeriod,
-                options: const ['Hoje', '7 dias', '30 dias'],
-                width: 116,
-                onChanged: (v) => setState(() => _selectedPeriod = v),
-              ),
-              // Actions
-              OutlinedButton.icon(
-                onPressed: () => _exportRows(activeRows),
-                icon: const Icon(Icons.file_download_outlined, size: 15),
-                label: const Text('Exportar', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  foregroundColor: const Color(0xFF526684),
-                  side: const BorderSide(color: Color(0xFFDDE5F0)),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _openHistoryDialog(activeRows),
-                icon: const Icon(Icons.history_rounded, size: 15),
-                label: const Text('Histórico', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  foregroundColor: const Color(0xFF526684),
-                  side: const BorderSide(color: Color(0xFFDDE5F0)),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: () => setState(() {
-                  _pendingCommandType = 'custom';
-                  _messageController.text = '';
-                }),
-                icon: const Icon(Icons.add_rounded, size: 15),
-                label:
-                    const Text('Nova mensagem', style: TextStyle(fontSize: 12)),
-                style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  backgroundColor: const Color(0xFF176EEB),
-                ),
-              ),
-            ],
+          OutlinedButton.icon(
+            onPressed: () => _openHistoryDialog(activeRows),
+            icon: const Icon(Icons.history_rounded, size: 15),
+            label: const Text('Histórico', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              foregroundColor: const Color(0xFF526684),
+              side: const BorderSide(color: Color(0xFFDDE5F0)),
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-
-        // ── Two-panel layout (desktop) / single-panel (mobile) ─────────────
-        Expanded(
-          child: Builder(builder: (context) {
-            final isMobile = MediaQuery.sizeOf(context).width < 760;
-            final listPanel = _leftListPanel(
-              rows: filteredRows,
-              emptySubtitle: 'Atualize os filtros ou aguarde novos dados',
-              onSelect: (row) => setState(() {
-                _selectedRow = row;
-                if (_activeTab == _CommunicationTab.conversations) {
-                  _selectedTicket = row.ticket;
-                } else {
-                  _selectedDeviceId = row.deviceId;
-                }
-              }),
-            );
-            final detailPanel = _activeTab == _CommunicationTab.conversations
-                ? _rightWhatsappPanel(
-                    ticket: _selectedTicket,
-                    history: conversationHistory,
-                  )
-                : _rightConversationPanel(
-                    selectedDevice: selectedDevice,
-                    selectedPosition: selectedPosition,
-                    selectedStatus: selectedStatus,
-                    selectedStatusColor: selectedStatusColor,
-                    history: conversationHistory,
-                  );
-
-            if (isMobile) {
-              // Um painel por vez: enquanto nada selecionado, mostra a
-              // lista; ao selecionar, mostra o detalhe com botão voltar.
-              final hasSelection = _activeTab == _CommunicationTab.conversations
-                  ? _selectedTicket != null
-                  : _selectedDeviceId != null;
-              if (!hasSelection) return listPanel;
-              return Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => setState(() {
-                        _selectedRow = null;
-                        _selectedTicket = null;
-                        _selectedDeviceId = null;
-                      }),
-                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                      label: const Text('Voltar à lista'),
-                    ),
-                  ),
-                  Expanded(child: detailPanel),
-                ],
-              );
-            }
-
-            return Row(
-              children: [
-                Expanded(flex: 5, child: listPanel),
-                const SizedBox(width: 10),
-                Expanded(flex: 4, child: detailPanel),
-              ],
-            );
-          }),
-        ),
-      ],
-    );
+          FilledButton.icon(
+            onPressed: () => setState(() {
+              _pendingCommandType = 'custom';
+              _messageController.text = '';
+            }),
+            icon: const Icon(Icons.add_rounded, size: 15),
+            label: const Text('Nova mensagem', style: TextStyle(fontSize: 12)),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              backgroundColor: const Color(0xFF176EEB),
+            ),
+          )
+        ]);
   }
 
   // ── Left panel ─────────────────────────────────────────────────────────────

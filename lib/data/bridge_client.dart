@@ -369,7 +369,7 @@ Future<({bool success, String? error})> sendSoucallMessage(
   int? ticketId,
 }) async {
   if (config.bridgeUrl.isEmpty || config.bridgeApiKey.isEmpty) {
-    return (success: false, error: 'Bridge não configurado');
+    return (success: false, error: 'Conexão do SouCall indisponível');
   }
   try {
     final uri = Uri.parse('${config.bridgeUrl}/soucall/send-message');
