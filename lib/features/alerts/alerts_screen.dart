@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../ui/module_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/display_text_formatter.dart';
@@ -84,6 +85,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
   String _vehicleFilter = 'Todos';
   bool _saving = false;
 
+  AlertSeverity? _selectedSeverity;
+  String? _selectedEventId;
   String? _dlgType;
   bool _dlgWeb = true;
   bool _dlgMail = false;
@@ -134,97 +137,147 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     ];
     final selVehicle =
         vehicleOptions.contains(_vehicleFilter) ? _vehicleFilter : 'Todos';
-    final selType =
-        typeOptions.contains(_typeFilter) ? _typeFilter : 'Todos';
+    final selType = typeOptions.contains(_typeFilter) ? _typeFilter : 'Todos';
     final filtered = records.where((r) {
       if (selType != 'Todos' && r.type != selType) return false;
       if (selVehicle != 'Todos' && r.vehicle != selVehicle) return false;
       return true;
     }).toList();
 
-    return SingleChildScrollView(
-      child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Eventos',
-                    style: TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 22,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Histórico completo de eventos do rastreador.',
-                    style: TextStyle(color: Color(0xFF5A6B84), fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: () => _openCreateAlertDialog(devices),
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Criar Regra'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        _AlertsKpiRow(summary: summary),
-        const SizedBox(height: 20),
-        _SectionCard(
-          icon: Icons.history_rounded,
-          iconColor: const Color(0xFF7B2FC4),
-          title: 'Eventos Recentes',
-          subtitle: 'Histórico de alertas disparados',
-          action: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _PeriodChips(
-                selected: _period,
-                options: const ['Hoje', '7 dias', '30 dias'],
-                onChanged: (v) => setState(() {
+    final visible = filtered
+        .where(
+            (r) => _selectedSeverity == null || r.severity == _selectedSeverity)
+        .toList();
+    final selected = visible.where((r) => r.id == _selectedEventId).firstOrNull;
+    return ModuleScaffold(
+      title: 'Eventos',
+      subtitle: 'Consulte e acompanhe os eventos dos equipamentos.',
+      navigation:
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const ModuleSectionLabel('Severidade'),
+        ModuleListItem(
+            title: 'Todos',
+            subtitle: '${records.length} eventos',
+            selected: _selectedSeverity == null,
+            onTap: () => setState(() => _selectedSeverity = null)),
+        for (final severity in AlertSeverity.values)
+          ModuleListItem(
+              title: severity.label,
+              subtitle:
+                  '${records.where((r) => r.severity == severity).length} eventos',
+              selected: _selectedSeverity == severity,
+              onTap: () => setState(() => _selectedSeverity = severity)),
+        const SizedBox(height: 14),
+        const ModuleSectionLabel('Período'),
+        DropdownButtonFormField<String>(
+            isExpanded: true,
+            initialValue: _period,
+            decoration: const InputDecoration(labelText: 'Período'),
+            items: [
+              for (final p in ['Hoje', '7 dias', '30 dias'])
+                DropdownMenuItem(value: p, child: Text(p))
+            ],
+            onChanged: (v) {
+              if (v != null)
+                setState(() {
                   _period = v;
                   _typeFilter = 'Todos';
                   _vehicleFilter = 'Todos';
-                }),
-              ),
-              if (typeOptions.length > 1) ...[
-                const SizedBox(width: 8),
-                _DropFilter(
-                  label: 'Tipo',
-                  value: selType,
-                  options: typeOptions,
-                  onChanged: (v) => setState(() => _typeFilter = v),
-                ),
-              ],
-              if (vehicleOptions.length > 1) ...[
-                const SizedBox(width: 8),
-                _DropFilter(
-                  label: 'Veículo',
-                  value: selVehicle,
-                  options: vehicleOptions,
-                  onChanged: (v) => setState(() => _vehicleFilter = v),
-                ),
-              ],
+                  _selectedEventId = null;
+                });
+            }),
+        const SizedBox(height: 14),
+        DropdownButtonFormField<String>(
+            key: ValueKey('vehicle-$selVehicle'),
+            isExpanded: true,
+            initialValue: selVehicle,
+            decoration: const InputDecoration(labelText: 'Veículo'),
+            items: [
+              for (final v in vehicleOptions)
+                DropdownMenuItem(
+                    value: v, child: Text(v, overflow: TextOverflow.ellipsis))
             ],
-          ),
-          child: eventsAsync.when(
-            data: (_) => _EventsTable(records: filtered),
+            onChanged: (v) {
+              if (v != null) setState(() => _vehicleFilter = v);
+            }),
+        const SizedBox(height: 14),
+        DropdownButtonFormField<String>(
+            key: ValueKey('type-$selType'),
+            isExpanded: true,
+            initialValue: selType,
+            decoration: const InputDecoration(labelText: 'Tipo'),
+            items: [
+              for (final v in typeOptions)
+                DropdownMenuItem(
+                    value: v, child: Text(v, overflow: TextOverflow.ellipsis))
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => _typeFilter = v);
+            }),
+      ]),
+      content:
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const ModuleSectionLabel('Eventos do período'),
+        eventsAsync.when(
+            data: (_) => visible.isEmpty
+                ? const ModuleEmpty('Nenhum evento neste período',
+                    'Ajuste os filtros ou escolha outro período.',
+                    icon: Icons.history_rounded)
+                : Column(children: [
+                    for (final event in visible)
+                      ModuleListItem(
+                          title: event.type,
+                          subtitle:
+                              '${event.vehicle} · ${event.dateTime.toLocal().toString().split(".").first}',
+                          icon: Icons.notifications_active_rounded,
+                          selected: selected?.id == event.id,
+                          onTap: () =>
+                              setState(() => _selectedEventId = event.id),
+                          trailing: ModuleStatusChip(event.severity.label,
+                              tone: switch (event.severity) {
+                                AlertSeverity.critical => ModuleTone.critical,
+                                AlertSeverity.high => ModuleTone.warning,
+                                _ => ModuleTone.info
+                              }))
+                  ]),
             loading: () => const _InlineLoader(),
             error: (_, __) => const _InlineError(
-                message: 'Não foi possível carregar eventos'),
-          ),
-        ),
-        const SizedBox(height: 20),
+                message: 'Não foi possível carregar eventos')),
+      ]),
+      detail: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const ModuleSectionLabel('Detalhes do evento'),
+        if (selected == null)
+          const ModuleCard(
+              title: 'Selecione um evento',
+              child: ModuleEmpty('Nenhum evento selecionado',
+                  'Selecione um registro para consultar os detalhes.'))
+        else
+          ModuleCard(
+              title: selected.type,
+              child: Column(children: [
+                ModuleDetailRow('Veículo', selected.vehicle),
+                ModuleDetailRow('Data / hora',
+                    selected.dateTime.toLocal().toString().split('.').first),
+                ModuleDetailRow('Severidade', selected.severity.label),
+                ModuleDetailRow('Descrição', selected.description),
+                if (selected.address?.isNotEmpty ?? false)
+                  ModuleDetailRow('Endereço', selected.address!)
+              ])),
+        ModuleCard(
+            title: 'Resumo do período',
+            child: Column(children: [
+              ModuleDetailRow('Eventos', '${summary.today}'),
+              ModuleDetailRow('Críticos', '${summary.critical}'),
+              ModuleDetailRow('Período', _period)
+            ])),
+      ]),
+      actions: [
+        FilledButton.icon(
+            onPressed: () => _openCreateAlertDialog(devices),
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text('Criar alerta'))
       ],
-      ),
+      footerLabel: '${visible.length} eventos exibidos',
     );
   }
 
@@ -244,156 +297,149 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+          constraints: const BoxConstraints(maxWidth: 1104, maxHeight: 600),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: StatefulBuilder(
-              builder: (ctx, setModal) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              builder: (ctx, setModal) => SizedBox(
+                  width: 1050,
+                  height: 560,
+                  child: ModuleScaffold(
+                      title: 'Criar alerta',
+                      subtitle:
+                          'Configure o evento e os canais de notificação.',
+                      navigation: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(
-                              'Criar Regra',
-                              style: TextStyle(
-                                color: Color(0xFF1F2A44),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 20,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Configure uma regra de notificação no servidor.',
-                              style: TextStyle(
-                                  color: Color(0xFF5A6B84), fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(dialogContext).pop(),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1, color: Color(0xFFE8EEF6)),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _AlertFormSection(
-                            icon: Icons.warning_amber_rounded,
-                            iconColor: const Color(0xFFE67E22),
-                            title: 'Tipo de Evento',
-                            children: [
-                              DropdownButtonFormField<String>(
-                                initialValue: _dlgType,
-                                decoration: const InputDecoration(
-                                  labelText: 'Selecione o tipo de alerta *',
+                            ModuleSectionLabel('Configuração'),
+                            ModuleListItem(
+                                title: 'Tipo de evento',
+                                icon: Icons.warning_amber_rounded),
+                            ModuleListItem(
+                                title: 'Alcance', icon: Icons.tune_rounded),
+                            ModuleListItem(
+                                title: 'Canais',
+                                icon: Icons.notifications_active_rounded)
+                          ]),
+                      content: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _AlertFormSection(
+                              icon: Icons.warning_amber_rounded,
+                              iconColor: const Color(0xFFE67E22),
+                              title: 'Tipo de Evento',
+                              children: [
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _dlgType,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Selecione o tipo de alerta *',
+                                  ),
+                                  items: _notifTypes
+                                      .map((e) => DropdownMenuItem(
+                                          value: e.key, child: Text(e.value)))
+                                      .toList(),
+                                  onChanged: (v) =>
+                                      setModal(() => _dlgType = v),
                                 ),
-                                items: _notifTypes
-                                    .map((e) => DropdownMenuItem(
-                                        value: e.key, child: Text(e.value)))
-                                    .toList(),
-                                onChanged: (v) =>
-                                    setModal(() => _dlgType = v),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _AlertFormSection(
-                            icon: Icons.tune_rounded,
-                            iconColor: const Color(0xFF176EEB),
-                            title: 'Configurações',
-                            children: [
-                              SwitchListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text('Sempre notificar'),
-                                subtitle: const Text(
-                                    'Aplica a todos os dispositivos'),
-                                value: _dlgAlways,
-                                onChanged: (v) =>
-                                    setModal(() => _dlgAlways = v),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _AlertFormSection(
-                            icon: Icons.notifications_active_rounded,
-                            iconColor: const Color(0xFF18A558),
-                            title: 'Canais de Notificação',
-                            children: [
-                              _ChannelToggle(
-                                icon: Icons.web_rounded,
-                                label: 'Web (plataforma)',
-                                value: _dlgWeb,
-                                onChanged: (v) =>
-                                    setModal(() => _dlgWeb = v),
-                              ),
-                              _ChannelToggle(
-                                icon: Icons.email_outlined,
-                                label: 'Email',
-                                value: _dlgMail,
-                                onChanged: (v) =>
-                                    setModal(() => _dlgMail = v),
-                              ),
-                              _ChannelToggle(
-                                icon: Icons.sms_rounded,
-                                label: 'SMS',
-                                value: _dlgSms,
-                                onChanged: (v) =>
-                                    setModal(() => _dlgSms = v),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      OutlinedButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(dialogContext).pop(),
-                        child: const Text('Cancelar'),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: (_saving || _dlgType == null)
-                            ? null
-                            : () async {
-                                final ok = await _saveNotification();
-                                if (ok && dialogContext.mounted) {
-                                  Navigator.of(dialogContext).pop();
-                                }
-                              },
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
-                              )
-                            : const Icon(Icons.save_outlined, size: 18),
-                        label:
-                            Text(_saving ? 'Salvando...' : 'Salvar Alerta'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            _AlertFormSection(
+                              icon: Icons.tune_rounded,
+                              iconColor: const Color(0xFF176EEB),
+                              title: 'Configurações',
+                              children: [
+                                SwitchListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text('Sempre notificar'),
+                                  subtitle: const Text(
+                                      'Aplica a todos os dispositivos'),
+                                  value: _dlgAlways,
+                                  onChanged: (v) =>
+                                      setModal(() => _dlgAlways = v),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            _AlertFormSection(
+                              icon: Icons.notifications_active_rounded,
+                              iconColor: const Color(0xFF18A558),
+                              title: 'Canais de Notificação',
+                              children: [
+                                _ChannelToggle(
+                                  icon: Icons.web_rounded,
+                                  label: 'Web (plataforma)',
+                                  value: _dlgWeb,
+                                  onChanged: (v) => setModal(() => _dlgWeb = v),
+                                ),
+                                _ChannelToggle(
+                                  icon: Icons.email_outlined,
+                                  label: 'Email',
+                                  value: _dlgMail,
+                                  onChanged: (v) =>
+                                      setModal(() => _dlgMail = v),
+                                ),
+                                _ChannelToggle(
+                                  icon: Icons.sms_rounded,
+                                  label: 'SMS',
+                                  value: _dlgSms,
+                                  onChanged: (v) => setModal(() => _dlgSms = v),
+                                ),
+                              ],
+                            )
+                          ]),
+                      detail: ModuleCard(
+                          title: 'Resumo do alerta',
+                          child: Column(children: [
+                            ModuleDetailRow(
+                                'Tipo',
+                                _notifTypes
+                                        .where((t) => t.key == _dlgType)
+                                        .firstOrNull
+                                        ?.value ??
+                                    'Não selecionado'),
+                            ModuleDetailRow(
+                                'Alcance',
+                                _dlgAlways
+                                    ? 'Todos os dispositivos'
+                                    : 'Conforme vínculos'),
+                            ModuleDetailRow(
+                                'Canais',
+                                [
+                                  if (_dlgWeb) 'Web',
+                                  if (_dlgMail) 'Email',
+                                  if (_dlgSms) 'SMS'
+                                ].join(', '))
+                          ])),
+                      actions: [
+                        OutlinedButton(
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
+                          child: const Text('Cancelar'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: (_saving || _dlgType == null)
+                              ? null
+                              : () async {
+                                  final ok = await _saveNotification();
+                                  if (ok && dialogContext.mounted) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                },
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save_outlined, size: 18),
+                          label:
+                              Text(_saving ? 'Salvando...' : 'Salvar Alerta'),
+                        )
+                      ])),
             ),
           ),
         ),
@@ -1178,7 +1224,6 @@ class _AlertRuleFilter {
   }
 }
 
-
 class _AlertsKpiRow extends StatelessWidget {
   const _AlertsKpiRow({required this.summary});
 
@@ -1525,8 +1570,8 @@ class _EventsTable extends StatelessWidget {
                 flex: 2,
                 child: Text(
                   rec.description,
-                  style: const TextStyle(
-                      color: Color(0xFF5A6B84), fontSize: 12),
+                  style:
+                      const TextStyle(color: Color(0xFF5A6B84), fontSize: 12),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1534,8 +1579,7 @@ class _EventsTable extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 _formatTime(rec.dateTime),
-                style: const TextStyle(
-                    color: Color(0xFF8A99B0), fontSize: 11),
+                style: const TextStyle(color: Color(0xFF8A99B0), fontSize: 11),
               ),
             ],
           ),
@@ -1617,11 +1661,9 @@ class _PeriodChips extends StatelessWidget {
               child: Text(
                 opt,
                 style: TextStyle(
-                  color:
-                      isSelected ? Colors.white : const Color(0xFF5A6B84),
+                  color: isSelected ? Colors.white : const Color(0xFF5A6B84),
                   fontSize: 12,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ),
@@ -1651,8 +1693,7 @@ class _DropFilter extends StatelessWidget {
       value: value,
       isDense: true,
       underline: const SizedBox(),
-      style: const TextStyle(
-          color: Color(0xFF1F2A44), fontSize: 13),
+      style: const TextStyle(color: Color(0xFF1F2A44), fontSize: 13),
       items: options
           .map((o) => DropdownMenuItem(value: o, child: Text(o)))
           .toList(),
@@ -1724,8 +1765,7 @@ class _ChannelToggle extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-                color: Color(0xFF1F2A44), fontSize: 13),
+            style: const TextStyle(color: Color(0xFF1F2A44), fontSize: 13),
           ),
         ),
         Switch(
