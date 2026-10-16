@@ -2846,6 +2846,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   sidebarOpen: _menuOpen,
                   sidebarVisible: sidebarVisible,
                   tireReadings: liveGaugesSnapshot?.tireReadings ?? const [],
+                  tireLimits: tpmsLimitsFromAttributes(liveGaugesSnapshot?.device.attributes),
                   tireOwnerKey: liveGaugesSnapshot?.device.id,
                 ),
               if (!pixelTelemetryMode)
@@ -2873,6 +2874,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     return hours == null ? null : hours / 3600000.0;
                   })(),
                   tireReadings: liveGaugesSnapshot?.tireReadings ?? const [],
+                  tireLimits: tpmsLimitsFromAttributes(liveGaugesSnapshot?.device.attributes),
                   tireOwnerKey: liveGaugesSnapshot?.device.id,
                   // Barrinha "Telemetria ao vivo • <nome>" removida (2026-09-05,
                   // pedido do usuário) -- este X no card assumiu o fechar.
@@ -3765,7 +3767,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Widget _buildTpmsPanel() {
-    return TpmsScreen(onClose: _closePanel);
+    return TpmsScreen(onClose: _closePanel,
+      diagramBuilder: (device, position, attributes, visibleIds) {
+        final snapshot = _VehicleSnapshot(device: device, position: position,
+          index: 0, tireAttributes: attributes);
+        return _tpmsLayout(snapshot.tireReadings
+            .where((r) => visibleIds.contains(r.positionId)).toList(),
+          ownerKey: device.id, limits: tpmsLimitsFromAttributes(device.attributes));
+      });
   }
 
   Widget _buildRoutesPanel() {
@@ -5518,6 +5527,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
     required this.odometerKm,
     required this.hourmeterHours,
     this.tireReadings = const [],
+    this.tireLimits,
     this.tireOwnerKey,
     this.onClose,
     this.latitude,
@@ -5534,6 +5544,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
   final double? odometerKm;
   final double? hourmeterHours;
   final List<TireReading> tireReadings;
+  final TpmsPressureLimits? tireLimits;
   // deviceId do veiculo dono de tireReadings -- evita que o TpmsVehicleCard
   // reaproveite seu estado (scroll, imagem) ao trocar de veiculo com os
   // mesmos codigos de posicao de pneu reportados.
@@ -5722,7 +5733,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
             const SizedBox(height: 4),
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             const SizedBox(height: 10),
-            _tpmsLayout(tireReadings, ownerKey: tireOwnerKey),
+            _tpmsLayout(tireReadings, ownerKey: tireOwnerKey, limits: tireLimits),
           ],
         ],
       ),
@@ -5828,7 +5839,7 @@ Widget _tpmsLayout(
         label: 'P${reading.positionId}',
         pressure: reading.pressureRaw == null
             ? '—'
-            : '${reading.pressureRaw} (bruto)',
+            : '${reading.pressureRaw}',
         temperature: reading.temperatureC == null
             ? '—'
             : '${reading.temperatureC} °C',
@@ -5851,6 +5862,38 @@ class TpmsPressureLimits {
   const TpmsPressureLimits({required this.byPosition});
   final Map<String, TireLimitRange> byPosition;
   TireLimitRange? forPosition(String positionId) => byPosition[positionId];
+}
+
+/// Optional per-vehicle configuration contract. Values must use the same raw
+/// unit as the current decoder; never compare raw readings to presumed psi.
+/// souTpmsLimits: {unit: 'raw', byPosition: {'11': {pressureMin: ..., ...}}}
+TpmsPressureLimits? tpmsLimitsFromAttributes(Map<String, dynamic>? attributes) {
+  dynamic config = attributes?['souTpmsLimits'];
+  if (config is String) {
+    try { config = jsonDecode(config); } catch (_) { return null; }
+  }
+  if (config is! Map || config['unit'] != 'raw' || config['byPosition'] is! Map) {
+    return null;
+  }
+  int? number(dynamic value) {
+    final parsed = value is num ? value : num.tryParse('$value');
+    return parsed != null && parsed.isFinite ? parsed.toInt() : null;
+  }
+  final ranges = <String, TireLimitRange>{};
+  for (final entry in (config['byPosition'] as Map).entries) {
+    final data = entry.value;
+    if (data is! Map || !RegExp(r'^[1-9][1-4]$').hasMatch('${entry.key}')) continue;
+    final range = TireLimitRange(
+      pressureMin: number(data['pressureMin']), pressureMax: number(data['pressureMax']),
+      pressureWarnMin: number(data['pressureWarnMin']), pressureWarnMax: number(data['pressureWarnMax']),
+      temperatureMax: number(data['temperatureMax']), temperatureWarnMax: number(data['temperatureWarnMax']),
+    );
+    if ([range.pressureMin, range.pressureMax, range.pressureWarnMin,
+      range.pressureWarnMax, range.temperatureMax, range.temperatureWarnMax].any((v) => v != null)) {
+      ranges['${entry.key}'] = range;
+    }
+  }
+  return ranges.isEmpty ? null : TpmsPressureLimits(byPosition: ranges);
 }
 
 class TireLimitRange {
@@ -5878,8 +5921,11 @@ TireVisualState tireVisualState(TireReading reading, TpmsPressureLimits? limits)
   final pressure = reading.pressureRaw;
   final temperature = reading.temperatureC;
   var worst = TireVisualState.normal;
+  var checked = false;
 
   if (pressure != null) {
+    checked = [range.pressureMin, range.pressureMax, range.pressureWarnMin,
+      range.pressureWarnMax].any((v) => v != null);
     final min = range.pressureMin;
     final max = range.pressureMax;
     final warnMin = range.pressureWarnMin;
@@ -5893,6 +5939,7 @@ TireVisualState tireVisualState(TireReading reading, TpmsPressureLimits? limits)
   }
 
   if (temperature != null) {
+    checked = checked || range.temperatureMax != null || range.temperatureWarnMax != null;
     final tMax = range.temperatureMax;
     final tWarnMax = range.temperatureWarnMax;
     if (tMax != null && temperature > tMax) {
@@ -5904,7 +5951,7 @@ TireVisualState tireVisualState(TireReading reading, TpmsPressureLimits? limits)
     }
   }
 
-  return worst;
+  return checked ? worst : TireVisualState.unknown;
 }
 
 String? tireStateReason(TireReading reading, TpmsPressureLimits? limits) {
@@ -6073,6 +6120,7 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
     required this.sidebarOpen,
     required this.sidebarVisible,
     this.tireReadings = const [],
+    this.tireLimits,
     this.tireOwnerKey,
   });
 
@@ -6082,6 +6130,7 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
   final bool sidebarOpen;
   final bool sidebarVisible;
   final List<TireReading> tireReadings;
+  final TpmsPressureLimits? tireLimits;
   final Object? tireOwnerKey;
 
   @override
@@ -6217,7 +6266,7 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
                   ],
                   if (tireReadings.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    _tpmsLayout(tireReadings, ownerKey: tireOwnerKey),
+                    _tpmsLayout(tireReadings, ownerKey: tireOwnerKey, limits: tireLimits),
                   ],
                 ],
               ),

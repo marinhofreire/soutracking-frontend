@@ -5,15 +5,20 @@ import '../../core/display_text_formatter.dart';
 import '../../data/models.dart';
 import '../../state/session_state.dart';
 import '../../widgets/dial_gauge.dart';
+import '../../widgets/tpms_vehicle_card.dart';
+
+typedef TpmsDiagramBuilder = Widget Function(TraccarDevice device,
+    TraccarPosition? position, Map<String, dynamic> attributes, Set<String> visibleIds);
 
 /// Painel dedicado ao TPMS (sensores de pressão/temperatura dos pneus).
 /// Fica separado da tela de Telemetria normal — nada ali é removido, esse
 /// é só mais um item de menu que lê os mesmos atributos tireXXBattery/
 /// Temp/Pressure gravados pelo decoder "totem" (mensagem E6).
 class TpmsScreen extends ConsumerStatefulWidget {
-  const TpmsScreen({super.key, this.onClose});
+  const TpmsScreen({super.key, this.onClose, this.diagramBuilder});
 
   final VoidCallback? onClose;
+  final TpmsDiagramBuilder? diagramBuilder;
 
   @override
   ConsumerState<TpmsScreen> createState() => _TpmsScreenState();
@@ -21,14 +26,15 @@ class TpmsScreen extends ConsumerStatefulWidget {
 
 class _TireReading {
   const _TireReading({
-    required this.index,
     required this.rawId,
     required this.batteryVolts,
     required this.temperatureC,
     required this.pressureRaw,
   });
 
-  final int index;
+  // Codigo de posicao de 2 digitos reportado pelo proprio sensor (payload E6
+  // do decoder "totem"), ex "11"/"14"/"22"/"23" -- e o mesmo "Position ID" do
+  // diagrama do Configuration Manager TPMS, NAO um indice de chegada 1..N.
   final String rawId;
   final double? batteryVolts;
   final int? temperatureC;
@@ -113,66 +119,6 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: const Color(0xFF176EEB).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.tire_repair_rounded,
-                color: Color(0xFF176EEB),
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TPMS',
-                    style: TextStyle(
-                      color: Color(0xFF1F2A44),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                    ),
-                  ),
-                  SizedBox(height: 1),
-                  Text(
-                    'Sensores e dados operacionais dos pneus',
-                    style: TextStyle(
-                      color: Color(0xFF60718D),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              onPressed: () {
-                ref.invalidate(devicesProvider);
-                ref.invalidate(positionsProvider);
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              tooltip: 'Atualizar',
-              style:
-                  IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
-            ),
-            IconButton(
-              onPressed: widget.onClose,
-              icon: const Icon(Icons.close_rounded),
-              tooltip: 'Fechar',
-              style:
-                  IconButton.styleFrom(foregroundColor: const Color(0xFF60718D)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
         _buildToolbar(devices, readings.length),
         const SizedBox(height: 10),
         if (selectedDevice != null) ...[
@@ -187,7 +133,8 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
                   children: [
                     Expanded(
                       flex: 3,
-                      child: _buildCarDiagram(readings),
+                      child: _buildCarDiagram(readings, selectedDevice!,
+                          selectedPosition, tireAttrs),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -417,96 +364,44 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
     }.toList()
       ..sort();
     final all = [
-      for (var i = 0; i < ids.length; i++)
+      for (final id in ids)
         _TireReading(
-          index: i + 1,
-          rawId: ids[i],
-          batteryVolts: (attrs['tire${ids[i]}Battery'] as num?)?.toDouble(),
-          temperatureC: (attrs['tire${ids[i]}Temp'] as num?)?.toInt(),
-          pressureRaw: (attrs['tire${ids[i]}Pressure'] as num?)?.toInt(),
+          rawId: id,
+          batteryVolts: (attrs['tire${id}Battery'] as num?)?.toDouble(),
+          temperatureC: (attrs['tire${id}Temp'] as num?)?.toInt(),
+          pressureRaw: (attrs['tire${id}Pressure'] as num?)?.toInt(),
         ),
     ];
     if (search.isEmpty) return all;
     return all
         .where((r) =>
-            'pneu ${r.index}'.contains(search) ||
+            'pneu ${r.rawId}'.contains(search) ||
             r.rawId.toLowerCase().contains(search) ||
             'posição ${r.rawId}'.contains(search))
         .toList(growable: false);
   }
 
-  // Altura fixa por card: é o que permite calcular o ponto de saída da
-  // linha conectora sem precisar medir o layout renderizado.
-  static const double _diagramCardHeight = 92;
-  static const double _diagramCardGap = 12;
-  static const double _diagramBodyWidth = 58;
-
-  Widget _buildCarDiagram(List<_TireReading> readings) {
-    final left = <_TireReading>[];
-    final right = <_TireReading>[];
-    for (var i = 0; i < readings.length; i++) {
-      (i.isEven ? left : right).add(readings[i]);
-    }
-    final rows = left.length > right.length ? left.length : right.length;
-    final columnHeight = rows == 0
-        ? 0.0
-        : rows * _diagramCardHeight + (rows - 1) * _diagramCardGap;
-
-    Widget buildColumn(List<_TireReading> items) {
-      return SizedBox(
-        width: 200,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < items.length; i++) ...[
-              SizedBox(
-                height: _diagramCardHeight,
-                child: _TireCard(reading: items[i]),
-              ),
-              if (i != items.length - 1)
-                const SizedBox(height: _diagramCardGap),
-            ],
-          ],
-        ),
+  Widget _buildCarDiagram(List<_TireReading> readings, TraccarDevice device,
+      TraccarPosition? position, Map<String, dynamic> attributes) {
+    final card = widget.diagramBuilder?.call(device, position, attributes,
+      readings.map((r) => r.rawId).toSet()) ?? TpmsVehicleCard(
+        key: ValueKey(device.id),
+        readings: [for (final reading in readings) TireVisualReading(
+          id: reading.rawId, label: tirePositionCaption(reading.rawId),
+          pressure: reading.pressureRaw == null ? '—' : '${reading.pressureRaw}',
+          temperature: reading.temperatureC == null ? '—' : '${reading.temperatureC} °C',
+          battery: reading.batteryVolts == null ? null : '${reading.batteryVolts!.toStringAsFixed(2)} V',
+        )],
       );
-    }
-
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDDE5F0)),
-      ),
-      child: Center(
-        child: SizedBox(
-          height: columnHeight == 0 ? null : columnHeight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              buildColumn(left),
-              SizedBox(
-                width: _diagramBodyWidth + _diagramCardGap * 2,
-                height: columnHeight == 0 ? 220 : columnHeight,
-                child: CustomPaint(
-                  painter: _TruckDiagramPainter(
-                    leftCount: left.length,
-                    rightCount: right.length,
-                    cardHeight: _diagramCardHeight,
-                    cardGap: _diagramCardGap,
-                    bodyWidth: _diagramBodyWidth,
-                  ),
-                ),
-              ),
-              buildColumn(right),
-            ],
-          ),
-        ),
-      ),
+        border: Border.all(color: const Color(0xFFDDE5F0))),
+      child: SizedBox.expand(child: FittedBox(fit: BoxFit.contain,
+        child: SizedBox(width: 170, height: 204, child: card))),
     );
   }
-
 
   Widget _buildAveragesAndAlerts(List<_TireReading> readings) {
     final pressures = readings
@@ -542,7 +437,7 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
             Expanded(
               child: DialGauge(
                 label: 'Pressão média',
-                unit: 'bruto',
+                unit: '',
                 value: avgPressure,
                 max: 260,
                 color: const Color(0xFF176EEB),
@@ -626,7 +521,7 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'Bateria baixa — Pneu ${reading.index} '
+                              'Bateria baixa — Pneu ${reading.rawId} '
                               '(${reading.batteryVolts?.toStringAsFixed(2)} V)',
                               style: const TextStyle(
                                 fontSize: 11.5,
@@ -643,66 +538,6 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _TireCard extends StatelessWidget {
-  const _TireCard({required this.reading});
-
-  final _TireReading reading;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = reading.isLowBattery
-        ? const Color(0xFFE0533D)
-        : const Color(0xFF2F9E5C);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.32)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.tire_repair_rounded, size: 15, color: color),
-              const SizedBox(width: 6),
-              Text(
-                'Pneu ${reading.index}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2A44),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            reading.pressureRaw == null
-                ? 'Pressão: —'
-                : 'Pressão: ${reading.pressureRaw}',
-            style: TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w700, color: color),
-          ),
-          Text(
-            reading.temperatureC == null
-                ? 'Temp.: —'
-                : 'Temp.: ${reading.temperatureC}°C',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF4B5A72)),
-          ),
-          Text(
-            reading.batteryVolts == null
-                ? 'Bateria: —'
-                : 'Bateria: ${reading.batteryVolts!.toStringAsFixed(2)} V',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF4B5A72)),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -773,153 +608,3 @@ Map<int, TraccarPosition> _latestPositionByDevice(List<TraccarPosition> rows) {
 /// linhas conectando cada eixo/roda ao card correspondente nas colunas
 /// esquerda/direita. Alturas fixas (cardHeight/cardGap) permitem calcular o
 /// ponto de saida da linha sem medir o layout renderizado.
-class _TruckDiagramPainter extends CustomPainter {
-  const _TruckDiagramPainter({
-    required this.leftCount,
-    required this.rightCount,
-    required this.cardHeight,
-    required this.cardGap,
-    required this.bodyWidth,
-  });
-
-  final int leftCount;
-  final int rightCount;
-  final double cardHeight;
-  final double cardGap;
-  final double bodyWidth;
-
-  double _rowCenterY(int index, int count, double totalHeight) {
-    final columnHeight = count * cardHeight + (count - 1) * cardGap;
-    final offset = (totalHeight - columnHeight) / 2;
-    return offset + index * (cardHeight + cardGap) + cardHeight / 2;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cabHeight = 34.0;
-    final bodyTop = 6.0 + cabHeight - 6;
-    final bodyLeft = (size.width - bodyWidth) / 2;
-    final bodyRight = bodyLeft + bodyWidth;
-    final bodyRect = Rect.fromLTRB(bodyLeft, bodyTop, bodyRight, size.height - 6);
-
-    final bodyPaint = Paint()..color = const Color(0xFFDCE3ED);
-    final bodyBorder = Paint()
-      ..color = const Color(0xFFAFBBCC)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-
-    // Carroceria: retangulo estreito e alongado (contêiner visto de cima).
-    final bodyRRect =
-        RRect.fromRectAndRadius(bodyRect, const Radius.circular(6));
-    canvas.drawRRect(bodyRRect, bodyPaint);
-    canvas.drawRRect(bodyRRect, bodyBorder);
-
-    // Linhas finas sugerindo as juntas da carroceria.
-    final seamPaint = Paint()
-      ..color = const Color(0xFFAFBBCC).withValues(alpha: 0.7)
-      ..strokeWidth = 1;
-    final seamCount = (bodyRect.height / 26).floor();
-    for (var i = 1; i < seamCount; i++) {
-      final y = bodyRect.top + (bodyRect.height / seamCount) * i;
-      canvas.drawLine(
-        Offset(bodyLeft + 4, y),
-        Offset(bodyRight - 4, y),
-        seamPaint,
-      );
-    }
-
-    // Cabine: mais estreita na frente, com para-brisa e retrovisores —
-    // silhueta de caminhão visto de cima, nao um "dedo" com ponta redonda.
-    final cabWidth = bodyWidth * 0.86;
-    final cabTop = 6.0;
-    final cabPath = Path()
-      ..moveTo(size.width / 2 - cabWidth * 0.36, cabTop + cabHeight)
-      ..lineTo(size.width / 2 - cabWidth / 2, cabTop + 10)
-      ..quadraticBezierTo(
-        size.width / 2 - cabWidth / 2, cabTop,
-        size.width / 2 - cabWidth * 0.28, cabTop,
-      )
-      ..lineTo(size.width / 2 + cabWidth * 0.28, cabTop)
-      ..quadraticBezierTo(
-        size.width / 2 + cabWidth / 2, cabTop,
-        size.width / 2 + cabWidth / 2, cabTop + 10,
-      )
-      ..lineTo(size.width / 2 + cabWidth * 0.36, cabTop + cabHeight)
-      ..close();
-    canvas.drawPath(cabPath, Paint()..color = const Color(0xFF1F2A44));
-
-    // Para-brisa.
-    final windshieldPath = Path()
-      ..moveTo(size.width / 2 - cabWidth * 0.24, cabTop + 4)
-      ..lineTo(size.width / 2 - cabWidth * 0.34, cabTop + cabHeight * 0.62)
-      ..lineTo(size.width / 2 + cabWidth * 0.34, cabTop + cabHeight * 0.62)
-      ..lineTo(size.width / 2 + cabWidth * 0.24, cabTop + 4)
-      ..close();
-    canvas.drawPath(
-      windshieldPath,
-      Paint()..color = const Color(0xFF6FA3E8).withValues(alpha: 0.55),
-    );
-
-    // Retrovisores.
-    final mirrorPaint = Paint()..color = const Color(0xFF1F2A44);
-    final mirrorY = cabTop + cabHeight * 0.5;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(size.width / 2 - cabWidth / 2 - 3, mirrorY),
-          width: 6,
-          height: 10,
-        ),
-        const Radius.circular(2),
-      ),
-      mirrorPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(size.width / 2 + cabWidth / 2 + 3, mirrorY),
-          width: 6,
-          height: 10,
-        ),
-        const Radius.circular(2),
-      ),
-      mirrorPaint,
-    );
-
-    final linePaint = Paint()
-      ..color = const Color(0xFFB7C3D6)
-      ..strokeWidth = 1.6
-      ..style = PaintingStyle.stroke;
-    final wheelPaint = Paint()..color = const Color(0xFF2B3648);
-
-    void drawWheel(Offset center) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: center, width: 10, height: 16),
-          const Radius.circular(3),
-        ),
-        wheelPaint,
-      );
-    }
-
-    for (var i = 0; i < leftCount; i++) {
-      final y = _rowCenterY(i, leftCount, size.height);
-      canvas.drawLine(Offset(0, y), Offset(bodyLeft, y), linePaint);
-      drawWheel(Offset(bodyLeft, y));
-    }
-    for (var i = 0; i < rightCount; i++) {
-      final y = _rowCenterY(i, rightCount, size.height);
-      canvas.drawLine(Offset(bodyRight, y), Offset(size.width, y), linePaint);
-      drawWheel(Offset(bodyRight, y));
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _TruckDiagramPainter oldDelegate) {
-    return oldDelegate.leftCount != leftCount ||
-        oldDelegate.rightCount != rightCount ||
-        oldDelegate.cardHeight != cardHeight ||
-        oldDelegate.cardGap != cardGap ||
-        oldDelegate.bodyWidth != bodyWidth;
-  }
-}
