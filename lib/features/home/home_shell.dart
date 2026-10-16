@@ -23,6 +23,7 @@ import '../../data/models.dart';
 import '../../data/openf1_client.dart';
 import '../../state/session_state.dart';
 import '../../widgets/dial_gauge.dart';
+import '../../widgets/tpms_vehicle_card.dart';
 import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
 import '../assist/assist_requests_screen.dart';
@@ -2844,6 +2845,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                           1000,
                   sidebarOpen: _menuOpen,
                   sidebarVisible: sidebarVisible,
+                  tireReadings: liveGaugesSnapshot?.tireReadings ?? const [],
+                  tireOwnerKey: liveGaugesSnapshot?.device.id,
                 ),
               if (!pixelTelemetryMode)
                 _RouteReplayStatusCard(
@@ -2870,6 +2873,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     return hours == null ? null : hours / 3600000.0;
                   })(),
                   tireReadings: liveGaugesSnapshot?.tireReadings ?? const [],
+                  tireOwnerKey: liveGaugesSnapshot?.device.id,
                   // Barrinha "Telemetria ao vivo • <nome>" removida (2026-09-05,
                   // pedido do usuário) -- este X no card assumiu o fechar.
                   onClose: _closeLiveGauges,
@@ -5514,6 +5518,7 @@ class _RouteReplayStatusCard extends StatelessWidget {
     required this.odometerKm,
     required this.hourmeterHours,
     this.tireReadings = const [],
+    this.tireOwnerKey,
     this.onClose,
     this.latitude,
     this.longitude,
@@ -5529,6 +5534,10 @@ class _RouteReplayStatusCard extends StatelessWidget {
   final double? odometerKm;
   final double? hourmeterHours;
   final List<TireReading> tireReadings;
+  // deviceId do veiculo dono de tireReadings -- evita que o TpmsVehicleCard
+  // reaproveite seu estado (scroll, imagem) ao trocar de veiculo com os
+  // mesmos codigos de posicao de pneu reportados.
+  final Object? tireOwnerKey;
   // Só o uso em Telemetria ao vivo passa isto -- fecha ela (a barrinha
   // "Telemetria ao vivo • <nome>" foi removida, este X assumiu o lugar
   // dela). O uso em replay de rota não passa nada, então não aparece.
@@ -5709,11 +5718,11 @@ class _RouteReplayStatusCard extends StatelessWidget {
               ),
             ],
           ),
-          if (tireReadings.isNotEmpty) ...[
+          if (isMobile && tireReadings.isNotEmpty) ...[
             const SizedBox(height: 4),
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             const SizedBox(height: 10),
-            _TireDiagramGroup(readings: tireReadings),
+            _tpmsLayout(tireReadings, ownerKey: tireOwnerKey),
           ],
         ],
       ),
@@ -5792,91 +5801,153 @@ class _StreetViewCard extends StatelessWidget {
   }
 }
 
-class _TireDiagramGroup extends StatelessWidget {
-  const _TireDiagramGroup({required this.readings});
-
-  final List<TireReading> readings;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Pneus (TPMS)',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1F2A44),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final reading in readings) _TireChip(reading: reading),
-            ],
-          ),
-        ],
+// Layout adapter only (layout/desenho pertence ao Codex). Aqui resolvemos:
+// posicao real (positionId do protocolo, nunca ordem de chegada), unidade
+// da pressao (NAO confirmada com o fabricante -- ver TotemProtocolDecoder,
+// decodeE6 -- por isso exibida como valor bruto, nunca rotulada "psi"/"kPa"
+// ate essa confirmacao chegar), estado/motivo sem limiar universal inventado
+// e leitura desatualizada. Pressao 0 e dado valido do sensor (bateria
+// reportando, so sem calibracao de ar ainda) e continua sendo exibida.
+Widget _tpmsLayout(
+  List<TireReading> readings, {
+  TpmsPressureLimits? limits,
+  // Identifica o veiculo dono destas leituras (ex: deviceId). Dois veiculos
+  // diferentes podem reportar o mesmo conjunto de positionId (ex "11,14,22,
+  // 23" em ambos); sem isto na key, trocar de veiculo rapido pode reaproveitar
+  // o estado interno do widget (scroll, imagem carregada) com a leitura
+  // antiga ainda visivel por 1 frame. Veiculo selecionado some do mapa ->
+  // readings fica vazio -> _tpmsLayout nem e chamado, entao nao ha mistura
+  // de valores entre um veiculo e outro, so garantimos troca limpa do widget.
+  Object? ownerKey,
+}) => TpmsVehicleCard(
+  key: ValueKey('${ownerKey ?? ''}|${readings.map((r) => r.positionId).join(',')}'),
+  readings: [
+    for (final reading in readings)
+      TireVisualReading(
+        id: reading.positionId,
+        label: 'P${reading.positionId}',
+        pressure: reading.pressureRaw == null
+            ? '—'
+            : '${reading.pressureRaw} (bruto)',
+        temperature: reading.temperatureC == null
+            ? '—'
+            : '${reading.temperatureC} °C',
+        battery: reading.batteryVolts == null
+            ? null
+            : '${reading.batteryVolts!.toStringAsFixed(2)} V',
+        state: tireVisualState(reading, limits),
+        reason: tireStateReason(reading, limits),
       ),
-    );
-  }
+  ],
+);
+
+// Config de limites por veiculo/pneu. Sem isso presente (null ou pneu nao
+// listado) o pneu NUNCA e classificado normal/atencao/alerta por pressao ou
+// temperatura -- fica TireVisualState.unknown ("sem leitura ou sem
+// classificacao disponivel"), conforme pedido explicitamente: nao presumir
+// faixa saudavel universal. A origem desses limites (cadastro de veiculo,
+// config por frota etc.) fica fora deste adapter.
+class TpmsPressureLimits {
+  const TpmsPressureLimits({required this.byPosition});
+  final Map<String, TireLimitRange> byPosition;
+  TireLimitRange? forPosition(String positionId) => byPosition[positionId];
 }
 
-class _TireChip extends StatelessWidget {
-  const _TireChip({required this.reading});
+class TireLimitRange {
+  const TireLimitRange({
+    this.pressureMin,
+    this.pressureMax,
+    this.pressureWarnMin,
+    this.pressureWarnMax,
+    this.temperatureMax,
+    this.temperatureWarnMax,
+  });
+  final int? pressureMin;
+  final int? pressureMax;
+  final int? pressureWarnMin;
+  final int? pressureWarnMax;
+  final int? temperatureMax;
+  final int? temperatureWarnMax;
+}
 
-  final TireReading reading;
+TireVisualState tireVisualState(TireReading reading, TpmsPressureLimits? limits) {
+  if (reading.isStale) return TireVisualState.unknown;
+  final range = limits?.forPosition(reading.positionId);
+  if (range == null) return TireVisualState.unknown;
 
-  @override
-  Widget build(BuildContext context) {
-    final color = reading.isLowBattery
-        ? const Color(0xFFE0533D)
-        : const Color(0xFF2F9E5C);
-    return Container(
-      width: 78,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(Icons.tire_repair_rounded, size: 16, color: color),
-          const SizedBox(height: 2),
-          Text(
-            'Pneu ${reading.index}',
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1F2A44),
-            ),
-          ),
-          Text(
-            reading.pressureRaw == null ? '—' : '${reading.pressureRaw} psi',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-          Text(
-            reading.temperatureC == null ? '—' : '${reading.temperatureC}°C',
-            style: const TextStyle(
-              fontSize: 9,
-              color: Color(0xFF4B5A72),
-            ),
-          ),
-        ],
-      ),
-    );
+  final pressure = reading.pressureRaw;
+  final temperature = reading.temperatureC;
+  var worst = TireVisualState.normal;
+
+  if (pressure != null) {
+    final min = range.pressureMin;
+    final max = range.pressureMax;
+    final warnMin = range.pressureWarnMin;
+    final warnMax = range.pressureWarnMax;
+    if ((min != null && pressure < min) || (max != null && pressure > max)) {
+      worst = TireVisualState.alert;
+    } else if ((warnMin != null && pressure < warnMin) ||
+        (warnMax != null && pressure > warnMax)) {
+      if (worst != TireVisualState.alert) worst = TireVisualState.attention;
+    }
   }
+
+  if (temperature != null) {
+    final tMax = range.temperatureMax;
+    final tWarnMax = range.temperatureWarnMax;
+    if (tMax != null && temperature > tMax) {
+      worst = TireVisualState.alert;
+    } else if (tWarnMax != null &&
+        temperature > tWarnMax &&
+        worst != TireVisualState.alert) {
+      worst = TireVisualState.attention;
+    }
+  }
+
+  return worst;
+}
+
+String? tireStateReason(TireReading reading, TpmsPressureLimits? limits) {
+  if (reading.isStale) {
+    final updated = reading.lastUpdate;
+    if (updated == null) return 'Leitura desatualizada';
+    final h = updated.hour.toString().padLeft(2, '0');
+    final m = updated.minute.toString().padLeft(2, '0');
+    return 'Desatualizado desde $h:$m';
+  }
+  final range = limits?.forPosition(reading.positionId);
+  if (range == null) return null;
+
+  final reasons = <String>[];
+  final pressure = reading.pressureRaw;
+  final temperature = reading.temperatureC;
+
+  if (pressure != null) {
+    final min = range.pressureMin;
+    final max = range.pressureMax;
+    final warnMin = range.pressureWarnMin;
+    final warnMax = range.pressureWarnMax;
+    if (min != null && pressure < min) {
+      reasons.add('Pressão baixa');
+    } else if (max != null && pressure > max) {
+      reasons.add('Pressão alta');
+    } else if (warnMin != null && pressure < warnMin) {
+      reasons.add('Pressão baixa');
+    } else if (warnMax != null && pressure > warnMax) {
+      reasons.add('Pressão alta');
+    }
+  }
+
+  if (temperature != null) {
+    final tMax = range.temperatureMax;
+    final tWarnMax = range.temperatureWarnMax;
+    if ((tMax != null && temperature > tMax) ||
+        (tWarnMax != null && temperature > tWarnMax)) {
+      reasons.add('Temperatura alta');
+    }
+  }
+
+  return reasons.isEmpty ? null : reasons.join(' e ');
 }
 
 class _ReplayStatusGroup extends StatelessWidget {
@@ -6001,6 +6072,8 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
     required this.rpm,
     required this.sidebarOpen,
     required this.sidebarVisible,
+    this.tireReadings = const [],
+    this.tireOwnerKey,
   });
 
   final bool visible;
@@ -6008,6 +6081,8 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
   final double? rpm;
   final bool sidebarOpen;
   final bool sidebarVisible;
+  final List<TireReading> tireReadings;
+  final Object? tireOwnerKey;
 
   @override
   Widget build(BuildContext context) {
@@ -6054,21 +6129,28 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
                         color: const Color(0xFF2D8CFF),
                       ),
                     ),
-                    Container(
-                      width: 1,
-                      height: 34,
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      color: const Color(0xFFE2E8F0),
-                    ),
-                    Expanded(
-                      child: _MiniGaugeReadout(
-                        label: 'RPM',
-                        value: rpm ?? 0,
-                        max: 8,
-                        color: const Color(0xFFEF4444),
-                        decimals: 1,
+                    // RPM so aparece quando o protocolo realmente mandou o
+                    // dado (rpm != null). Veiculo sem esse sensor/PID nao
+                    // mostra a barra fictícia em 0 -- 0 so e exibido quando
+                    // for um valor recebido de verdade (motor desligado com
+                    // sensor presente, por exemplo).
+                    if (rpm != null) ...[
+                      Container(
+                        width: 1,
+                        height: 34,
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        color: const Color(0xFFE2E8F0),
                       ),
-                    ),
+                      Expanded(
+                        child: _MiniGaugeReadout(
+                          label: 'RPM',
+                          value: rpm!,
+                          max: 8,
+                          color: const Color(0xFFEF4444),
+                          decimals: 1,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -6092,33 +6174,53 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
         loading: false,
       ),
     );
-    final rp = SizedBox(
-      width: gaugeSize,
-      height: gaugeSize,
-      child: DialGauge(
-        label: 'RPM',
-        unit: 'x1000',
-        value: rpm ?? 0,
-        max: 8,
-        color: const Color(0xFFEF4444),
-        ticks: const [0, 2, 4, 6, 8],
-        loading: false,
-      ),
-    );
+    final rp = rpm == null
+        ? null
+        : SizedBox(
+            width: gaugeSize,
+            height: gaugeSize,
+            child: DialGauge(
+              label: 'RPM',
+              unit: 'x1000',
+              value: rpm!,
+              max: 8,
+              color: const Color(0xFFEF4444),
+              ticks: const [0, 2, 4, 6, 8],
+              loading: false,
+            ),
+          );
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
       left: visible ? sidebarLeft : sidebarLeft - 180,
       top: 100,
+      width: gaugeSize,
+      bottom: 12,
       child: IgnorePointer(
+        ignoring: !visible,
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
           opacity: visible ? 1 : 0,
           child: PointerInterceptor(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [km, const SizedBox(height: 12), rp],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  km,
+                  // RPM so aparece quando o protocolo mandou o dado de
+                  // verdade (rp != null); sem rpm no payload, o bloco inteiro
+                  // some em vez de mostrar um gauge parado em 0.
+                  if (rp != null) ...[
+                    const SizedBox(height: 12),
+                    rp,
+                  ],
+                  if (tireReadings.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _tpmsLayout(tireReadings, ownerKey: tireOwnerKey),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -21642,20 +21744,39 @@ class _VehicleMarkerIconKey {
 
 class TireReading {
   const TireReading({
-    required this.index,
+    required this.positionId,
     required this.rawId,
     required this.batteryVolts,
     required this.temperatureC,
     required this.pressureRaw,
+    this.lastUpdate,
   });
 
-  final int index;
+  // Codigo de posicao de 2 digitos reportado pelo proprio sensor no payload
+  // E6 (ex "11", "14", "22", "23") -- e o mesmo "Position ID" mostrado no
+  // diagrama do Configuration Manager (TPMS ID = Position ID + sensor ID).
+  // NUNCA reordenar por este valor nem por rawId: a ordem de chegada/ID do
+  // sensor nao e a posicao fisica no veiculo. O diagrama de posicoes reais
+  // (eixo/lado) fica a cargo de quem desenha o layout (Codex); aqui so
+  // preservamos o codigo cru para esse mapeamento rio abaixo.
+  final String positionId;
   final String rawId;
   final double? batteryVolts;
   final int? temperatureC;
+  // Valor bruto do campo de pressao do protocolo AT09/E6. A unidade ainda
+  // nao foi confirmada com o fabricante (ver TotemProtocolDecoder, decodeE6)
+  // -- nao converter para psi/kPa nem classificar saude do pneu so por este
+  // valor sem limites configurados pelo operador.
   final int? pressureRaw;
+  final DateTime? lastUpdate;
 
   bool get isLowBattery => batteryVolts != null && batteryVolts! < 2.8;
+
+  bool get isStale {
+    final updated = lastUpdate;
+    if (updated == null) return false;
+    return DateTime.now().difference(updated) > const Duration(minutes: 30);
+  }
 }
 
 class _VehicleSnapshot {
@@ -21727,9 +21848,11 @@ class _VehicleSnapshot {
     );
   }
 
-  // IDs vêm crus do sensor (ex: "11", "21", "14", "24" — eixo+posição, não
-  // documentado pelo fabricante ainda). Por enquanto só numeramos 1..N na
-  // ordem crescente do ID pra dar uma posição visual estável no desenho.
+  // Codigo de 2 digitos vindo cru do sensor (ex "11", "14", "22", "23") e o
+  // mesmo "Position ID" do diagrama do Configuration Manager -- e a posicao
+  // fisica real, nao um indice de chegada. Ordenamos so para estabilidade
+  // visual da lista; quem decide onde cada codigo cai no desenho do veiculo
+  // e o layout (Codex), usando TireReading.positionId, nunca a ordem aqui.
   List<TireReading> get tireReadings {
     final ids = <String>{
       for (final key in tireAttributes.keys)
@@ -21737,15 +21860,15 @@ class _VehicleSnapshot {
     }.toList()
       ..sort();
     return [
-      for (var i = 0; i < ids.length; i++)
+      for (final id in ids)
         TireReading(
-          index: i + 1,
-          rawId: ids[i],
-          batteryVolts:
-              (tireAttributes['tire${ids[i]}Battery'] as num?)?.toDouble(),
-          temperatureC: (tireAttributes['tire${ids[i]}Temp'] as num?)?.toInt(),
-          pressureRaw:
-              (tireAttributes['tire${ids[i]}Pressure'] as num?)?.toInt(),
+          positionId: id,
+          rawId: id,
+          batteryVolts: (tireAttributes['tire${id}Battery'] as num?)
+              ?.toDouble(),
+          temperatureC: (tireAttributes['tire${id}Temp'] as num?)?.toInt(),
+          pressureRaw: (tireAttributes['tire${id}Pressure'] as num?)?.toInt(),
+          lastUpdate: lastCommunicationAt,
         ),
     ];
   }
