@@ -2829,6 +2829,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   signalLabel: reportRouteActivePoint?.signalLabel,
                   odometerKm: reportRouteActivePoint?.odometerKm,
                   hourmeterHours: reportRouteActivePoint?.hourmeterHours,
+                  vehicleName: reportRouteSelection?.vehicleName,
                 ),
               if (!pixelTelemetryMode)
                 _RouteReplaySpeedGauge(
@@ -2882,6 +2883,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   latitude: liveGaugesSnapshot?.latLngOrNull?.latitude,
                   longitude: liveGaugesSnapshot?.latLngOrNull?.longitude,
                   heading: liveGaugesSnapshot?.liveBearing,
+                  vehicleName: liveGaugesSnapshot?.device.name,
                 ),
               if (!pixelTelemetryMode)
                 _KpiVehicleList(
@@ -5533,9 +5535,13 @@ class _RouteReplayStatusCard extends StatelessWidget {
     this.latitude,
     this.longitude,
     this.heading,
+    this.vehicleName,
   });
 
   final bool visible;
+  // Nome/placa do veículo exibido no topo do card -- sem isso, o card de
+  // "Status do veículo" não dizia DE QUEM eram os dados mostrados.
+  final String? vehicleName;
   final bool? ignition;
   final bool? motion;
   final String? batteryLabel;
@@ -5633,24 +5639,38 @@ class _RouteReplayStatusCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (onClose != null)
+          if (onClose != null || (vehicleName?.trim().isNotEmpty ?? false))
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  InkWell(
-                    onTap: onClose,
-                    borderRadius: BorderRadius.circular(999),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 16,
-                        color: Color(0xFF5A6D89),
+                  if (vehicleName?.trim().isNotEmpty ?? false)
+                    Expanded(
+                      child: Text(
+                        vehicleName!.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F2A44),
+                        ),
                       ),
                     ),
-                  ),
+                  if (onClose != null)
+                    InkWell(
+                      onTap: onClose,
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: Color(0xFF5A6D89),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
