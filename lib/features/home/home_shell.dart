@@ -4823,6 +4823,36 @@ class _OperationalMap extends StatelessWidget {
         final snapshotsWithPosition = snapshots
             .where((snapshot) => snapshot.hasValidGps)
             .toList(growable: false);
+        // Veiculos na mesma coordenada (ex: duas bancadas de teste lado a
+        // lado) ficam com marcadores sobrepostos no mesmo pixel -- sem isso
+        // o tap sempre resolve pro mesmo (o ultimo inserido), entao nunca da
+        // pra selecionar "o de baixo" clicando no mapa. Agrupamos por
+        // coordenada arredondada (~1m de tolerancia pro ruido normal de
+        // GPS) e, ao clicar num ponto com 2+ veiculos, o tap cicla: se o
+        // clicado ja e o selecionado, avanca pro proximo do grupo; senao,
+        // seleciona o clicado (que, com o zIndex acima, e sempre o visivel).
+        final overlapGroups = <String, List<_VehicleSnapshot>>{};
+        for (final snapshot in snapshotsWithPosition) {
+          final key = '${snapshot.latLng.latitude.toStringAsFixed(5)}:'
+              '${snapshot.latLng.longitude.toStringAsFixed(5)}';
+          overlapGroups.putIfAbsent(key, () => <_VehicleSnapshot>[]).add(snapshot);
+        }
+        void handleVehicleTap(_VehicleSnapshot snapshot) {
+          final key = '${snapshot.latLng.latitude.toStringAsFixed(5)}:'
+              '${snapshot.latLng.longitude.toStringAsFixed(5)}';
+          final group = overlapGroups[key];
+          if (group == null || group.length < 2) {
+            onVehicleTap(snapshot);
+            return;
+          }
+          if (snapshot.device.id == selectedDeviceId) {
+            final idx = group.indexWhere((s) => s.device.id == snapshot.device.id);
+            final next = group[(idx + 1) % group.length];
+            onVehicleTap(next);
+          } else {
+            onVehicleTap(snapshot);
+          }
+        }
 
         final initialTarget = snapshotsWithPosition.isEmpty
             ? const gmaps.LatLng(-23.55052, -46.633308)
@@ -4891,6 +4921,12 @@ class _OperationalMap extends StatelessWidget {
               anchor: const Offset(0.5, 0.5),
               consumeTapEvents: true,
               icon: markerIcon,
+              // Veiculos no mesmo ponto (ex: dois rastreadores na mesma
+              // bancada de teste) ficam sobrepostos -- sem isso o clique
+              // acerta o que foi inserido por ultimo, nao o que o usuario
+              // ve marcado como selecionado. O selecionado sempre fica por
+              // cima, tanto visualmente quanto para prioridade de tap.
+              zIndexInt: isSelectedRouteVehicle ? 1000 : 0,
               infoWindow: gmaps.InfoWindow(
                 title: '${snapshot.device.name} • $statusSummary',
                 // DEBUG TEMPORARIO -- remover depois de calibrar a
@@ -4898,7 +4934,7 @@ class _OperationalMap extends StatelessWidget {
                 snippet:
                     'DEBUG rumo=$rawCourse efetivo=${rawCourse == null ? null : (rawCourse + _spriteFrontOffsetDeg) % 360} bucket=$bearingBucket',
               ),
-              onTap: () => onVehicleTap(snapshot),
+              onTap: () => handleVehicleTap(snapshot),
             ),
           );
 
