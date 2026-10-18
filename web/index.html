@@ -61,9 +61,30 @@
     // Service worker proprio, so pra satisfazer o criterio de instalabilidade
     // do Chrome/Android (o SW gerado pelo Flutter 3.41+ e um stub que se
     // autodesregistra e nao conta). Ver web/pwa-sw.js.
+    //
+    // O navegador so revalida um SW instalado esporadicamente por conta
+    // propria (navegacao nova, ~24h), entao sem forcar isso o usuario podia
+    // ficar preso numa build antiga em cache por bastante tempo mesmo apos
+    // um deploy novo. Aqui: toda carga forca update() e, se um SW novo
+    // assumir controle, recarrega a pagina uma unica vez automaticamente.
     if ('serviceWorker' in navigator) {
+      // O SW sempre chama clients.claim() no activate (ver pwa-sw.js), entao
+      // 'controllerchange' dispara em toda navegacao -- nao so quando ha uma
+      // build nova de verdade. Sem essa trava de sessionStorage, cada reload
+      // reativa o SW, que dispara o evento de novo, loop infinito. Um reload
+      // por sessao de aba e suficiente pra pegar a versao nova.
+      const RELOAD_FLAG = 'soutracking_sw_reloaded';
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
+        if (sessionStorage.getItem(RELOAD_FLAG)) return;
+        sessionStorage.setItem(RELOAD_FLAG, '1');
+        window.location.reload();
+      });
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('pwa-sw.js').catch(() => {});
+        navigator.serviceWorker.register('pwa-sw.js').then((reg) => {
+          reg.update().catch(() => {});
+        }).catch(() => {});
       });
     }
   </script>
