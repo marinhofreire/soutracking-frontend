@@ -506,11 +506,16 @@ class TraccarClient {
       body: jsonEncode(body),
     );
 
-    if (response.statusCode != 200) {
+    // 202 = Traccar aceitou e enfileirou (ex: comando pra aparelho offline,
+    // entregue quando ele conectar) — não é falha.
+    if (response.statusCode != 200 && response.statusCode != 202) {
       throw Exception('Falha ao criar $path: ${response.statusCode}');
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = response.body.trim().isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 202) data['_queued'] = true;
     return data;
   }
 
