@@ -2427,12 +2427,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       snapshots,
     );
     final selectedSnapshot = enrichSnapshot(rawSelectedSnapshot);
-    final defaultMapSnapshot = enrichSnapshot(
-      snapshots
-          .where((snapshot) => snapshot.hasValidGps)
-          .cast<_VehicleSnapshot?>()
-          .firstOrNull,
-    );
     final reportRouteSelection = ref.watch(reportRouteMapSelectionProvider);
     final geofencesAsync = ref.watch(geofencesProvider);
     final geofenceList =
@@ -2458,10 +2452,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
     final bottomSnapshot = reportRouteReplayActive
         ? null
-        : (_showBottomVehiclePanel ? selectedSnapshot : null) ??
-            (_showBottomVehiclePanel && !_activePanelVisible && !_kpiListOpen
-                ? defaultMapSnapshot
-                : null);
+        : (_showBottomVehiclePanel ? selectedSnapshot : null);
     final showVehicleCompactPopup = !reportRouteReplayActive &&
         !showLiveGauges &&
         selectedSnapshot != null &&
