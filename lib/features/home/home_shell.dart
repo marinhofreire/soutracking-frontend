@@ -2453,12 +2453,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final bottomSnapshot = reportRouteReplayActive
         ? null
         : (_showBottomVehiclePanel ? selectedSnapshot : null);
-    // ignore: avoid_print
-    print('DEBUG bottomSnapshot=${bottomSnapshot?.device.name} '
-        'selectedVehicle=${_selectedVehicle?.name} '
-        'showBottomPanel=$_showBottomVehiclePanel '
-        'reportRouteReplayActive=$reportRouteReplayActive '
-        'selectedSnapshot=${selectedSnapshot?.device.name}');
     final showVehicleCompactPopup = !reportRouteReplayActive &&
         !showLiveGauges &&
         selectedSnapshot != null &&
