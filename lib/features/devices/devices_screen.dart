@@ -681,6 +681,25 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                               const SizedBox(width: 12),
                               const Expanded(child: SizedBox())
                             ]),
+                            if (editing != null) ...[
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _openAccumulatorsDialog(
+                                    editing,
+                                    positions
+                                        .where((p) => p.deviceId == editing.id)
+                                        .cast<TraccarPosition?>()
+                                        .firstOrNull,
+                                  ),
+                                  icon: const Icon(Icons.speed_outlined,
+                                      size: 16),
+                                  label: const Text(
+                                      'Ajustar odômetro / horímetro'),
+                                ),
+                              ),
+                            ],
                             const _PixelEditorDivider(space: 10),
                             _PixelEditorGroup(
                                 'settings',
@@ -1475,6 +1494,119 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _openAccumulatorsDialog(
+    TraccarDevice device,
+    TraccarPosition? position,
+  ) async {
+    final currentDistanceM =
+        (position?.attributes?['totalDistance'] as num?)?.toDouble() ?? 0;
+    final currentHoursMs =
+        (position?.attributes?['hours'] as num?)?.toDouble() ?? 0;
+    final odometerController = TextEditingController(
+      text: (currentDistanceM / 1000).toStringAsFixed(1),
+    );
+    final hourmeterController = TextEditingController(
+      text: (currentHoursMs / 3600000).toStringAsFixed(1),
+    );
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Ajustar odômetro e horímetro'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'O equipamento não envia odômetro/horímetro de fábrica -- '
+                  'esses valores são calculados pela plataforma a partir do '
+                  'trajeto GPS. Ajuste aqui para alinhar com o painel real '
+                  'do veículo.',
+                  style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: odometerController,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Odômetro (km)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: hourmeterController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Horímetro (horas)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Salvar'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true || !mounted) return;
+
+      final odometerKm = double.tryParse(
+        odometerController.text.trim().replaceAll(',', '.'),
+      );
+      final hourmeterH = double.tryParse(
+        hourmeterController.text.trim().replaceAll(',', '.'),
+      );
+      if (odometerKm == null || hourmeterH == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Informe valores numéricos válidos.')),
+        );
+        return;
+      }
+
+      final session = ref.read(sessionProvider);
+      final client = ref.read(traccarClientProvider);
+      try {
+        await client.updateEntity(
+          path: '/devices/${device.id}/accumulators',
+          cookie: session.cookie,
+          authHeader: session.authHeader,
+          body: {
+            'deviceId': device.id,
+            'totalDistance': odometerKm * 1000,
+            'hours': hourmeterH * 3600000,
+          },
+        );
+        ref.invalidate(positionsProvider);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Odômetro e horímetro atualizados.'),
+          ),
+        );
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_friendlyError(error))),
+        );
+      }
+    } finally {
+      odometerController.dispose();
+      hourmeterController.dispose();
     }
   }
 

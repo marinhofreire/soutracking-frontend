@@ -923,8 +923,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _focusVehicle(_VehicleSnapshot snapshot) {
-    final latLng = snapshot.latLngOrNull;
-    if (latLng == null) return;
+    // A reference center is presentation only; never turn it into a GPS fix.
+    final latLng = snapshot.latLngOrNull ??
+        const gmaps.LatLng(-23.55052, -46.633308);
     _googleMapController?.animateCamera(
       gmaps.CameraUpdate.newCameraPosition(
         gmaps.CameraPosition(
@@ -4867,7 +4868,29 @@ class _OperationalMap extends StatelessWidget {
           VisualMapMode.normal || VisualMapMode.premium => _cleanMapStyle,
         };
         final reportRouteMode = reportRoutePath.length > 1;
+        final referenceVehicle = snapshots
+            .where((s) => s.device.id == selectedDeviceId && !s.hasValidGps)
+            .firstOrNull;
         final markers = <gmaps.Marker>{};
+        if (referenceVehicle != null && !reportRouteMode) {
+          final referenceIcon = markerIcons[_VehicleMarkerIconKey(
+            referenceVehicle.markerType,
+            _VehicleOperationalStatus.noCommunication,
+            0,
+          )] ?? gmaps.BitmapDescriptor.defaultMarkerWithHue(
+            gmaps.BitmapDescriptor.hueAzure,
+          );
+          markers.add(gmaps.Marker(
+            markerId: gmaps.MarkerId('reference-vehicle-${referenceVehicle.device.id}'),
+            position: const gmaps.LatLng(-23.55052, -46.633308),
+            anchor: const Offset(0.5, 0.5),
+            icon: referenceIcon,
+            infoWindow: gmaps.InfoWindow(
+              title: '${referenceVehicle.device.name} — Sem posição GPS',
+              snippet: 'São Paulo: referência visual, não é a localização do veículo.',
+            ),
+          ));
+        }
         final circles = <gmaps.Circle>{};
         final polygons = <gmaps.Polygon>{};
         final polylines = <gmaps.Polyline>{};
@@ -5141,7 +5164,8 @@ class _OperationalMap extends StatelessWidget {
           );
         }
 
-        return gmaps.GoogleMap(
+        return Stack(children: [
+          gmaps.GoogleMap(
           style: mapStyle,
           initialCameraPosition: gmaps.CameraPosition(
             target: initialTarget,
@@ -5167,7 +5191,28 @@ class _OperationalMap extends StatelessWidget {
           circles: circles,
           polygons: polygons,
           polylines: polylines,
-        );
+          ),
+          if (referenceVehicle != null && !reportRouteMode)
+            Positioned(
+              top: 104,
+              left: 16,
+              right: 16,
+              child: IgnorePointer(child: Center(child: Container(
+                constraints: const BoxConstraints(maxWidth: 430),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFDCE5F2)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${referenceVehicle.device.name} • Sem posição GPS\nSão Paulo é apenas referência visual.\nÚltima comunicação registrada: ${referenceVehicle.lastCommunicationLabel}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF526684), fontSize: 12),
+                ),
+              ))),
+            ),
+        ]);
       },
     );
   }
@@ -13304,7 +13349,11 @@ class _VehicleTelemetryPanel extends StatelessWidget {
     if (v == null) return 'N/A';
     final n = num.tryParse(v.toString());
     if (n == null) return 'N/A';
-    return '${n.toStringAsFixed(0)} h';
+    // 'hours' vem em milissegundos (mesma unidade do endpoint
+    // /devices/:id/accumulators do Traccar) -- sem essa conversao o
+    // horimetro aparecia como "68400000 h" em vez de "19 h".
+    final hours = n / 3600000;
+    return '${hours.toStringAsFixed(1)} h';
   }
 
   String get _courseLabel {
