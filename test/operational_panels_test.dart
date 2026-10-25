@@ -29,7 +29,7 @@ void main() {
     'mdvr': const MdvrDevicesScreen(),
     'detalhes-mdvr': const MdvrDeviceDetailScreen(deviceId: '1'),
   };
-  for (final size in [const Size(1104, 492), const Size(400, 700)]) {
+  for (final size in [const Size(1104, 492), const Size(320, 640), const Size(360, 740), const Size(400, 700)]) {
     for (final entry in screens.entries) {
       testWidgets('${entry.key} preserves controls at $size', (tester) async {
         tester.view.physicalSize = size;
@@ -122,9 +122,15 @@ void main() {
           expect(find.text('Redespachar mais próximo').hitTestable(),
               findsOneWidget);
         } else if (entry.key == 'comunicacao') {
+          if (find.text('Notificações').evaluate().isEmpty) {
+            await tester.tap(find.text('Filtros e grupos'));
+            await tester.pumpAndSettle();
+          }
+          await tester.ensureVisible(find.text('Notificações'));
           await tester.tap(find.text('Notificações'));
           await tester.pumpAndSettle();
           expect(find.text('Nova mensagem'), findsOneWidget);
+          await tester.ensureVisible(find.text('Histórico'));
           await tester.tap(find.text('Histórico'));
           await tester.pumpAndSettle();
           expect(find.text('Histórico de envios'), findsOneWidget);

@@ -2014,12 +2014,12 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                           ? 4
                           : width >= 640
                               ? 3
-                              : width >= 420
+                              : width >= 280
                                   ? 2
                                   : 1;
                   final cardWidth =
                       ((width - (columns - 1) * spacing) / columns)
-                          .clamp(150.0, 220.0);
+                          .clamp(width < 420 ? 120.0 : 150.0, 220.0);
 
                   return Wrap(
                     spacing: spacing,

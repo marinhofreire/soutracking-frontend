@@ -11,6 +11,7 @@ class OperationalPanel extends StatelessWidget {
     const muted = Color(0xFF60718D);
     const line = Color(0xFFDDE5F0);
     final theme = Theme.of(context);
+    final compact = MediaQuery.sizeOf(context).width < 760;
     final blue = theme.colorScheme.primary;
     final selectedSurface = blue.withValues(alpha: .08);
     final textTheme = theme.textTheme.apply(
@@ -120,7 +121,8 @@ class OperationalPanel extends StatelessWidget {
           child: DefaultTextStyle(
               style: const TextStyle(
                   fontFamily: 'DeviceEditorSegoe', fontSize: 11, color: ink),
-              child: Padding(padding: const EdgeInsets.all(16), child: child))),
+              child: Padding(
+                  padding: EdgeInsets.all(compact ? 8 : 16), child: child))),
     );
   }
 }

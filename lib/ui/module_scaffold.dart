@@ -25,6 +25,7 @@ class ModuleScaffold extends StatelessWidget {
       color: Colors.white,
       child: OperationalPanel(child: LayoutBuilder(builder: (context, size) {
         final narrow = size.maxWidth < 900;
+        final mobile = MediaQuery.sizeOf(context).width < 760;
         Widget pane(Widget child, {bool border = false}) => Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -38,15 +39,32 @@ class ModuleScaffold extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                     if (navigation != null)
-                      Container(
-                          padding: const EdgeInsets.all(12),
-                          constraints: const BoxConstraints(maxHeight: 190),
-                          child: SingleChildScrollView(child: navigation!)),
+                      if (mobile)
+                        ExpansionTile(
+                          key: ValueKey('module-filters-$title'),
+                          title: const Text('Filtros e grupos',
+                              style: TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                          tilePadding:
+                              const EdgeInsets.symmetric(horizontal: 12),
+                          childrenPadding:
+                              const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          children: [navigation!],
+                        )
+                      else
+                        Container(
+                            padding: const EdgeInsets.all(12),
+                            constraints: const BoxConstraints(maxHeight: 190),
+                            child: SingleChildScrollView(child: navigation!)),
                     Padding(
                         padding: const EdgeInsets.all(12),
                         child: scrollContent
                             ? content
-                            : SizedBox(height: 400, child: content)),
+                            : SizedBox(
+                                height: mobile && size.hasBoundedHeight
+                                    ? (size.maxHeight * .65).clamp(220.0, 400.0)
+                                    : 400,
+                                child: content)),
                     if (detail != null) pane(detail!, border: true),
                   ]))
             : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

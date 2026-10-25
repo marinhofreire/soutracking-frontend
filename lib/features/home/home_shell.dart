@@ -23,6 +23,7 @@ import '../../data/models.dart';
 import '../../data/openf1_client.dart';
 import '../../state/session_state.dart';
 import '../../widgets/dial_gauge.dart';
+import '../../widgets/mobile_vehicle_gauges.dart';
 import '../../widgets/tpms_vehicle_card.dart';
 import '../../widgets/status_pill.dart';
 import '../alerts/alerts_screen.dart';
@@ -5648,7 +5649,9 @@ class _RouteReplayStatusCard extends StatelessWidget {
     // No mobile o card desce pra baixo da barra fina de km/h+RPM (que agora
     // e' um Container curto ancorado em top:64, ~52px de altura), ocupando a
     // largura toda. O conteudo scrolla internamente (2026-09-10).
-    final topPos = isMobile ? 128.0 : 100.0;
+    final topPos = isMobile
+        ? 64.0 + MobileVehicleGauges.sizeForWidth(screenWidth - 20) + 12.0
+        : 100.0;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
@@ -6231,9 +6234,7 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
     final isMobile = screenWidth < 760;
     final sidebarLeft = !sidebarVisible ? 20.0 : (sidebarOpen ? 222.0 : 90.0);
 
-    // No celular NAO cabem 2 velocimetros circulares -- viram uma barra
-    // fina no topo com km/h e RPM em texto grande + mini barra de progresso.
-    // Os DialGauge circulares ficam so no desktop (2026-09-10).
+    // Mesmo mostrador circular do desktop, dimensionado para o celular.
     if (isMobile) {
       return AnimatedPositioned(
         duration: const Duration(milliseconds: 220),
@@ -6245,57 +6246,7 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 180),
             opacity: visible ? 1 : 0,
-            child: PointerInterceptor(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.94),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFDDE5F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _MiniGaugeReadout(
-                        label: 'km/h',
-                        value: speedKmh ?? 0,
-                        max: 240,
-                        color: const Color(0xFF2D8CFF),
-                      ),
-                    ),
-                    // RPM so aparece quando o protocolo realmente mandou o
-                    // dado (rpm != null). Veiculo sem esse sensor/PID nao
-                    // mostra a barra fictícia em 0 -- 0 so e exibido quando
-                    // for um valor recebido de verdade (motor desligado com
-                    // sensor presente, por exemplo).
-                    if (rpm != null) ...[
-                      Container(
-                        width: 1,
-                        height: 34,
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        color: const Color(0xFFE2E8F0),
-                      ),
-                      Expanded(
-                        child: _MiniGaugeReadout(
-                          label: 'RPM',
-                          value: rpm!,
-                          max: 8,
-                          color: const Color(0xFFEF4444),
-                          decimals: 1,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+            child: MobileVehicleGauges(speedKmh: speedKmh, rpm: rpm),
           ),
         ),
       );
@@ -6366,69 +6317,6 @@ class _RouteReplaySpeedGauge extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Leitura compacta usada no lugar do DialGauge circular no mobile:
-/// valor grande + rótulo + barrinha de progresso.
-class _MiniGaugeReadout extends StatelessWidget {
-  const _MiniGaugeReadout({
-    required this.label,
-    required this.value,
-    required this.max,
-    required this.color,
-    this.decimals = 0,
-  });
-
-  final String label;
-  final double value;
-  final double max;
-  final Color color;
-  final int decimals;
-
-  @override
-  Widget build(BuildContext context) {
-    final frac = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              value.toStringAsFixed(decimals),
-              style: TextStyle(
-                color: color,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                height: 1,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: frac,
-            minHeight: 4,
-            backgroundColor: const Color(0xFFE8EFF7),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -8600,6 +8488,7 @@ class _IntegratedPanel extends StatelessWidget {
             opacity: open ? 1 : 0,
             child: _GlassSurface(
               padding: EdgeInsets.zero,
+              solid: compact,
               child: SafeArea(
                 bottom: compact,
                 top: compact,
@@ -8701,9 +8590,11 @@ class _IntegratedPanel extends StatelessWidget {
                     const Divider(height: 1, color: Color(0xFFE2E8F0)),
                   Expanded(
                     child: Padding(
-                      padding: EdgeInsets.all(hideHeader ? 10 : 12),
+                      padding: compact
+                          ? EdgeInsets.zero
+                          : EdgeInsets.all(hideHeader ? 10 : 12),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(compact ? 0 : 14),
                         child: ColoredBox(
                           color: Colors.white.withValues(alpha: 0.92),
                           child: Theme(
@@ -14311,29 +14202,31 @@ class _GlassSurface extends StatelessWidget {
     this.padding = const EdgeInsets.all(12),
     this.width,
     this.borderColor,
+    this.solid = false,
   });
 
   final Widget child;
   final EdgeInsets padding;
   final double? width;
   final Color? borderColor;
+  final bool solid;
 
   @override
   Widget build(BuildContext context) {
     final visual = VisualSettingsScope.of(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(solid ? 0 : 16),
       child: BackdropFilter(
         filter: ImageFilter.blur(
-          sigmaX: visual.glassBlur,
-          sigmaY: visual.glassBlur,
+          sigmaX: solid ? 0 : visual.glassBlur,
+          sigmaY: solid ? 0 : visual.glassBlur,
         ),
         child: Container(
           width: width,
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: visual.glassOpacity),
-            borderRadius: BorderRadius.circular(16),
+            color: solid ? Colors.white : Colors.white.withValues(alpha: visual.glassOpacity),
+            borderRadius: BorderRadius.circular(solid ? 0 : 16),
             border: Border.all(
               color: borderColor ?? const Color(0xFFE2E8F3),
             ),
@@ -22753,11 +22646,17 @@ class _HubTabScreenState extends State<_HubTabScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: widget.tabs.length, vsync: this);
+    _tabController = TabController(length: widget.tabs.length, vsync: this)
+      ..addListener(_buildSelectedTab);
+  }
+
+  void _buildSelectedTab() {
+    if (_builtTabs.add(_tabController.index)) setState(() {});
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_buildSelectedTab);
     _tabController.dispose();
     super.dispose();
   }
@@ -22782,6 +22681,10 @@ class _HubTabScreenState extends State<_HubTabScreen>
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelPadding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.sizeOf(context).width < 760 ? 14 : 16,
+            ),
             labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Color(0xFF60718D),
             indicatorColor: Theme.of(context).colorScheme.primary,

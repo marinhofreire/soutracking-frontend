@@ -303,6 +303,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: TabBar(
                 controller: _tabController,
                 isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 labelColor: Theme.of(context).colorScheme.primary,
                 unselectedLabelColor: const Color(0xFF60718D),
                 indicatorColor: Theme.of(context).colorScheme.primary,
@@ -516,7 +517,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                             ),
                           ),
                         ),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           OutlinedButton.icon(
                             onPressed: _pickLoginBackground,
@@ -748,13 +751,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ? name.trim().substring(0, 1).toUpperCase()
         : '?';
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Left: cartão de identidade
-        SizedBox(
-          width: 220,
-          child: Padding(
+    final identity = Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -847,12 +844,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ],
               ),
             ),
-          ),
-        ),
-        Container(width: 1, color: const Color(0xFFE2E8F0)),
-        // Center: dados da conta
-        Expanded(
-          child: _SettingsTabView(children: [
+          );
+    final account = _SettingsTabView(children: [
             _SettingsCard(
               title: 'Dados da conta',
               child: Column(children: [
@@ -872,13 +865,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
               ]),
             ),
-          ]),
-        ),
-        Container(width: 1, color: const Color(0xFFE2E8F0)),
-        // Right: resumo + ações
-        SizedBox(
-          width: 230,
-          child: Padding(
+          ]);
+    final summary = Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -937,10 +925,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
               ],
             ),
-          ),
-        ),
-      ],
-    );
+          );
+    if (MediaQuery.sizeOf(context).width < 760) {
+      return ListView(padding: EdgeInsets.zero, children: [
+        identity,
+        account,
+        summary,
+      ]);
+    }
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(width: 220, child: identity),
+      Container(width: 1, color: const Color(0xFFE2E8F0)),
+      Expanded(child: account),
+      Container(width: 1, color: const Color(0xFFE2E8F0)),
+      SizedBox(width: 230, child: summary),
+    ]);
   }
 
   static Color _accessLevelColorFor(AppUserRole role) => switch (role) {
@@ -978,44 +977,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     return Column(
       children: [
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left: Perfis de acesso
-              SizedBox(
-                width: 196,
-                child: _PermRoleColumn(
+          child: LayoutBuilder(builder: (context, size) {
+            final roles = _PermRoleColumn(
                   selectedRole: _selectedPermRole,
                   userCounts: {
                     for (final r in AppUserRole.values) r: countForRole(r)
                   },
                   onSelect: (role) => setState(() => _selectedPermRole = role),
-                ),
-              ),
-              Container(width: 1, color: const Color(0xFFE2E8F0)),
-              // Center: Menus autorizados
-              Expanded(
-                child: _PermMenusColumn(
+                );
+            final menus = _PermMenusColumn(
                   role: _selectedPermRole,
                   isEnabled: (f) => _menuEnabled(_selectedPermRole, f),
                   onToggle: (f, v) => _setMenuEnabled(_selectedPermRole, f, v),
-                ),
-              ),
-              Container(width: 1, color: const Color(0xFFE2E8F0)),
-              // Right: Permissões adicionais + resumo
-              SizedBox(
-                width: 230,
-                child: _PermActionsColumn(
+                );
+            final actions = _PermActionsColumn(
                   role: _selectedPermRole,
                   isActionEnabled: (k) => _actionEnabled(_selectedPermRole, k),
                   onActionToggle: (k, v) =>
                       _setActionEnabled(_selectedPermRole, k, v),
                   enabledMenus: enabledMenus,
                   restrictedMenus: restrictedMenus,
-                ),
-              ),
-            ],
-          ),
+                );
+            if (size.maxWidth < 760) {
+              return _SettingsFlow(child: ListView(padding: EdgeInsets.zero, children: [roles, menus, actions]));
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 196, child: roles),
+              Container(width: 1, color: const Color(0xFFE2E8F0)),
+              Expanded(child: menus),
+              Container(width: 1, color: const Color(0xFFE2E8F0)),
+              SizedBox(width: 230, child: actions),
+            ]);
+          }),
         ),
         // Footer
         Container(
@@ -1023,9 +1016,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
           ),
-          child: Row(
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 8,
             children: [
-              const Spacer(),
               OutlinedButton(
                 onPressed: () => ref
                     .read(permissionOverridesProvider.notifier)
@@ -1040,7 +1035,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
                 child: const Text('Cancelar'),
               ),
-              const SizedBox(width: 10),
               FilledButton(
                 onPressed: _savePermissions,
                 style: FilledButton.styleFrom(
@@ -1656,8 +1650,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _ColumnSectionLabel('GRUPOS DE MENU'),
-          Expanded(
-            child: ListView(
+          _SettingsColumnList(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               children: [
                 for (final groupName in groupNames)
@@ -1672,7 +1665,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   ),
               ],
             ),
-          ),
         ],
       ),
       center: Padding(
@@ -1689,8 +1681,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ),
             ),
             const SizedBox(height: 10),
-            Expanded(
-              child: ListView(
+            _SettingsColumnList(padding: EdgeInsets.zero,
                 children: [
                   for (final item in itemsInGroup)
                     SwitchListTile(
@@ -1711,7 +1702,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     ),
                 ],
               ),
-            ),
           ],
         ),
       ),
@@ -1987,8 +1977,7 @@ class _PermRoleColumn extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: ListView(
+        _SettingsColumnList(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             children: [
               for (final entry in _permRoles)
@@ -2005,7 +1994,6 @@ class _PermRoleColumn extends StatelessWidget {
               // existe de verdade como toggle por perfil logo abaixo
               // ("Criar usuários", ver _permActionItems / users_add).
             ],
-          ),
         ),
       ],
     );
@@ -2112,8 +2100,7 @@ class _PermMenusColumn extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: ListView(
+        _SettingsColumnList(
             padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
             children: [
               for (final item in _permMenuItems)
@@ -2124,7 +2111,6 @@ class _PermMenusColumn extends StatelessWidget {
                   onToggle: (v) => onToggle(item.feature, v),
                 ),
             ],
-          ),
         ),
       ],
     );
@@ -2262,8 +2248,7 @@ class _PermActionsColumn extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: ListView(
+        _SettingsColumnList(
             padding: const EdgeInsets.fromLTRB(8, 2, 8, 12),
             children: [
               for (final item in _permActionItems)
@@ -2341,7 +2326,6 @@ class _PermActionsColumn extends StatelessWidget {
                 ),
               ),
             ],
-          ),
         ),
       ],
     );
@@ -2477,12 +2461,14 @@ class _SettingsTabView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
+    return LayoutBuilder(builder: (context, size) => ListView.separated(
+      shrinkWrap: !size.hasBoundedHeight,
+      physics: size.hasBoundedHeight ? null : const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(12),
       itemBuilder: (context, index) => children[index],
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemCount: children.length,
-    );
+    ));
   }
 }
 
@@ -2547,14 +2533,15 @@ class _SettingLine extends StatelessWidget {
               ),
             ),
           ),
-          Text(
+          Flexible(child: Text(
             value,
+            textAlign: TextAlign.end,
             style: const TextStyle(
               color: Color(0xFF1F2A44),
               fontWeight: FontWeight.w700,
               fontSize: 11.5,
             ),
-          ),
+          )),
         ],
       ),
     );
@@ -2590,7 +2577,7 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
   final bool constrainPanels;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
     if (constrainPanels) {
       return LayoutBuilder(builder: (context, size) {
         if (size.maxWidth < 900) {
@@ -2611,12 +2598,12 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
         ]);
       });
     }
-    final isMobile = MediaQuery.sizeOf(context).width < 760;
+    final isMobile = constraints.maxWidth < 760;
     // No mobile as 3 colunas (leftWidth + center + rightWidth = ~461px
     // fixos) estouravam a tela em TODAS as abas de Configurações (listras
     // amarelo/preto). Empilha numa Column (2026-09-10).
     if (isMobile) {
-      return Column(
+      return _SettingsFlow(child: SingleChildScrollView(child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           left,
@@ -2629,7 +2616,7 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
           const SizedBox(height: 12),
           right,
         ],
-      );
+      )));
     }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2641,7 +2628,7 @@ class _ThreeColumnSettingsLayout extends StatelessWidget {
         SizedBox(width: rightWidth, child: right),
       ],
     );
-  }
+  });
 }
 
 class _ColumnSectionLabel extends StatelessWidget {
@@ -2931,4 +2918,26 @@ class _BrandAssetField extends StatelessWidget {
           Text(fileName!,
               style: const TextStyle(fontSize: 10, color: Color(0xFF60718D)))
       ]);
+}
+
+// The same settings lists scroll as columns on desktop and flow on mobile.
+class _SettingsColumnList extends StatelessWidget {
+  const _SettingsColumnList({required this.padding, required this.children});
+  final EdgeInsets padding;
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) {
+    final mobile = MediaQuery.sizeOf(context).width < 760 ||
+        context.dependOnInheritedWidgetOfExactType<_SettingsFlow>() != null;
+    final list = ListView(padding: padding, shrinkWrap: mobile,
+      physics: mobile ? const NeverScrollableScrollPhysics() : null,
+      children: children);
+    return mobile ? list : Expanded(child: list);
+  }
+}
+
+class _SettingsFlow extends InheritedWidget {
+  const _SettingsFlow({required super.child});
+  @override
+  bool updateShouldNotify(_SettingsFlow oldWidget) => false;
 }

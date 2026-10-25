@@ -116,6 +116,24 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
       ...?selectedPosition?.attributes,
     };
 
+    if (MediaQuery.sizeOf(context).width < 760) {
+      return ListView(padding: EdgeInsets.zero, children: [
+        _buildToolbar(devices, readings.length),
+        if (selectedDevice != null) ...[
+          const SizedBox(height: 10),
+          _buildQuickStatsBar(selectedDevice, selectedPosition, mergedAttrs),
+        ],
+        const SizedBox(height: 10),
+        if (readings.isEmpty)
+          SizedBox(height: 180, child: _emptyState())
+        else ...[
+          SizedBox(height: 330, child: _buildCarDiagram(readings, selectedDevice!, selectedPosition, tireAttrs)),
+          const SizedBox(height: 12),
+          SizedBox(height: 420, child: _buildAveragesAndAlerts(readings)),
+        ],
+      ]);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -179,8 +197,10 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           SizedBox(
-            width: 260,
+            width: MediaQuery.sizeOf(context).width < 760
+                ? MediaQuery.sizeOf(context).width - 40 : 260,
             child: DropdownButtonFormField<int>(
+              isExpanded: true,
               key: ValueKey<int?>(_deviceId),
               initialValue: _deviceId,
               items: [
@@ -199,7 +219,8 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
             ),
           ),
           SizedBox(
-            width: 300,
+            width: MediaQuery.sizeOf(context).width < 760
+                ? MediaQuery.sizeOf(context).width - 40 : 300,
             child: TextField(
               onChanged: (value) => setState(() => _search = value),
               decoration: const InputDecoration(
@@ -256,9 +277,8 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFDDE5F0)),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
+      child: LayoutBuilder(builder: (context, size) {
+        final cells = <Widget>[
             _quickStatCell(
               icon: Icons.circle,
               iconColor:
@@ -301,9 +321,14 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
               label: 'Odômetro',
               subtitle: odometerLabel,
             ),
-          ],
-        ),
-      ),
+          ];
+        if (MediaQuery.sizeOf(context).width < 760) {
+          return Wrap(children: [for (final c in cells)
+            if (c is! VerticalDivider) SizedBox(width: (size.maxWidth - 8) / 2, child: c)]);
+        }
+        return IntrinsicHeight(child: Row(children: [for(final c in cells)
+          c is VerticalDivider ? c : Expanded(child: c)]));
+      }),
     );
   }
 
@@ -314,8 +339,7 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
     required String subtitle,
     double iconSize = 18,
   }) {
-    return Expanded(
-      child: Padding(
+    return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
@@ -349,7 +373,6 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -479,14 +502,14 @@ class _TpmsScreenState extends ConsumerState<TpmsScreen> {
                     const Icon(Icons.battery_std_rounded,
                         size: 16, color: Color(0xFF4B5A72)),
                     const SizedBox(width: 6),
-                    Text(
+                    Expanded(child: Text(
                       'Bateria média: ${avgBattery.toStringAsFixed(2)} V',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1F2A44),
                       ),
-                    ),
+                    )),
                   ],
                 ),
                 const SizedBox(height: 10),

@@ -110,9 +110,8 @@ class _TelemetrySensorsScreenState
     final deviceHistory =
         historyAsync.valueOrNull ?? const <TraccarPosition>[];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    final mobile = MediaQuery.sizeOf(context).width < 760;
+    final children = <Widget>[
         // ── Header ──────────────────────────────────────────────────────────
         Row(
           children: [
@@ -174,7 +173,7 @@ class _TelemetrySensorsScreenState
           _buildQuickStatsBar(selectedSnapshot),
           const SizedBox(height: 10),
           SizedBox(
-            height: 200,
+            height: mobile ? 320 : 200,
             child: _buildGaugesRow(
               snapshot: selectedSnapshot,
               history: deviceHistory,
@@ -183,11 +182,13 @@ class _TelemetrySensorsScreenState
           ),
         ],
         const SizedBox(height: 10),
-        Expanded(
-          child: _buildSensorGrid(filteredSections, selectedSnapshot),
-        ),
-      ],
-    );
+        if (mobile)
+          _buildSensorGrid(filteredSections, selectedSnapshot)
+        else
+          Expanded(child: _buildSensorGrid(filteredSections, selectedSnapshot)),
+      ];
+    final column = Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
+    return mobile ? SingleChildScrollView(child: column) : column;
   }
 
   Widget _buildToolbar(List<TraccarDevice> devices, int rowsCount) {
@@ -202,6 +203,7 @@ class _TelemetrySensorsScreenState
           SizedBox(
             width: fieldW ?? 260,
             child: DropdownButtonFormField<int>(
+              isExpanded: true,
               key: ValueKey<int?>(_deviceId),
               initialValue: _deviceId,
               items: [
@@ -490,7 +492,7 @@ class _TelemetrySensorsScreenState
     if (isMobile) {
       // 2 por linha -- os 5 cells em Row com textos longos ("Equipamento
       // conectado") estouravam a largura da tela (2026-09-10).
-      final cellW = (MediaQuery.sizeOf(context).width - 56) / 2;
+      final cellW = (MediaQuery.sizeOf(context).width - 48) / 2;
       return _TranslucentCard(
         padding: const EdgeInsets.all(8),
         child: Wrap(
@@ -542,10 +544,7 @@ class _TelemetrySensorsScreenState
     final batPct = _batteryPct(snapshot);
     final gsmQuality = _gsmQualityPct(snapshot.gsmLevel);
 
-    return Row(
-      children: [
-        Expanded(
-          child: _DialGauge(
+    final gauges = <Widget>[_DialGauge(
             label: 'Velocidade',
             unit: 'km/h',
             value: snapshot.speedKmh,
@@ -556,10 +555,7 @@ class _TelemetrySensorsScreenState
             ticks: const [0, 60, 120, 180, 240],
             loading: loading,
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _DialGauge(
+_DialGauge(
             label: 'RPM',
             unit: 'x1000',
             value: rpmKilo ?? 0,
@@ -570,10 +566,7 @@ class _TelemetrySensorsScreenState
             ticks: const [0, 2, 4, 6, 8],
             loading: loading,
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _ArcGauge(
+_ArcGauge(
             label: 'Bateria',
             value: batPct,
             displayText: snapshot.batteryLabel,
@@ -581,10 +574,7 @@ class _TelemetrySensorsScreenState
             icon: Icons.battery_full_rounded,
             loading: loading,
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _ArcGauge(
+_ArcGauge(
             label: 'Sinal GSM',
             value: snapshot.gsmLevel == _GsmLevel.unknown ? null : gsmQuality,
             displayText: snapshot.gsmLabel,
@@ -592,10 +582,18 @@ class _TelemetrySensorsScreenState
             icon: Icons.signal_cellular_alt_rounded,
             qualityLabel: _gsmQualityStr(snapshot.gsmLevel),
             loading: loading,
-          ),
-        ),
-      ],
-    );
+          )];
+    return LayoutBuilder(builder: (context, size) {
+      if (MediaQuery.sizeOf(context).width < 760) {
+        return Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final gauge in gauges)
+            SizedBox(width: (size.maxWidth - 8) / 2, height: 156, child: gauge),
+        ]);
+      }
+      return Row(children: [for (var i = 0; i < gauges.length; i++) ...[
+        if (i > 0) const SizedBox(width: 8), Expanded(child: gauges[i]),
+      ]]);
+    });
   }
 
   // ── Sensor sections grid (4 columns, no scroll) ───────────────────────────
@@ -662,14 +660,14 @@ class _TelemetrySensorsScreenState
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Text(
+                  Flexible(child: Text(
                     section.items[j].value,
                     style: TextStyle(
                       color: _sensorValueColor(section.items[j]),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
-                  ),
+                  )),
                 ],
               ),
             ),
@@ -713,6 +711,8 @@ class _TelemetrySensorsScreenState
         ),
         child: ListView.separated(
           padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
           itemCount: sections.length,
           separatorBuilder: (_, __) =>
               const Divider(height: 1, color: Color(0xFFE8EFF7)),

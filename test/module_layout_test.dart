@@ -41,7 +41,7 @@ void main() {
     'estoque': const InventoryScreen(),
     'chamados': const CallsScreen(),
   };
-  for (final size in [const Size(1104, 492), const Size(400, 700)]) {
+  for (final size in [const Size(1104, 492), const Size(320, 640), const Size(360, 740), const Size(400, 700)]) {
     for (final entry in screens.entries) {
       testWidgets('${entry.key} layout and existing navigation at $size',
           (tester) async {
@@ -169,6 +169,10 @@ void main() {
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           expect(find.text('Salvar cerca'), findsOneWidget);
+          if (find.byType(DropdownButtonFormField<String>).evaluate().isEmpty) {
+            await tester.tap(find.text('Filtros e grupos').last);
+            await tester.pumpAndSettle();
+          }
           final shape = find.byType(DropdownButtonFormField<String>).last;
           await tester.ensureVisible(shape);
           await tester.tap(shape);

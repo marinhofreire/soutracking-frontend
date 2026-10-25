@@ -234,7 +234,7 @@ class _PickerField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: width,
+      width: width.clamp(0.0, MediaQuery.sizeOf(context).width - 48),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
@@ -280,7 +280,7 @@ class _SelectField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: width,
+      width: width.clamp(0.0, MediaQuery.sizeOf(context).width - 48),
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: options.contains(value)
@@ -326,7 +326,7 @@ class _SelectOptionField extends StatelessWidget {
         : (options.isEmpty ? null : options.first.value);
 
     return SizedBox(
-      width: width,
+      width: width.clamp(0.0, MediaQuery.sizeOf(context).width - 48),
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: resolvedValue,
@@ -362,7 +362,7 @@ class _InfoField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: width,
+      width: width.clamp(0.0, MediaQuery.sizeOf(context).width - 48),
       child: InputDecorator(
         decoration: _fieldDecoration(label),
         child: Text(
