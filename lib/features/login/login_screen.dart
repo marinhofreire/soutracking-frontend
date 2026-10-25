@@ -97,13 +97,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final logoSource = config.logoAsset?.trim() ?? '';
     final hasCustomLogo = logoSource.isNotEmpty &&
         logoSource != 'assets/branding/soutracking_logo_horizontal.png';
-    final usePixelReferenceLogin = isWideEnoughForPixelReference &&
+    final useReferenceAppearance =
         config.appName.trim().toLowerCase().contains('soutracking') &&
-        !hasCustomLogo &&
-        (config.loginBackgroundImage?.trim().isEmpty ?? true) &&
-        config.primaryColor == WhiteLabelConfig.fallback.primaryColor;
+            !hasCustomLogo &&
+            (config.loginBackgroundImage?.trim().isEmpty ?? true) &&
+            config.primaryColor == WhiteLabelConfig.fallback.primaryColor;
 
-    if (usePixelReferenceLogin) {
+    if (isWideEnoughForPixelReference && useReferenceAppearance) {
       return _buildPixelReferenceLogin(
         context: context,
         session: session,
@@ -138,6 +138,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   : AssetImage(customBackground),
               fit: BoxFit.cover,
             )
+          else if (useReferenceAppearance)
+            const _ReferenceCityBackdrop()
           else
             const _LoginBackdrop(),
           if (customBackground.isNotEmpty)
@@ -157,16 +159,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: const Color(0xCC02101F),
+                      color: useReferenceAppearance
+                          ? const Color(0xD9080808)
+                          : const Color(0xCC02101F),
                       borderRadius: BorderRadius.circular(isCompact ? 24 : 30),
                       border: Border.all(
-                        color: const Color(0xFF1189FF).withValues(alpha: 0.85),
+                        color: useReferenceAppearance
+                            ? const Color(0xFFB9AA7C).withValues(alpha: .65)
+                            : const Color(0xFF1189FF).withValues(alpha: 0.85),
                         width: 1.05,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color:
-                              const Color(0xFF0B8BFF).withValues(alpha: 0.45),
+                          color: (useReferenceAppearance
+                                  ? const Color(0xFFF9C61B)
+                                  : const Color(0xFF0B8BFF))
+                              .withValues(
+                                  alpha: useReferenceAppearance ? .09 : .45),
                           blurRadius: 45,
                           spreadRadius: 2,
                         ),
@@ -196,22 +205,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             _LoginBrand(
                               appName: config.appName,
                               compact: isCompact,
+                              referenceStyle: useReferenceAppearance,
                             ),
                           const SizedBox(height: 12),
                           Stack(
                             alignment: Alignment.center,
                             children: [
-                              const Divider(
-                                  color: Color(0xFF1A2B43), height: 1),
+                              Divider(
+                                  color: useReferenceAppearance
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFF1A2B43),
+                                  height: 1),
                               Container(
                                 width: 76,
                                 height: 3,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF1BA9FF),
+                                  color: useReferenceAppearance
+                                      ? brandAccent
+                                      : const Color(0xFF1BA9FF),
                                   borderRadius: BorderRadius.circular(999),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFF1BA9FF)
+                                      color: (useReferenceAppearance
+                                              ? brandAccent
+                                              : const Color(0xFF1BA9FF))
                                           .withValues(alpha: 0.6),
                                       blurRadius: 14,
                                     ),
@@ -222,10 +239,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           const SizedBox(height: 18),
                           Text(
-                            'PLATAFORMA DE GESTAO DE FROTAS',
+                            'PLATAFORMA DE GESTÃO DE FROTAS',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: const Color(0xFF91A8C7)
+                              color: (useReferenceAppearance
+                                      ? const Color(0xFFD1D1CE)
+                                      : const Color(0xFF91A8C7))
                                   .withValues(alpha: 0.82),
                               fontSize: isCompact ? 10.5 : 12,
                               letterSpacing: 1.8,
@@ -237,19 +256,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             icon: Icons.mail_outline,
                             text: 'E-mail',
                             compact: isCompact,
+                            accent: useReferenceAppearance ? brandAccent : null,
                           ),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             style: TextStyle(
-                              color: Color(0xFFE7F0FF),
+                              color: useReferenceAppearance
+                                  ? const Color(0xFFF1F1EF)
+                                  : const Color(0xFFE7F0FF),
                               fontSize: isCompact ? 15.5 : 16.5,
                             ),
-                            cursorColor: const Color(0xFF3DAFFF),
+                            cursorColor: useReferenceAppearance
+                                ? brandAccent
+                                : const Color(0xFF3DAFFF),
                             decoration: _inputDecoration(
                               hintText: 'Digite seu e-mail',
                               compact: isCompact,
+                              referenceStyle: useReferenceAppearance,
                             ),
                             onSubmitted: (_) {
                               if (!isLoading) {
@@ -262,19 +287,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             icon: Icons.lock_outline,
                             text: 'Senha',
                             compact: isCompact,
+                            accent: useReferenceAppearance ? brandAccent : null,
                           ),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
                             style: TextStyle(
-                              color: Color(0xFFE7F0FF),
+                              color: useReferenceAppearance
+                                  ? const Color(0xFFF1F1EF)
+                                  : const Color(0xFFE7F0FF),
                               fontSize: isCompact ? 15.5 : 16.5,
                             ),
-                            cursorColor: const Color(0xFF3DAFFF),
+                            cursorColor: useReferenceAppearance
+                                ? brandAccent
+                                : const Color(0xFF3DAFFF),
                             decoration: _inputDecoration(
                               hintText: 'Digite sua senha',
                               compact: isCompact,
+                              referenceStyle: useReferenceAppearance,
                               suffix: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
@@ -291,7 +322,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     _obscurePassword
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined,
-                                    color: const Color(0xFF8096B6),
+                                    color: useReferenceAppearance
+                                        ? const Color(0xFFAAB2BE)
+                                        : const Color(0xFF8096B6),
                                     size: 20,
                                   ),
                                 ),
@@ -317,7 +350,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 );
                               },
                               style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF2FB0FF),
+                                foregroundColor: useReferenceAppearance
+                                    ? brandAccent
+                                    : const Color(0xFF2FB0FF),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 6,
                                   vertical: 2,
@@ -393,24 +428,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ],
                           const SizedBox(height: 18),
                           Row(
-                            children: const [
+                            children: [
                               Expanded(
                                 child: Divider(
-                                    color: Color(0xFF23334A), height: 1),
+                                    color: useReferenceAppearance
+                                        ? const Color(0xFF333333)
+                                        : const Color(0xFF23334A),
+                                    height: 1),
                               ),
                               Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 12),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
                                 child: Text(
                                   'ou',
                                   style: TextStyle(
-                                    color: Color(0xFF7388A4),
+                                    color: useReferenceAppearance
+                                        ? const Color(0xFF999994)
+                                        : const Color(0xFF7388A4),
                                     fontSize: 16,
                                   ),
                                 ),
                               ),
                               Expanded(
                                 child: Divider(
-                                    color: Color(0xFF23334A), height: 1),
+                                    color: useReferenceAppearance
+                                        ? const Color(0xFF333333)
+                                        : const Color(0xFF23334A),
+                                    height: 1),
                               ),
                             ],
                           ),
@@ -418,16 +462,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.verified_user_outlined,
-                                color: Color(0xFF6F87A6),
+                                color: useReferenceAppearance
+                                    ? brandAccent
+                                    : const Color(0xFF6F87A6),
                                 size: 19,
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 'Acesso seguro e protegido',
                                 style: TextStyle(
-                                  color: const Color(0xFF6F87A6)
+                                  color: (useReferenceAppearance
+                                          ? const Color(0xFFB8B8B4)
+                                          : const Color(0xFF6F87A6))
                                       .withValues(alpha: 0.95),
                                   fontSize: isCompact ? 13 : 14,
                                   fontWeight: FontWeight.w500,
@@ -452,15 +500,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     required String hintText,
     required bool compact,
     Widget? suffix,
+    bool referenceStyle = false,
   }) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: TextStyle(
-        color: const Color(0xFF758CAA),
+        color:
+            referenceStyle ? const Color(0xFF969A9E) : const Color(0xFF758CAA),
         fontSize: compact ? 14.5 : 15.5,
       ),
       filled: true,
-      fillColor: const Color(0x260A1C30),
+      fillColor:
+          referenceStyle ? const Color(0x66080C12) : const Color(0x260A1C30),
       contentPadding: EdgeInsets.symmetric(
         horizontal: 16,
         vertical: compact ? 12 : 13,
@@ -469,13 +520,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(
-          color: const Color(0xFF365272).withValues(alpha: 0.68),
+          color: referenceStyle
+              ? const Color(0x66A2A8B2)
+              : const Color(0xFF365272).withValues(alpha: 0.68),
         ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: Color(0xFF2EAAFF),
+        borderSide: BorderSide(
+          color: referenceStyle
+              ? const Color(0xFFF9C61B)
+              : const Color(0xFF2EAAFF),
           width: 1.25,
         ),
       ),
@@ -798,8 +853,10 @@ class _InputLabel extends StatelessWidget {
     required this.icon,
     required this.text,
     required this.compact,
+    this.accent,
   });
 
+  final Color? accent;
   final IconData icon;
   final String text;
   final bool compact;
@@ -808,7 +865,8 @@ class _InputLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFFB9CAE3), size: compact ? 17 : 18),
+        Icon(icon,
+            color: accent ?? const Color(0xFFB9CAE3), size: compact ? 17 : 18),
         const SizedBox(width: 8),
         Text(
           text,
@@ -824,10 +882,14 @@ class _InputLabel extends StatelessWidget {
 }
 
 class _LoginBrand extends StatelessWidget {
-  const _LoginBrand({required this.appName, required this.compact});
+  const _LoginBrand(
+      {required this.appName,
+      required this.compact,
+      this.referenceStyle = false});
 
   final String appName;
   final bool compact;
+  final bool referenceStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -858,12 +920,13 @@ class _LoginBrand extends StatelessWidget {
                 letterSpacing: 0.7,
                 height: 1,
               ),
-              children: const [
+              children: [
                 TextSpan(
                   text: 'SOU',
                   style: TextStyle(
                     color: Color(0xFFF3F7FF),
-                    fontWeight: FontWeight.w700,
+                    fontWeight:
+                        referenceStyle ? FontWeight.w400 : FontWeight.w700,
                   ),
                 ),
                 TextSpan(
@@ -883,7 +946,9 @@ class _LoginBrand extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                color: const Color(0xFF35516F).withValues(alpha: 0.75),
+                color: referenceStyle
+                    ? const Color(0xFF74746B).withValues(alpha: .5)
+                    : const Color(0xFF35516F).withValues(alpha: .75),
               ),
               color: const Color(0x12000000),
             ),
@@ -1197,4 +1262,29 @@ class _CityAndRoadPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Reuses the city portion of the desktop reference, without its baked-in form.
+class _ReferenceCityBackdrop extends StatelessWidget {
+  const _ReferenceCityBackdrop();
+  @override
+  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
+        FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: 410,
+              height: 941,
+              child: ClipRect(
+                  child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 1672,
+                maxWidth: 1672,
+                minHeight: 941,
+                maxHeight: 941,
+                child: Image.asset('assets/branding/login_pixel_reference.png',
+                    fit: BoxFit.fill),
+              )),
+            )),
+        const DecoratedBox(decoration: BoxDecoration(color: Color(0x35000000))),
+      ]);
 }
