@@ -430,6 +430,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _positionRefreshInterval = Duration(seconds: 3);
 
   gmaps.GoogleMapController? _googleMapController;
+  // Garante que o fitBounds automatico (ver build(), logo apos
+  // _recordPositionTrails) roda so uma vez por abertura do mapa -- dispara
+  // na 1a vez que posicoes de verdade chegam, nao no onMapCreated (que pode
+  // disparar antes do primeiro fetch de /api/positions terminar, deixando
+  // o mapa sem veiculo nenhum enquadrado).
+  bool _hasAppliedInitialFitBounds = false;
+  // Diferencia "1a abertura do mapa" (ref.watch() dos providers ja busca os
+  // dados sozinho, nao precisa de refresh imediato) de "voltou pra tela do
+  // mapa depois de visitar outro painel" (dado pode estar ate 30s velho, e
+  // o usuario volta esperando ver algo atual na hora) -- ver
+  // _syncOperationalRealtimePolling.
+  bool _hasEverEnabledOperationalPolling = false;
   final Map<int, List<_TrailPoint>> _positionTrailByDeviceId = {};
   String? _lastFollowedSelectedPositionKey;
   Timer? _replayTimer;
@@ -1731,6 +1743,49 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _trailMaxAge = Duration(minutes: 5);
   static const double _trailMaxSegmentDistanceM = 500;
 
+  // Enquadra a frota automaticamente na 1a vez que posicoes de verdade
+  // chegam (nao no onMapCreated -- ver _hasAppliedInitialFitBounds). Com 1
+  // so veiculo, bounds de um unico ponto dao zoom arbitrario/excessivo, por
+  // isso usa newLatLngZoom com teto 16 nesse caso especifico.
+  void _applyInitialFitBoundsIfNeeded(List<_VehicleSnapshot> snapshots) {
+    if (_hasAppliedInitialFitBounds) return;
+    final controller = _googleMapController;
+    if (controller == null) return;
+    final withPosition =
+        snapshots.where((s) => s.hasValidGps).toList(growable: false);
+    if (withPosition.isEmpty) return;
+    _hasAppliedInitialFitBounds = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (withPosition.length == 1) {
+        controller.animateCamera(
+          gmaps.CameraUpdate.newLatLngZoom(withPosition.first.latLng, 16),
+        );
+        return;
+      }
+      var minLat = withPosition.first.latLng.latitude;
+      var maxLat = minLat;
+      var minLng = withPosition.first.latLng.longitude;
+      var maxLng = minLng;
+      for (final item in withPosition) {
+        final lat = item.latLng.latitude;
+        final lng = item.latLng.longitude;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      }
+      controller.animateCamera(
+        gmaps.CameraUpdate.newLatLngBounds(
+          gmaps.LatLngBounds(
+            southwest: gmaps.LatLng(minLat, minLng),
+            northeast: gmaps.LatLng(maxLat, maxLng),
+          ),
+          64,
+        ),
+      );
+    });
+  }
+
   void _recordPositionTrails(List<_VehicleSnapshot> snapshots) {
     final activeIds = <int>{};
     final now = DateTime.now();
@@ -1738,7 +1793,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       final point = snapshot.latLngOrNull;
       if (point == null) continue;
       activeIds.add(snapshot.device.id);
-      final timestamp = snapshot.lastCommunicationAt ?? now;
+      // fixTime (horario real do GPS na posicao), nao lastCommunicationAt
+      // (que pode cair pro lastUpdate do device quando nao ha posicao) --
+      // a cauda precisa do horario real do deslocamento pra filtrar idade.
+      final timestamp =
+          DateTime.tryParse(snapshot.position?.fixTime ?? '') ?? now;
       final trail = _positionTrailByDeviceId.putIfAbsent(
         snapshot.device.id,
         () => <_TrailPoint>[],
@@ -1809,6 +1868,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // filtro de distancia minima, idade maxima e quebra de segmento em saltos
   // grandes resolve o problema visual sem depender de servico externo.
   List<List<_TrailPoint>> _liveTrailForDisplay() {
+    if (!_liveTrailEnabled) return const [];
     return _trailSegmentsForDisplay(_selectedTrail());
   }
 
@@ -2327,9 +2387,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
 
     if (_operationalRefreshTimer == null) {
-      if (immediateRefresh) {
+      // So forca refresh imediato ao VOLTAR pro mapa (ja tinha ligado antes
+      // e foi desligado) -- na 1a ativacao da tela o ref.watch() dos
+      // providers no build() ja busca os dados sozinho, e um refresh aqui
+      // duplicaria a chamada de /api/devices e /api/positions (bug original
+      // corrigido nesta mesma rodada).
+      if (immediateRefresh && _hasEverEnabledOperationalPolling) {
         _refreshOperationalData();
       }
+      _hasEverEnabledOperationalPolling = true;
       _operationalRefreshTimer = Timer.periodic(
         _operationalRefreshInterval,
         (_) {
@@ -2377,14 +2443,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final visualController = ref.read(visualSettingsProvider.notifier);
     final realtimeMapVisible =
         currentSession.isAuthenticated && _activePanelId == null;
-    // immediateRefresh:false -- o primeiro fetch de devices/positions ja
-    // acontece sozinho via ref.watch() dos providers logo abaixo. Com true,
-    // essa chamada (que roda dentro do build(), nao so uma vez) invalidava
-    // os providers no mesmo ciclo do primeiro load, duplicando a chamada
-    // de /api/devices e /api/positions logo na abertura do mapa.
+    // immediateRefresh:true, mas _syncOperationalRealtimePolling so usa
+    // isso ao VOLTAR pro mapa (depois de ja ter saido) -- na 1a abertura o
+    // ref.watch() dos providers logo abaixo ja busca os dados sozinho, e
+    // forcar refresh aqui tambem duplicaria /api/devices e /api/positions.
     _syncOperationalRealtimePolling(
       enabled: realtimeMapVisible,
-      immediateRefresh: false,
+      immediateRefresh: true,
     );
 
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
@@ -2393,6 +2458,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         latestEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final snapshots = _buildSnapshots(devices, positions);
     _recordPositionTrails(snapshots);
+    _applyInitialFitBoundsIfNeeded(snapshots);
     _VehicleSnapshot? enrichSnapshot(_VehicleSnapshot? snapshot) {
       if (snapshot == null) return null;
       final geocodeKey = _geocodeKey(snapshot);
@@ -4749,26 +4815,6 @@ class _OperationalMap extends StatelessWidget {
     return byteData.buffer.asUint8List();
   }
 
-  gmaps.LatLngBounds? _boundsForSnapshots(List<_VehicleSnapshot> items) {
-    if (items.isEmpty) return null;
-    var minLat = items.first.latLng.latitude;
-    var maxLat = minLat;
-    var minLng = items.first.latLng.longitude;
-    var maxLng = minLng;
-    for (final item in items) {
-      final lat = item.latLng.latitude;
-      final lng = item.latLng.longitude;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-    }
-    return gmaps.LatLngBounds(
-      southwest: gmaps.LatLng(minLat, minLng),
-      northeast: gmaps.LatLng(maxLat, maxLng),
-    );
-  }
-
   String _clusterKey(gmaps.LatLng point) {
     final lat = (point.latitude / _clusterGridSize).floor();
     final lng = (point.longitude / _clusterGridSize).floor();
@@ -5213,24 +5259,7 @@ class _OperationalMap extends StatelessWidget {
           scrollGesturesEnabled: true,
           zoomGesturesEnabled: true,
           webGestureHandling: gmaps.WebGestureHandling.greedy,
-          onMapCreated: (controller) {
-            onMapCreated(controller);
-            // Mapa abria sempre no zoom fixo 13 centrado no 1o veiculo da
-            // lista -- com a frota espalhada pela cidade isso deixava a
-            // tela vazia (nenhum carro visivel) ate o usuario dar zoom out
-            // manualmente. Enquadra automaticamente todos os veiculos com
-            // posicao valida assim que o mapa termina de carregar.
-            if (snapshotsWithPosition.length > 1) {
-              final bounds = _boundsForSnapshots(snapshotsWithPosition);
-              if (bounds != null) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  controller.animateCamera(
-                    gmaps.CameraUpdate.newLatLngBounds(bounds, 64),
-                  );
-                });
-              }
-            }
-          },
+          onMapCreated: onMapCreated,
           onCameraMove: onCameraMove,
           onTap: (_) => onMapTap(),
           markers: markers,
