@@ -83,6 +83,17 @@ class _ReplayQuery {
   int get hashCode => Object.hash(deviceId, from, to);
 }
 
+// Ponto da cauda curta do rastro ao vivo (ultimas posicoes do veiculo
+// selecionado no mapa). Guarda o horario de cada ponto porque a cauda
+// descarta pontos velhos (> 5min) e calcula opacidade pela posicao relativa
+// dentro do segmento -- diferente do _ReplayPoint abaixo, que serve pro
+// replay de relatorio de rota (outro fluxo, sem relacao com a cauda).
+class _TrailPoint {
+  const _TrailPoint(this.point, this.time);
+  final gmaps.LatLng point;
+  final DateTime time;
+}
+
 class _ReplayPoint {
   const _ReplayPoint({
     required this.latitude,
@@ -419,7 +430,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const Duration _positionRefreshInterval = Duration(seconds: 3);
 
   gmaps.GoogleMapController? _googleMapController;
-  final Map<int, List<gmaps.LatLng>> _positionTrailByDeviceId = {};
+  final Map<int, List<_TrailPoint>> _positionTrailByDeviceId = {};
   String? _lastFollowedSelectedPositionKey;
   Timer? _replayTimer;
   Timer? _operationalRefreshTimer;
@@ -492,14 +503,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   bool _mapTrafficEnabled = true;
   DateTime _blockSurfaceClearUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // Rastro ao vivo -- desligado por padrão (2026-09-06, pedido do usuário:
-  // "liga/desliga"). Quando ligado, o traçado bruto (reta entre pontos GPS)
-  // é substituído pela versão corrigida via OSRM (match-nas-ruas), cacheada
-  // por device pra não bater na API a cada rebuild.
-  bool _liveTrailEnabled = false;
-  final Map<int, List<gmaps.LatLng>> _liveTrailMatchByDeviceId = {};
-  int? _liveTrailMatchInFlightForDeviceId;
-  List<gmaps.LatLng>? _liveTrailMatchedSourceSnapshot;
+  // Cauda sempre visivel (2026-10-27) -- antes era opt-in via OSRM externo,
+  // agora e so a cauda curta local (ver _recordPositionTrails), entao nao
+  // precisa mais de toggle pra ligar/desligar correcao de rota.
+  bool _liveTrailEnabled = true;
 
   // Efeito "sonar" (ondas saindo do centro) no pin do veículo selecionado no
   // mapa ao vivo -- só roda enquanto há seleção, pra não gastar ciclo à toa.
@@ -1711,116 +1718,98 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
+  // Cauda curta (ultimas 5 posicoes por veiculo) em vez de rastro longo com
+  // reta crua entre pontos GPS -- a linha reta cortava quarteirao/predio e
+  // ficava "pulando" visualmente (reportado pelo cliente Rizzo Gaz,
+  // 2026-10-27), mesmo com coordenadas corretas. Filtros:
+  // - ignora ponto a menos de 15m do ultimo guardado (ruido de GPS parado)
+  // - descarta pontos com mais de 5min (cauda so mostra deslocamento recente)
+  // - nao desenha segmento se o salto entre pontos consecutivos for > 500m
+  //   (ver _trailSegmentsForDisplay, que quebra a trilha em vez de ligar)
+  static const int _trailMaxPoints = 5;
+  static const double _trailMinPointDistanceM = 15;
+  static const Duration _trailMaxAge = Duration(minutes: 5);
+  static const double _trailMaxSegmentDistanceM = 500;
+
   void _recordPositionTrails(List<_VehicleSnapshot> snapshots) {
     final activeIds = <int>{};
+    final now = DateTime.now();
     for (final snapshot in snapshots) {
       final point = snapshot.latLngOrNull;
       if (point == null) continue;
       activeIds.add(snapshot.device.id);
+      final timestamp = snapshot.lastCommunicationAt ?? now;
       final trail = _positionTrailByDeviceId.putIfAbsent(
         snapshot.device.id,
-        () => <gmaps.LatLng>[],
+        () => <_TrailPoint>[],
       );
-      if (trail.isEmpty || !_isSameTrailPoint(trail.last, point)) {
-        trail.add(point);
-        if (trail.length > 24) {
-          trail.removeRange(0, trail.length - 24);
+      final last = trail.isEmpty ? null : trail.last;
+      final isTooClose = last != null &&
+          _distanceMeters(last.point, point) < _trailMinPointDistanceM;
+      if (!isTooClose) {
+        trail.add(_TrailPoint(point, timestamp));
+        if (trail.length > _trailMaxPoints) {
+          trail.removeRange(0, trail.length - _trailMaxPoints);
         }
       }
+      trail.removeWhere((p) => now.difference(p.time) > _trailMaxAge);
     }
     _positionTrailByDeviceId.removeWhere((id, _) => !activeIds.contains(id));
   }
 
-  bool _isSameTrailPoint(gmaps.LatLng a, gmaps.LatLng b) {
-    return (a.latitude - b.latitude).abs() < 0.00001 &&
-        (a.longitude - b.longitude).abs() < 0.00001;
+  double _distanceMeters(gmaps.LatLng a, gmaps.LatLng b) {
+    const earthRadiusM = 6371000.0;
+    final lat1 = a.latitude * (math.pi / 180.0);
+    final lat2 = b.latitude * (math.pi / 180.0);
+    final deltaLat = (b.latitude - a.latitude) * (math.pi / 180.0);
+    final deltaLng = (b.longitude - a.longitude) * (math.pi / 180.0);
+    final haversine = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(deltaLng / 2) *
+            math.sin(deltaLng / 2);
+    final arc = 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+    return earthRadiusM * arc;
   }
 
-  List<gmaps.LatLng> _selectedTrail() {
-    final id = _selectedVehicle?.id;
-    if (id == null) return const <gmaps.LatLng>[];
-    final trail = _positionTrailByDeviceId[id];
-    if (trail == null) return const <gmaps.LatLng>[];
-    return List<gmaps.LatLng>.unmodifiable(trail);
-  }
-
-  // Rastro ao vivo "colado nas ruas" -- mesmo serviço OSRM já usado no
-  // relatório de rota (reports_screen.dart:_matchSegmentWithOsrm), só que
-  // aqui o buffer é curto (até 24 pontos, ver _recordPositionTrails) então
-  // não precisa de downsample/lotes. Cacheado por device: só refaz a
-  // chamada quando o rastro bruto realmente muda (novo ponto).
-  List<gmaps.LatLng> _liveTrailForDisplay() {
-    if (!_liveTrailEnabled) return _selectedTrail();
-    final id = _selectedVehicle?.id;
-    if (id == null) return const <gmaps.LatLng>[];
-    final matched = _liveTrailMatchByDeviceId[id];
-    if (matched != null && matched.length > 1) return matched;
-    return _selectedTrail();
-  }
-
-  Future<void> _refreshLiveTrailMatchIfNeeded() async {
-    if (!_liveTrailEnabled) return;
-    final id = _selectedVehicle?.id;
-    if (id == null) return;
-    final rawTrail = _selectedTrail();
-    if (rawTrail.length < 2) return;
-    if (_liveTrailMatchInFlightForDeviceId == id &&
-        _liveTrailMatchedSourceSnapshot != null &&
-        _sameTrailSnapshot(_liveTrailMatchedSourceSnapshot!, rawTrail)) {
-      return;
-    }
-    final cached = _liveTrailMatchByDeviceId[id];
-    if (cached != null &&
-        _liveTrailMatchedSourceSnapshot != null &&
-        _sameTrailSnapshot(_liveTrailMatchedSourceSnapshot!, rawTrail)) {
-      return;
-    }
-
-    _liveTrailMatchInFlightForDeviceId = id;
-    _liveTrailMatchedSourceSnapshot = List<gmaps.LatLng>.from(rawTrail);
-    try {
-      final coords =
-          rawTrail.map((p) => '${p.longitude},${p.latitude}').join(';');
-      final radiuses = List.filled(rawTrail.length, '30').join(';');
-      final uri = Uri.parse(
-        'http://204.168.191.10:5333/match/v1/driving/$coords'
-        '?geometries=geojson&overview=full&radiuses=$radiuses',
-      );
-      final response =
-          await http.get(uri).timeout(const Duration(seconds: 6));
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final matchings = json['matchings'] as List<dynamic>?;
-        if (matchings != null && matchings.isNotEmpty) {
-          final geometry =
-              (matchings.first as Map<String, dynamic>)['geometry']
-                  as Map<String, dynamic>;
-          final coordinates = geometry['coordinates'] as List<dynamic>;
-          final points = <gmaps.LatLng>[
-            for (final pair in coordinates)
-              gmaps.LatLng(
-                ((pair as List<dynamic>)[1] as num).toDouble(),
-                (pair[0] as num).toDouble(),
-              ),
-          ];
-          if (points.length > 1) {
-            setState(() => _liveTrailMatchByDeviceId[id] = points);
-          }
-        }
+  // Quebra a cauda em segmentos sempre que o salto entre dois pontos
+  // consecutivos excede _trailMaxSegmentDistanceM -- evita ligar com uma
+  // reta um ponto antigo/ruidoso a um ponto novo distante.
+  List<List<_TrailPoint>> _trailSegmentsForDisplay(List<_TrailPoint> trail) {
+    if (trail.length < 2) return const [];
+    final segments = <List<_TrailPoint>>[];
+    var current = <_TrailPoint>[trail.first];
+    for (var i = 1; i < trail.length; i++) {
+      final distance = _distanceMeters(trail[i - 1].point, trail[i].point);
+      if (distance > _trailMaxSegmentDistanceM) {
+        if (current.length > 1) segments.add(current);
+        current = <_TrailPoint>[trail[i]];
+      } else {
+        current.add(trail[i]);
       }
-    } catch (_) {
-      // Sem internet/serviço fora do ar: mantém o rastro bruto (fallback
-      // silencioso, já é o comportamento padrão quando desligado).
     }
+    if (current.length > 1) segments.add(current);
+    return segments;
   }
 
-  bool _sameTrailSnapshot(List<gmaps.LatLng> a, List<gmaps.LatLng> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (!_isSameTrailPoint(a[i], b[i])) return false;
-    }
-    return true;
+  List<_TrailPoint> _selectedTrail() {
+    final id = _selectedVehicle?.id;
+    if (id == null) return const <_TrailPoint>[];
+    final trail = _positionTrailByDeviceId[id];
+    if (trail == null) return const <_TrailPoint>[];
+    return List<_TrailPoint>.unmodifiable(trail);
+  }
+
+  // Cauda curta (ver _recordPositionTrails/_trailSegmentsForDisplay) --
+  // substituiu o map-matching via OSRM externo (2026-10-27): dependia de
+  // um servico de rota rodando em 204.168.191.10:5333 que podia estar fora
+  // do ar, e o rastro cru em linha reta entre pontos GPS crus cortava
+  // quarteirao/predio, ficando "pulado" no mapa mesmo com coordenadas
+  // corretas -- reportado pelo cliente Rizzo Gaz. A cauda de 5 pontos com
+  // filtro de distancia minima, idade maxima e quebra de segmento em saltos
+  // grandes resolve o problema visual sem depender de servico externo.
+  List<List<_TrailPoint>> _liveTrailForDisplay() {
+    return _trailSegmentsForDisplay(_selectedTrail());
   }
 
   void _followSelectedVehicleIfNeeded(_VehicleSnapshot? snapshot) {
@@ -1857,16 +1846,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     setState(() => _mapTrafficEnabled = !_mapTrafficEnabled);
   }
 
-  // Rastro ao vivo (2026-09-06): desligado por padrão -- o usuário liga só
-  // quando quer auditar/conferir o trajeto recente do veículo selecionado.
-  // Reduz poluição visual e, junto disso, quando ligado o rastro passa a
-  // usar map-matching (OSRM) em vez de reta entre pontos GPS crus (ver
-  // _fetchLiveTrailMatch), corrigindo o "corta reto pela curva".
+  // Mantido como toggle de "mostrar/esconder cauda" (a correcao de rota em
+  // si -- ver _trailSegmentsForDisplay -- nao depende mais de toggle nem de
+  // chamada de rede, entao so falta alternar a flag de visibilidade).
   void _toggleLiveTrail() {
     setState(() => _liveTrailEnabled = !_liveTrailEnabled);
-    if (_liveTrailEnabled) {
-      _refreshLiveTrailMatchIfNeeded();
-    }
   }
 
   void _recenter(List<_VehicleSnapshot> snapshots) {
@@ -2319,14 +2303,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _refreshOperationalData() {
+    // So invalida o que o build() do mapa principal realmente consome.
+    // ordersProvider/statisticsProvider/serverProvider/timezonesProvider
+    // nao sao lidos nesta tela (ordersProvider so aparece em
+    // business_reference_screens.dart, uma tela separada) -- invalida-los
+    // a cada ciclo de polling buscava dado que ninguem estava olhando.
     ref.invalidate(devicesProvider);
     ref.invalidate(positionsProvider);
     ref.invalidate(latestEventsProvider);
-    ref.invalidate(ordersProvider);
-    ref.invalidate(statisticsProvider);
-    ref.invalidate(serverProvider);
     ref.invalidate(notificationTypesProvider);
-    ref.invalidate(timezonesProvider);
   }
 
   void _syncOperationalRealtimePolling({
@@ -2392,9 +2377,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final visualController = ref.read(visualSettingsProvider.notifier);
     final realtimeMapVisible =
         currentSession.isAuthenticated && _activePanelId == null;
+    // immediateRefresh:false -- o primeiro fetch de devices/positions ja
+    // acontece sozinho via ref.watch() dos providers logo abaixo. Com true,
+    // essa chamada (que roda dentro do build(), nao so uma vez) invalidava
+    // os providers no mesmo ciclo do primeiro load, duplicando a chamada
+    // de /api/devices e /api/positions logo na abertura do mapa.
     _syncOperationalRealtimePolling(
       enabled: realtimeMapVisible,
-      immediateRefresh: true,
+      immediateRefresh: false,
     );
 
     final devices = devicesAsync.valueOrNull ?? const <TraccarDevice>[];
@@ -2403,12 +2393,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         latestEventsAsync.valueOrNull ?? const <Map<String, dynamic>>[];
     final snapshots = _buildSnapshots(devices, positions);
     _recordPositionTrails(snapshots);
-    if (_liveTrailEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _refreshLiveTrailMatchIfNeeded();
-      });
-    }
     _VehicleSnapshot? enrichSnapshot(_VehicleSnapshot? snapshot) {
       if (snapshot == null) return null;
       final geocodeKey = _geocodeKey(snapshot);
@@ -4166,7 +4150,7 @@ class _OperationalMap extends StatelessWidget {
 
   final List<_VehicleSnapshot> snapshots;
   final int? selectedDeviceId;
-  final List<gmaps.LatLng> selectedTrail;
+  final List<List<_TrailPoint>> selectedTrail;
   final List<gmaps.LatLng> selectedReplayPath;
   final List<List<gmaps.LatLng>> selectedReplaySegments;
   final _ReplayPoint? selectedReplayPoint;
@@ -4765,6 +4749,26 @@ class _OperationalMap extends StatelessWidget {
     return byteData.buffer.asUint8List();
   }
 
+  gmaps.LatLngBounds? _boundsForSnapshots(List<_VehicleSnapshot> items) {
+    if (items.isEmpty) return null;
+    var minLat = items.first.latLng.latitude;
+    var maxLat = minLat;
+    var minLng = items.first.latLng.longitude;
+    var maxLng = minLng;
+    for (final item in items) {
+      final lat = item.latLng.latitude;
+      final lng = item.latLng.longitude;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+    return gmaps.LatLngBounds(
+      southwest: gmaps.LatLng(minLat, minLng),
+      northeast: gmaps.LatLng(maxLat, maxLng),
+    );
+  }
+
   String _clusterKey(gmaps.LatLng point) {
     final lat = (point.latitude / _clusterGridSize).floor();
     final lng = (point.longitude / _clusterGridSize).floor();
@@ -5069,9 +5073,8 @@ class _OperationalMap extends StatelessWidget {
 
         final routePoints = reportRoutePath.length > 1
             ? reportRoutePath
-            : (selectedReplayPath.length > 1
-                ? selectedReplayPath
-                : selectedTrail);
+            : (selectedReplayPath.length > 1 ? selectedReplayPath : null);
+        final usingTrailFallback = routePoints == null;
         if (selectedDeviceId != null && reportRouteMatchedSegments.isNotEmpty) {
           // Trajeto corrigido pelo OSRM: um segmento por trecho contínuo —
           // buraco de conexão real vira buraco visual, não reta falsa.
@@ -5102,7 +5105,9 @@ class _OperationalMap extends StatelessWidget {
               ),
             );
           }
-        } else if (selectedDeviceId != null && routePoints.length > 1) {
+        } else if (selectedDeviceId != null &&
+            !usingTrailFallback &&
+            routePoints!.length > 1) {
           polylines.add(
             gmaps.Polyline(
               polylineId: gmaps.PolylineId('trail-$selectedDeviceId'),
@@ -5111,6 +5116,29 @@ class _OperationalMap extends StatelessWidget {
               width: 4,
             ),
           );
+        } else if (selectedDeviceId != null && usingTrailFallback) {
+          // Cauda curta (ultimas 5 posicoes, ja filtrada em
+          // _trailSegmentsForDisplay): opacidade decrescente do ponto mais
+          // recente (1.0) ao mais antigo (0.2), um segmento por trecho
+          // continuo -- saltos grandes entre pontos (ver
+          // _trailMaxSegmentDistanceM) nunca ficam ligados por uma reta.
+          for (var segIndex = 0; segIndex < selectedTrail.length; segIndex++) {
+            final segment = selectedTrail[segIndex];
+            for (var i = 0; i < segment.length - 1; i++) {
+              final fraction =
+                  segment.length <= 1 ? 1.0 : i / (segment.length - 1);
+              final opacity = (0.2 + fraction * 0.8).clamp(0.2, 1.0);
+              polylines.add(
+                gmaps.Polyline(
+                  polylineId: gmaps.PolylineId(
+                      'trail-$selectedDeviceId-seg$segIndex-$i'),
+                  points: [segment[i].point, segment[i + 1].point],
+                  color: const Color(0xFF2F80FF).withValues(alpha: opacity),
+                  width: 4,
+                ),
+              );
+            }
+          }
         }
 
         if (reportRouteStart != null) {
@@ -5185,7 +5213,24 @@ class _OperationalMap extends StatelessWidget {
           scrollGesturesEnabled: true,
           zoomGesturesEnabled: true,
           webGestureHandling: gmaps.WebGestureHandling.greedy,
-          onMapCreated: onMapCreated,
+          onMapCreated: (controller) {
+            onMapCreated(controller);
+            // Mapa abria sempre no zoom fixo 13 centrado no 1o veiculo da
+            // lista -- com a frota espalhada pela cidade isso deixava a
+            // tela vazia (nenhum carro visivel) ate o usuario dar zoom out
+            // manualmente. Enquadra automaticamente todos os veiculos com
+            // posicao valida assim que o mapa termina de carregar.
+            if (snapshotsWithPosition.length > 1) {
+              final bounds = _boundsForSnapshots(snapshotsWithPosition);
+              if (bounds != null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  controller.animateCamera(
+                    gmaps.CameraUpdate.newLatLngBounds(bounds, 64),
+                  );
+                });
+              }
+            }
+          },
           onCameraMove: onCameraMove,
           onTap: (_) => onMapTap(),
           markers: markers,
