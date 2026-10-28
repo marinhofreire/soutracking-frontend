@@ -2368,8 +2368,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // nao sao lidos nesta tela (ordersProvider so aparece em
     // business_reference_screens.dart, uma tela separada) -- invalida-los
     // a cada ciclo de polling buscava dado que ninguem estava olhando.
+    //
+    // positionsProvider NAO entra aqui -- _positionRefreshTimer (3s) ja
+    // cobre ele com folga, e como os dois timers partem juntos, a cada
+    // 30s (multiplo de 3s) os dois caiam quase no mesmo instante e
+    // disparavam 2 fetches de /api/positions em poucos ms de diferenca
+    // (confirmado via auditoria 2026-10-28: pares em ~21.8/22.2s,
+    // ~43.2/46.2s).
     ref.invalidate(devicesProvider);
-    ref.invalidate(positionsProvider);
     ref.invalidate(latestEventsProvider);
     ref.invalidate(notificationTypesProvider);
   }
@@ -2410,6 +2416,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         _positionRefreshInterval,
         (_) {
           if (!mounted) return;
+          // Pula o ciclo se o fetch anterior ainda nao voltou -- sem essa
+          // trava, quando o servidor demora mais que 3s (confirmado via
+          // auditoria 2026-10-28: pedido de 3,4s), o tick seguinte dispara
+          // um 2o /api/positions por cima do que ainda esta em voo.
+          if (ref.read(positionsProvider).isLoading) return;
           ref.invalidate(positionsProvider);
         },
       );

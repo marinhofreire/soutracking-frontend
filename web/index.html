@@ -53,7 +53,12 @@
     }
   </style>
 
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDX-KnRJNMbZKp_EPiSdYPxo-XE5LvdHiY"></script>
+  <!-- async -- sem isso essa tag (no <head>, sem defer) bloqueia o parser
+       HTML e atrasa o carregamento do flutter_bootstrap.js (no <body>) ate
+       o script do Maps terminar de baixar+executar, empurrando pra depois
+       tambem a autenticacao e o primeiro fetch de /api/devices,/positions,
+       que so rodam depois que o Flutter app existe. -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDX-KnRJNMbZKp_EPiSdYPxo-XE5LvdHiY" async></script>
 
   <link rel="manifest" href="manifest.json">
 
