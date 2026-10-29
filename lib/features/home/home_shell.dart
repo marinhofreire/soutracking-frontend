@@ -2730,6 +2730,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   },
                   onMapTap: _clearOperationalSurface,
                   onVehicleTap: _selectVehicleOnMap,
+                  onClusterIconsReady: () {
+                    if (mounted) setState(() {});
+                  },
+                  onClusterTap: (center) {
+                    _googleMapController?.animateCamera(
+                      gmaps.CameraUpdate.newLatLngZoom(
+                        center,
+                        _OperationalMap.clusterZoomThreshold + 1,
+                      ),
+                    );
+                  },
                 ),
               ),
               Positioned.fill(
@@ -4223,6 +4234,8 @@ class _OperationalMap extends StatelessWidget {
     required this.onMapTap,
     required this.onVehicleTap,
     this.sonarPhase = 0,
+    this.onClusterIconsReady,
+    this.onClusterTap,
   });
 
   final List<_VehicleSnapshot> snapshots;
@@ -4250,6 +4263,15 @@ class _OperationalMap extends StatelessWidget {
   // Fase (0..1) do efeito sonar no pin do veículo selecionado -- avança fora
   // deste widget (Timer no _HomeShellState) porque ele é StatelessWidget.
   final double sonarPhase;
+  // Chamado quando um icone de cluster que faltava no cache termina de
+  // ser desenhado -- so entao vale forcar o rebuild (setState no
+  // _HomeShellState) pra troca o pino azul padrao pelo circulo com o
+  // numero. Sem isso o icone so aparecia no PROXIMO rebuild por outro
+  // motivo (zoom, nova posicao), nunca de forma garantida.
+  final VoidCallback? onClusterIconsReady;
+  // Clique no cluster: zoom (feito pelo caller, que tem o
+  // GoogleMapController) ate o ponto de separar os veiculos.
+  final ValueChanged<gmaps.LatLng>? onClusterTap;
   static const double clusterZoomThreshold = 11.0;
   static const double _clusterGridSize = 0.035;
 
@@ -5084,21 +5106,41 @@ class _OperationalMap extends StatelessWidget {
         }
 
         if (!reportRouteMode && mapZoom < clusterZoomThreshold) {
+          // O veiculo selecionado NAO escapa mais do agrupamento aqui --
+          // antes ele sempre virava marcador individual mesmo dentro de um
+          // cluster, entao no zoom afastado apareciam ao mesmo tempo o
+          // circulo do cluster (com os outros N-1) E o marcador individual
+          // dele por cima, na mesma posicao (bug reportado 2026-10-28).
           final clusters = <String, List<_VehicleSnapshot>>{};
           for (final snapshot in snapshotsWithPosition) {
-            if (snapshot.device.id == selectedDeviceId) {
-              addVehicleMarker(snapshot);
-              continue;
-            }
             final key = _clusterKey(snapshot.latLng);
             clusters.putIfAbsent(key, () => <_VehicleSnapshot>[]).add(snapshot);
           }
+          final multiClusters = <String, List<_VehicleSnapshot>>{};
           for (final entry in clusters.entries) {
-            final cluster = entry.value;
-            if (cluster.length == 1) {
-              addVehicleMarker(cluster.first);
-              continue;
+            if (entry.value.length == 1) {
+              addVehicleMarker(entry.value.first);
+            } else {
+              multiClusters[entry.key] = entry.value;
             }
+          }
+          // Pre-aquece em paralelo so os icones de cluster (um por
+          // contagem distinta) que faltam no cache -- antes a chamada era
+          // fire-and-forget dentro do build() sincrono, entao no 1o frame
+          // em que uma contagem aparecia ela ficava com o pino azul padrao
+          // do Google (o "icone escuro" relatado) e so pintava o circulo
+          // com o numero depois, se e quando algo mais disparasse rebuild.
+          final missingCounts = multiClusters.values
+              .map((c) => c.length)
+              .where((count) => !_clusterIconCache.containsKey(count))
+              .toSet();
+          final clusterIconsFuture = missingCounts.isEmpty
+              ? Future.value(const <int, gmaps.BitmapDescriptor>{})
+              : Future.wait(missingCounts.map((count) async {
+                  return MapEntry(count, await _getClusterIcon(count));
+                })).then((entries) => Map.fromEntries(entries));
+          for (final entry in multiClusters.entries) {
+            final cluster = entry.value;
             final clusterCount = cluster.length;
             final clusterIcon = _clusterIconCache[clusterCount];
             markers.add(
@@ -5106,17 +5148,21 @@ class _OperationalMap extends StatelessWidget {
                 markerId: gmaps.MarkerId('cluster-${entry.key}'),
                 position: _clusterCenter(cluster),
                 anchor: const Offset(0.5, 0.5),
+                // So entra como marcador clicavel depois que o icone com o
+                // numero estiver pronto -- antes disso fica invisivel em
+                // vez de mostrar o pino azul padrao por 1 frame.
+                visible: clusterIcon != null,
                 icon: clusterIcon ??
                     gmaps.BitmapDescriptor.defaultMarkerWithHue(
                         gmaps.BitmapDescriptor.hueAzure),
-                infoWindow: gmaps.InfoWindow(
-                  title: '$clusterCount ve\u00EDculos pr\u00F3ximos',
-                ),
+                onTap: () => onClusterTap?.call(_clusterCenter(cluster)),
               ),
             );
-            if (clusterIcon == null) {
-              _getClusterIcon(clusterCount);
-            }
+          }
+          if (missingCounts.isNotEmpty) {
+            clusterIconsFuture.then((_) {
+              if (onClusterIconsReady != null) onClusterIconsReady!();
+            });
           }
         } else if (!reportRouteMode) {
           for (final snapshot in snapshotsWithPosition) {
